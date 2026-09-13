@@ -291,7 +291,10 @@ fun main(args: Array<String>) {
     Files.createDirectories(output)
     val work = Files.createTempDirectory("openknights-bundles-")
     val reports = JArr()
+    // OPENKNIGHTS_BUNDLE_ONLY: comma-separated parts of bundle names to run (all when unset)
+    val only = System.getenv("OPENKNIGHTS_BUNDLE_ONLY")?.split(",")?.map { it.trim() }?.filter { it.isNotEmpty() }
     val folders = Files.list(bundles).use { s -> s.filter { Files.isRegularFile(it.resolve("bundle.json")) }.sorted().toList() }
+        .filter { f -> only == null || only.any { f.fileName.toString().contains(it) } }
     val originals = System.getenv("OPENKNIGHTS_ORIGINALS")
     val apk = System.getenv("OPENKNIGHTS_APK")?.let { Path.of(it) } ?: originals?.let { Path.of(it, "com.enjoygame.hero2d.apk") }
     val releaseData = System.getenv("OPENKNIGHTS_RELEASE_DATA")?.let { Path.of(it) }
@@ -312,4 +315,8 @@ fun main(args: Array<String>) {
         "all_passed" to reports.all { (it.asObj["passed"] as? io.github.okexodus.openknights.exact.JBool)?.value == true })
     Files.writeString(output.resolve("report.json"), Json.dumps(summary, indent = 1))
     println("report: ${output.resolve("report.json")}")
+    // the work copies are kept only on request (OPENKNIGHTS_KEEP_WORK=1), for looking into a failure
+    if (System.getenv("OPENKNIGHTS_KEEP_WORK") == null) {
+        Files.walk(work).use { s -> s.sorted(Comparator.reverseOrder()).forEach { Files.deleteIfExists(it) } }
+    } else println("work: $work")
 }

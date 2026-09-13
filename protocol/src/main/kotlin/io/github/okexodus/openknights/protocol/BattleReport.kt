@@ -169,6 +169,13 @@ object BattleReport {
 
     fun encodeReward(value: JObj): ByteArray = WireWriter().also { encodeReward(it, value) }.bytes()
 
+    /** An empty Reward of a version (`empty_reward`): every list empty, every number 0, in field order. */
+    fun emptyReward(version: Int = 14): JObj {
+        val result = jobj("version" to version)
+        for ((name, fmt) in rewardFields(version)) result[name] = if (fmt.startsWith("[")) JArr() else JInt(0)
+        return result
+    }
+
     private fun readActor(r: WireReader, version: Int): JObj {
         val result = if (version >= 6) jobj("lineup_raw" to r.number('B')) else JObj()
         readFields(r, ACTOR_FIELDS, result)

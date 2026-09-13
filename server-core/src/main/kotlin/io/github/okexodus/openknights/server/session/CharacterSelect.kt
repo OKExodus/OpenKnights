@@ -4,6 +4,7 @@ import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.gamedata.GameTables
 import io.github.okexodus.openknights.protocol.PlayerState
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.server.game.FreshProfile
 import io.github.okexodus.openknights.server.store.AccountRegistry
 import io.github.okexodus.openknights.server.store.StateStore
 import io.github.okexodus.openknights.server.store.WorldDirectory
@@ -66,7 +67,72 @@ class CharacterSelect(
 
         /** A mode-2 creation reply: the three offered starters. */
         fun mode2Payload(offers: List<Long>): ByteArray = WireWriter().u8(0).u32(2).also { w -> offers.forEach { w.u32(it) } }.bytes()
+
+        class NameRequest(val nameRaw: ByteArray, val gender: Long, val inviter: Long)
+
+        /** C289: name bytes, NUL, u8 gender, u32 inviter. */
+        fun decodeNameRequest(payload: ByteArray): NameRequest {
+            val end = payload.indexOf(0.toByte())
+            if (end < 0) throw IllegalArgumentException("subsection not found")
+            // checked before unpacking: a short request must be refused, not crash the connection
+            if (end + 6 != payload.size) throw IllegalArgumentException("Name request must be the name, NUL, u8 gender and u32 inviter")
+            val reader = io.github.okexodus.openknights.protocol.WireReader(payload).also { it.offset = end + 1 }
+            val gender = reader.u8().toLong()
+            return NameRequest(payload.copyOfRange(0, end), gender, reader.u32())
+        }
+
+        /** The client's own "all guides done" state: no tutorial guide can force itself in. */
+        const val CREATION_SESSION_LOGIN_MODE = 10000
+
+        /** A full S18 with login_mode 10000 (the save keeps its own); only that field may differ. */
+        fun creationSessionPayload(payload: ByteArray): ByteArray {
+            val state = PlayerState.parse(payload)
+            val mode = (state["login_mode"] as? io.github.okexodus.openknights.exact.JInt)?.value?.toLong()
+            if (state["complete"] != io.github.okexodus.openknights.exact.JBool(true) || mode == 1L || mode == 2L) {
+                throw IllegalArgumentException("Creation-session payload must be a complete full initialization")
+            }
+            state["login_mode"] = io.github.okexodus.openknights.exact.JInt(CREATION_SESSION_LOGIN_MODE)
+            val out = PlayerState.encode(state)
+            if (out.size != payload.size || !out.copyOfRange(5, out.size).contentEquals(payload.copyOfRange(5, payload.size))) {
+                throw IllegalArgumentException("Only the login_mode field may differ")
+            }
+            return out
+        }
+
+        fun decodeStarterRequest(payload: ByteArray): Long {
+            if (payload.size != 4) throw IllegalArgumentException("Starter request must be one u32 template")
+            return io.github.okexodus.openknights.protocol.WireReader(payload).u32()
+        }
+
+        /**
+         * Local checks before the offers: name rules, world uniqueness (a bound bot's name is taken too), gender. The
+         * world's reservation checks again.
+         */
+        fun validateNewName(world: WorldDirectory?, nameRaw: ByteArray, gender: Long): String {
+            val decoded = try {
+                Charsets.UTF_8.newDecoder().onMalformedInput(java.nio.charset.CodingErrorAction.REPORT)
+                    .onUnmappableCharacter(java.nio.charset.CodingErrorAction.REPORT)
+                    .decode(java.nio.ByteBuffer.wrap(nameRaw)).toString()
+            } catch (e: java.nio.charset.CharacterCodingException) {
+                throw FreshProfile.CreationRejected("Name must be UTF-8 text")
+            }
+            val name = FreshProfile.normalizeName(decoded)
+            FreshProfile.validateGender(gender)
+            if (world == null) return name        // the first character bears the world: no names taken yet
+            val key = FreshProfile.nameKey(name)
+            val taken = world.connect(readOnly = true).use { db -> db.queryOne("SELECT 1 FROM world_characters WHERE name_key=?", key) != null }
+            if (taken || key in world.botNames) throw FreshProfile.CreationRejected("That name is already taken in this world")
+            return name
+        }
     }
+
+    /**
+     * Reply to a rejected C289 / C291: a taken name uses the native path (S18 mode 1 + S2976 again: the open dialog
+     * shows "Someone has taken this name already"); other rejections end the wait with S6 102 and leave the dialog open.
+     */
+    fun rejection(opcode: Int, e: Exception): List<Pair<Int, ByteArray>> =
+        if (opcode == 289 && (e.message ?: "").contains("taken")) listOf(18 to MODE_1, 2976 to ByteArray(0))
+        else listOf(6 to TransactionPackets.errorPayload(TransactionPackets.INVALID_DATA))
 
     class Row(val id: Int, val name: String, val badge: Int)
 

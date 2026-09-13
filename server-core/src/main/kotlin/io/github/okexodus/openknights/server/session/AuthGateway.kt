@@ -11,6 +11,13 @@ import io.github.okexodus.openknights.server.store.AuthenticationRejected
  * status and body the reference writes. The HTTP framing around it lives with the listeners.
  */
 object AuthGateway {
+    /** A JSON member as the reference's `body[key]` would pass it on: text stays text, anything else is not text. */
+    private fun JObj.valueOf(key: String): Any? = when (val v = this[key]) {
+        is io.github.okexodus.openknights.exact.JStr -> v.value
+        null, io.github.okexodus.openknights.exact.JNull -> null
+        else -> v
+    }
+
     val PATHS = setOf("/api/login", "/api/device", "/api/recharge")
 
     class Response(val status: Int, val body: String)
@@ -41,8 +48,8 @@ object AuthGateway {
             }
             "/api/login" -> {
                 require(request.keys == setOf("username", "password")) { "Unsupported authentication request" }
-                service.log.log("not_implemented", "service" to "http", "feature" to "password sign-in (/api/login)")
-                throw AuthenticationRejected("Local credentials rejected")
+                val issued = service.auth.login(request.valueOf("username"), request.valueOf("password"))
+                jobj("token" to issued.token, "ingame_select" to true, "expires_at_utc" to issued.session.expiresAtUtc)
             }
             else -> {
                 val token = request.strOrNull("token") ?: throw IllegalArgumentException("Recharge requires the session token")

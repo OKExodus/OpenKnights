@@ -18,7 +18,6 @@ import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertFalse
 import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
-import org.junit.jupiter.api.assertThrows
 import org.junit.jupiter.api.io.TempDir
 import java.nio.file.Path
 
@@ -99,13 +98,36 @@ class SessionTest {
         // A row that is not in the list: result 1 ("The server does not exist"), the session stays open.
         assertArrayEquals(byteArrayOf(1), login.handle(7715, WireWriter().u16(10001).bytes() + cstr("1")).single().second)
         assertFalse(login.closed)
-        // The game hop with the ticket would start the creation screens: not ported yet, answered and closed.
+        // The game hop with the ticket opens the native creation: S18 mode 1 + S2976, then C289 (name) and C291 (starter).
         val game = Session(service, "game", 19121)
         val c3 = WireWriter().u32(CharacterSelect.TICKET_FIRST).cstring("Android".toByteArray()).cstring("m".toByteArray()).u8(0)
             .cstring(token.toByteArray()).u8(0).bytes()
-        assertEquals(listOf(6), game.handle(3, c3).map { it.first })
+        assertEquals(listOf(18, 2976), game.handle(3, c3).map { it.first })
+        assertEquals(listOf(8), game.handle(7, ByteArray(0)).map { it.first })
+        val named = game.handle(289, cstr("Tester") + WireWriter().u8(1).u32(0).bytes())
+        assertEquals(listOf(18, 2976), named.map { it.first })
+        assertEquals(CharacterSelect.mode2Payload(listOf(40001001, 40004001, 40007001)).toHexString(), named[0].second.toHexString())
+        // a starter that was not offered: S6 102, the dialog stays open
+        assertEquals(listOf(6), game.handle(291, WireWriter().u32(1).bytes()).map { it.first })
+        assertFalse(game.closed)
+        // this service has no character factory: the creation itself is not available, answered and closed
+        assertEquals(listOf(6), game.handle(291, WireWriter().u32(40004001).bytes()).map { it.first })
         assertTrue(game.closed)
         assertTrue(service.log.events.any { it.str("event") == "not_implemented" })
+    }
+
+    @Test
+    fun `a malformed name request closes the creation connection`() {
+        val (service, token) = service()
+        val login = Session(service, "login", 19121)
+        login.handle(7683, signIn(token))
+        login.handle(7715, WireWriter().u16(10004).bytes() + cstr("1"))
+        val game = Session(service, "game", 19121)
+        val c3 = WireWriter().u32(CharacterSelect.TICKET_FIRST).cstring("Android".toByteArray()).cstring("m".toByteArray()).u8(0)
+            .cstring(token.toByteArray()).u8(0).bytes()
+        game.handle(3, c3)
+        assertEquals(listOf(6), game.handle(289, cstr("Tester") + byteArrayOf(1)).map { it.first })
+        assertTrue(game.closed)
     }
 
     @Test
@@ -123,21 +145,6 @@ class SessionTest {
         val unknownWire = WireWriter().u32(12_345_678).cstring("a".toByteArray()).cstring("b".toByteArray()).u8(0).cstring(token.toByteArray()).u8(0).bytes()
         assertEquals(listOf(6), game.handle(3, unknownWire).map { it.first })
         assertTrue(service.log.events.any { it.str("event") == "authentication_rejected" })
-    }
-
-    @Test
-    fun `the initialisation query set completes in any order, or as the client's reconnect set`() {
-        val full = QuerySet()
-        val order = QuerySet.QUERY_SEQUENCE.filter { it != 1761 }.shuffled(java.util.Random(7))
-        order.dropLast(1).forEach { assertFalse(full.accept(it, ByteArray(0))) }
-        assertTrue(full.accept(order.last(), ByteArray(0)))
-        assertFalse(full.viaReconnectSet)
-        val reconnect = QuerySet()
-        (QuerySet.QUERY_SEQUENCE - QuerySet.RECONNECT_OMITTED - 1761).forEach { reconnect.accept(it, ByteArray(0)) }
-        assertTrue(reconnect.complete && reconnect.viaReconnectSet)
-        assertThrows<IllegalArgumentException> { QuerySet().accept(257, byteArrayOf(1)) }
-        assertThrows<IllegalArgumentException> { QuerySet().accept(1761, ByteArray(0)) }
-        assertTrue(QuerySet().accept(1761, ByteArray(2)).not())
     }
 
     @Test

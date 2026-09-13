@@ -15,7 +15,9 @@ import io.github.okexodus.openknights.exact.asInt
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.asStr
 import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.exact.jvalue
 import io.github.okexodus.openknights.exact.sha256Hex
 import io.github.okexodus.openknights.exact.toHexString
 import io.github.okexodus.openknights.gamedata.GameTables
@@ -26,9 +28,11 @@ import io.github.okexodus.openknights.server.session.AuthGateway
 import io.github.okexodus.openknights.server.session.Service
 import io.github.okexodus.openknights.server.session.ServiceLog
 import io.github.okexodus.openknights.server.session.Session
+import io.github.okexodus.openknights.server.store.BackupError
 import io.github.okexodus.openknights.server.store.DataRoot
 import io.github.okexodus.openknights.server.store.Fingerprint
 import io.github.okexodus.openknights.server.store.JdbcSqlDriver
+import io.github.okexodus.openknights.server.store.SaveManagement
 import io.github.okexodus.openknights.server.store.SqlDriver
 import java.nio.file.Files
 import java.nio.file.Path
@@ -112,6 +116,7 @@ class RecordingRunner(
         var excludedDifferences = 0
         val waitingByGroup = LinkedHashMap<String, Int>()
         val waitingByReason = LinkedHashMap<String, Int>()
+        val notPorted = JArr()          // the first-cause waits: which step and feature this server lacks
         var compared = 0
 
         // expected state: the baseline + every recorded change; divergence as described above
@@ -124,6 +129,12 @@ class RecordingRunner(
         val divergedConns = HashSet<Int>()
         var worldDiverged = false
         var registryDiverged = false
+        // what first made each thing diverge: the port group of an unported step, or a failed step
+        val connCause = HashMap<Int, String>()
+        val characterCause = HashMap<String, String>()
+        var worldCause: String? = null
+        var registryCause: String? = null
+        val waitingByCause = LinkedHashMap<String, Int>()
 
         val rowDeltas = LinkedHashMap<String, MutableList<JObj>>()
         val pristine = bundleDir.resolve(bundle.obj("baseline").str("path"))
@@ -165,13 +176,17 @@ class RecordingRunner(
             else -> "other"
         }
 
-        fun diverge(dbPaths: Collection<String>) {
+        fun diverge(dbPaths: Collection<String>, cause: String) {
             for (p in dbPaths) {
                 divergedDbs.add(p)
                 when (val owner = ownerOf(p)) {
-                    "registry" -> registryDiverged = true
-                    "world" -> worldDiverged = true
-                    else -> if (owner.startsWith("character:")) divergedCharacters.add(owner.removePrefix("character:"))
+                    "registry" -> { registryDiverged = true; if (registryCause == null) registryCause = cause }
+                    "world" -> { worldDiverged = true; if (worldCause == null) worldCause = cause }
+                    else -> if (owner.startsWith("character:")) {
+                        val id = owner.removePrefix("character:")
+                        divergedCharacters.add(id)
+                        characterCause.putIfAbsent(id, cause)
+                    }
                 }
             }
         }
@@ -199,6 +214,7 @@ class RecordingRunner(
                 // --- run the step on this server ---
                 var generated: List<Pair<Int, String>> = emptyList()
                 var httpResponse: AuthGateway.Response? = null
+                var adminOutcome: JObj? = null
                 var error: String? = null
                 var tapeError: String? = null
                 try {
@@ -227,7 +243,7 @@ class RecordingRunner(
                             if (conn.session.closed && conn.open) closeConn(conn)
                         }
                         "http" -> httpResponse = AuthGateway.respond(service!!, step.str("path"), step["body"] ?: JNull)
-                        "admin" -> log.log("not_implemented", "service" to "admin", "feature" to "save management: ${step.str("operation")}")
+                        "admin" -> adminOutcome = admin(root, step.str("operation"), step.obj("args"), log)
                         else -> error("unknown step kind $kind")
                     }
                 } catch (e: TapeMismatch) {
@@ -280,15 +296,26 @@ class RecordingRunner(
                     else -> null
                 }
                 if (reason != null) {
+                    val cause = when {
+                        registryDiverged && kind != "stop" -> registryCause
+                        connId != null && connId in divergedConns -> connCause[connId]
+                        character != null && character in divergedCharacters -> characterCause[character]
+                        worldDiverged && (conn?.kind == "game" || kind == "http") -> worldCause
+                        listing && (divergedCharacters.isNotEmpty() || worldDiverged) -> characterCause.values.firstOrNull() ?: worldCause
+                        else -> group
+                    } ?: "unknown"
+                    waitingByCause[cause] = (waitingByCause[cause] ?: 0) + 1
                     waitingByGroup[group] = (waitingByGroup[group] ?: 0) + 1
                     val label = if (reason.startsWith("not ported yet")) "not ported yet" else reason
                     waitingByReason[label] = (waitingByReason[label] ?: 0) + 1
-                    diverge(touchedDbs)
+                    if (label == "not ported yet") notPorted.add(jobj("step" to index, "kind" to kind, "op" to op, "group" to group,
+                        "feature" to unported.first().strOrNull("feature")))
+                    diverge(touchedDbs, cause)
                     divergedFiles.addAll(touchedFiles)
                     // the reference's device clock moved its in-memory high-water mark in this step; this server's did not
                     divergedFiles.add("clock.json")
-                    if (character != null && unported.isNotEmpty()) divergedCharacters.add(character)
-                    if (connId != null) divergedConns.add(connId)
+                    if (character != null && unported.isNotEmpty()) { divergedCharacters.add(character); characterCause.putIfAbsent(character, cause) }
+                    if (connId != null) { divergedConns.add(connId); connCause.putIfAbsent(connId, cause) }
                     continue
                 }
                 compared++
@@ -320,6 +347,13 @@ class RecordingRunner(
                         }
                         val closed = (step["closed"] as? JBool)?.value ?: false
                         if (closed != conn!!.session.closed) fail("connection closed", "recorded" to closed, "closed" to conn.session.closed)
+                    }
+                    "admin" -> {
+                        val recorded = maskSqliteBytes(step.obj("outcome"))
+                        val outcome = adminOutcome?.let { maskSqliteBytes(it) }
+                        if (outcome == null || Json.canonical(recorded) != Json.canonical(outcome)) {
+                            fail("admin outcome", "recorded" to Json.canonical(recorded).take(600), "outcome" to outcome?.let { Json.canonical(it).take(600) })
+                        }
                     }
                     "http" -> {
                         val status = step.long("status").toInt()
@@ -356,10 +390,10 @@ class RecordingRunner(
                         stepFailed = true
                     } else files.pass()
                 }
-                if (differing.isNotEmpty()) { diverge(differing); stepFailed = true }
+                if (differing.isNotEmpty()) { diverge(differing, "failed step $index"); stepFailed = true }
                 if (stepFailed) {
-                    if (character != null) divergedCharacters.add(character)
-                    if (connId != null) divergedConns.add(connId)
+                    if (character != null) { divergedCharacters.add(character); characterCause.putIfAbsent(character, "failed step $index") }
+                    if (connId != null) { divergedConns.add(connId); connCause.putIfAbsent(connId, "failed step $index") }
                 } else replies.pass()
             }
         } finally {
@@ -382,7 +416,8 @@ class RecordingRunner(
             "entropy" to entropy.json(), "excluded_differences" to excludedDifferences,
             "waiting" to jobj("steps" to waitingByGroup.values.sum(),
                 "by_port_group" to JObj(LinkedHashMap(waitingByGroup.toSortedMap().mapValues { JInt(it.value) })),
-                "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) }))),
+                "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) })), "not_ported" to notPorted,
+                "by_cause_group" to JObj(LinkedHashMap(waitingByCause.toSortedMap().mapValues { JInt(it.value) }))),
             "final_fingerprint_equal" to finalCheck, "passed" to allPassed)
     }
 
@@ -438,6 +473,75 @@ class RecordingRunner(
      * The root's files as the recorder keeps them: `manifest.json` / `clock.json` parsed; `trash/`, `auto-backups/` and
      * `exports/` as {name: logical content} ([contentOf]).
      */
+    /**
+     * A backup manifest's raw database sizes and hashes depend on the SQLite library that wrote the pages (header
+     * bytes), not on the content; the backups themselves are compared by their tables. Masked in both outcomes.
+     */
+    private fun maskSqliteBytes(value: JValue): JObj = mask(value.deepCopyJson()) as JObj
+
+    private fun JValue.deepCopyJson(): JValue = Json.loads(Json.dumps(this))
+
+    private fun mask(value: JValue): JValue {
+        when (value) {
+            is JObj -> {
+                if ((value["path"] as? JStr)?.value?.endsWith(".sqlite3") == true) { value.remove("bytes"); value.remove("sha256") }
+                value.values.forEach { mask(it) }
+            }
+            is JArr -> value.forEach { mask(it) }
+            else -> {}
+        }
+        return value
+    }
+
+    /**
+     * One save-management operation on the stopped service's data root, called as the recorder calls the reference
+     * (backup targets and restore sources under `<root>/exports/`); the outcome with the root path written `<root>`.
+     */
+    private fun admin(root: Path, operation: String, args: JObj, log: ServiceLog): JObj {
+        val dataRoot = DataRoot(root, driver).open()
+        dataRoot.lock.acquire()
+        try {
+            val exports = root.resolve("exports")
+            val result: JValue = try {
+                when (operation) {
+                    "backup_full" -> {
+                        Files.createDirectories(exports)
+                        val (path, manifest) = SaveManagement.backupFull(dataRoot, exports.resolve(args.str("file")), driver, null)
+                        jarr(path.toString(), manifest)
+                    }
+                    "backup_character" -> {
+                        Files.createDirectories(exports)
+                        val (path, manifest) = SaveManagement.backupCharacter(dataRoot, args.str("character_id"), exports.resolve(args.str("file")), driver, null)
+                        jarr(path.toString(), manifest)
+                    }
+                    "restore_full" -> SaveManagement.restoreFull(dataRoot, exports.resolve(args.str("file")), driver, null)
+                    "restore_character" -> SaveManagement.restoreCharacter(dataRoot, exports.resolve(args.str("file")), driver, null, newName = args.strOrNull("new_name"))
+                    "delete_character" -> SaveManagement.deleteCharacter(dataRoot, args.str("character_id"), driver, null,
+                        reason = args.strOrNull("reason") ?: "Deleted by its owner")
+                    "list_trash" -> jvalue(SaveManagement.listTrash(dataRoot))
+                    "empty_trash" -> jvalue(SaveManagement.emptyTrash(dataRoot, args.strOrNull("confirm")))
+                    "reset" -> SaveManagement.reset(dataRoot, args.strOrNull("confirm"), driver, null)
+                    else -> {
+                        log.log("not_implemented", "service" to "admin", "feature" to "save management: $operation")
+                        return jobj("ok" to false, "error" to "NotImplemented", "message" to operation)
+                    }
+                }
+            } catch (e: IllegalArgumentException) {
+                val type = when (e) {
+                    is BackupError, is io.github.okexodus.openknights.server.store.DataRootError -> e.javaClass.simpleName
+                    is io.github.okexodus.openknights.server.game.FreshProfile.CreationRejected -> "CreationRejected"
+                    else -> "ValueError"
+                }
+                return jobj("ok" to false, "error" to type, "message" to (e.message ?: ""))
+            }
+            val quotedRoot = Json.dumps(JStr(root.toString()))
+            val text = Json.dumps(result).replace(quotedRoot.substring(1, quotedRoot.length - 1), "<root>")
+            return jobj("ok" to true, "result" to Json.loads(text))
+        } finally {
+            dataRoot.lock.release()
+        }
+    }
+
     private fun rootFiles(root: Path): Map<String, JValue> {
         val out = LinkedHashMap<String, JValue>()
         for (name in listOf("manifest.json", "clock.json")) {
