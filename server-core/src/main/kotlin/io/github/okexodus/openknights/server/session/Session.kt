@@ -32,15 +32,9 @@ import io.github.okexodus.openknights.server.game.Summon
 import io.github.okexodus.openknights.server.game.VipQuest
 import io.github.okexodus.openknights.server.game.WorldParticipants
 import io.github.okexodus.openknights.server.game.NotPorted
+import io.github.okexodus.openknights.server.game.TransactionPackets
 import io.github.okexodus.openknights.server.store.AuthenticationRejected
 import io.github.okexodus.openknights.server.store.StateStore
-
-/** Opcode 6: an int32 code; a nonzero code ends the client's waiting layer and shows text 8000000 + code. */
-object TransactionPackets {
-    const val INVALID_DATA = 102
-
-    fun errorPayload(code: Int): ByteArray = WireWriter().i32(code).bytes()
-}
 
 /**
  * One client connection (`snapshot_server.Session`, release mode). The login service answers the sign-in (C7683 →
