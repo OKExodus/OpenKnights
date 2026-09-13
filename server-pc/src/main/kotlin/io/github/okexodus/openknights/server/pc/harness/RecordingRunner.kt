@@ -116,6 +116,7 @@ class RecordingRunner(
         var excludedDifferences = 0
         val waitingByGroup = LinkedHashMap<String, Int>()
         val waitingByReason = LinkedHashMap<String, Int>()
+        val notPorted = JArr()          // the first-cause waits: which step and feature this server lacks
         var compared = 0
 
         // expected state: the baseline + every recorded change; divergence as described above
@@ -288,6 +289,8 @@ class RecordingRunner(
                     waitingByGroup[group] = (waitingByGroup[group] ?: 0) + 1
                     val label = if (reason.startsWith("not ported yet")) "not ported yet" else reason
                     waitingByReason[label] = (waitingByReason[label] ?: 0) + 1
+                    if (label == "not ported yet") notPorted.add(jobj("step" to index, "kind" to kind, "op" to op, "group" to group,
+                        "feature" to unported.first().strOrNull("feature")))
                     diverge(touchedDbs)
                     divergedFiles.addAll(touchedFiles)
                     // the reference's device clock moved its in-memory high-water mark in this step; this server's did not
@@ -327,9 +330,10 @@ class RecordingRunner(
                         if (closed != conn!!.session.closed) fail("connection closed", "recorded" to closed, "closed" to conn.session.closed)
                     }
                     "admin" -> {
-                        val recorded = step.obj("outcome")
-                        if (adminOutcome == null || Json.canonical(recorded) != Json.canonical(adminOutcome)) {
-                            fail("admin outcome", "recorded" to Json.canonical(recorded).take(600), "outcome" to adminOutcome?.let { Json.canonical(it).take(600) })
+                        val recorded = maskSqliteBytes(step.obj("outcome"))
+                        val outcome = adminOutcome?.let { maskSqliteBytes(it) }
+                        if (outcome == null || Json.canonical(recorded) != Json.canonical(outcome)) {
+                            fail("admin outcome", "recorded" to Json.canonical(recorded).take(600), "outcome" to outcome?.let { Json.canonical(it).take(600) })
                         }
                     }
                     "http" -> {
@@ -393,7 +397,7 @@ class RecordingRunner(
             "entropy" to entropy.json(), "excluded_differences" to excludedDifferences,
             "waiting" to jobj("steps" to waitingByGroup.values.sum(),
                 "by_port_group" to JObj(LinkedHashMap(waitingByGroup.toSortedMap().mapValues { JInt(it.value) })),
-                "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) }))),
+                "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) })), "not_ported" to notPorted),
             "final_fingerprint_equal" to finalCheck, "passed" to allPassed)
     }
 
@@ -449,6 +453,26 @@ class RecordingRunner(
      * The root's files as the recorder keeps them: `manifest.json` / `clock.json` parsed; `trash/`, `auto-backups/` and
      * `exports/` as {name: logical content} ([contentOf]).
      */
+    /**
+     * A backup manifest's raw database sizes and hashes depend on the SQLite library that wrote the pages (header
+     * bytes), not on the content; the backups themselves are compared by their tables. Masked in both outcomes.
+     */
+    private fun maskSqliteBytes(value: JValue): JObj = mask(value.deepCopyJson()) as JObj
+
+    private fun JValue.deepCopyJson(): JValue = Json.loads(Json.dumps(this))
+
+    private fun mask(value: JValue): JValue {
+        when (value) {
+            is JObj -> {
+                if ((value["path"] as? JStr)?.value?.endsWith(".sqlite3") == true) { value.remove("bytes"); value.remove("sha256") }
+                value.values.forEach { mask(it) }
+            }
+            is JArr -> value.forEach { mask(it) }
+            else -> {}
+        }
+        return value
+    }
+
     /**
      * One save-management operation on the stopped service's data root, called as the recorder calls the reference
      * (backup targets and restore sources under `<root>/exports/`); the outcome with the root path written `<root>`.

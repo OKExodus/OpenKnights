@@ -45,7 +45,8 @@ object VipQuest {
         val kind1 = row.long("mission1_kind")
         val kind2 = row.long("mission2_kind")
         val ok1 = when (kind1) {
-            1L -> ((view.rechargeLedger as? JObj)?.get("transactions") as? io.github.okexodus.openknights.exact.JArr)?.isNotEmpty() == true
+            // `bool((recharge_ledger or {}).get("transactions"))`: the ledger keeps a count
+            1L -> Py.truthy((view.rechargeLedger.takeIf { Py.truthy(it) } as? JObj)?.get("transactions"))
             2L -> vip >= row.long("mission1_value")
             else -> kind1 == 0L
         }

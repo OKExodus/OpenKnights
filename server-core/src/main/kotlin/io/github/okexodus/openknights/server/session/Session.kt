@@ -20,6 +20,17 @@ import io.github.okexodus.openknights.server.game.SecondaryTeam
 import io.github.okexodus.openknights.server.game.SweepFeatures
 import io.github.okexodus.openknights.server.game.SystemSeeds
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.server.game.AltTeam
+import io.github.okexodus.openknights.server.game.Claims
+import io.github.okexodus.openknights.server.game.DailyRoutes
+import io.github.okexodus.openknights.server.game.Goals
+import io.github.okexodus.openknights.server.game.Py
+import io.github.okexodus.openknights.server.game.Recharge
+import io.github.okexodus.openknights.server.game.Shops
+import io.github.okexodus.openknights.server.game.Summon
+import io.github.okexodus.openknights.server.game.VipQuest
+import io.github.okexodus.openknights.server.game.WorldParticipants
 import io.github.okexodus.openknights.server.game.NotPorted
 import io.github.okexodus.openknights.server.store.AuthenticationRejected
 import io.github.okexodus.openknights.server.store.StateStore
@@ -268,17 +279,82 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
 
     private fun sweepEnabled(): Boolean = stateStore != null && characterId != null && deploymentPolicy() != null
 
-    /** Before the S18: a new day clears the VIP daily-reward flag, a new VIP level sets the buy counts. */
+    /**
+     * Before the S18: a new day clears the VIP daily-reward flag and a new VIP level sets the AP / Energy buy counts.
+     * One audited revision, only when needed.
+     */
     private fun vipDailyReset(current: StateStore.Current): StateStore.Current {
-        deploymentPolicy() ?: return current
-        if (current.state.obj("subsystems")["vip"].let { it == null || it == io.github.okexodus.openknights.exact.JNull }) return current
-        throw NotPorted("claims vip daily reset")
+        val inputs = service.inputs
+        val policy = deploymentPolicy()
+        if (policy == null || current.state.obj("subsystems")["vip"].let { it == null || it == io.github.okexodus.openknights.exact.JNull }) return current
+        val now = service.clock.now()
+        return try {
+            if (Claims.vipResetNeeded(current, inputs, now) == null && !VipQuest.tailNeedsUpdate(current, inputs)) return current
+            val (result, plan) = stateStore!!.acquisitionTransaction("vip_daily_reset", characterId!!, policy, inputs, "local-service",
+                "Daily VIP reset before the login S18", detailExtra = jobj("now_epoch" to now, "day_clock" to "service_utc")) { owned, cur ->
+                Claims.planVipReset(owned, inputs, cur, now)
+            }
+            log("transaction_committed", "action" to "vip_daily_reset", "character_id" to characterId, "revision" to result["revision"],
+                "vip_block" to plan["vip_block_after"])
+            stateStore!!.read()
+        } catch (e: Exception) {      // a login must not fail on this side system
+            guard(e)
+            log("vip_daily_reset_error", "character_id" to characterId, "error" to described(e))
+            current
+        }
     }
 
-    /** Before the S18: store what a new day starts (daily systems). */
+    /**
+     * Before the S18: store what a new day starts (timed-gift chain start, the day's bounty board, the salary flag …);
+     * one audited revision only when something must change.
+     */
     private fun dailyLoginRefresh(current: StateStore.Current): StateStore.Current {
-        deploymentPolicy() ?: return current
-        throw NotPorted("daily_routes login refresh")
+        val inputs = service.inputs
+        val policy = deploymentPolicy() ?: return current
+        val now = service.clock.now()
+        return try {
+            val seeds = seeds(current)
+            val served = servedTime(current, now)
+            var social: JObj? = null
+            if (service.world != null) social = SocialRoutes.friendsRefreshData(current, socialContext(clockOffsetOf(current)), now)
+            // A quest document without its claimed list is backfilled once from the save's quest_claim history.
+            val quests = current.document("quest_state")
+            val questClaims = if (quests == null || quests == io.github.okexodus.openknights.exact.JNull || (quests as JObj)["claimed"] == null) {
+                stateStore!!.historyValues("quest_claim", "$.request.quest").map { (it as Number).toLong() }
+            } else null
+            if (!DailyRoutes.refreshNeeded(current, seeds, inputs, now, characterId!!, served, social, questClaims)) return current
+            val (result, plan) = stateStore!!.acquisitionTransaction("daily_login_refresh", characterId!!, policy, inputs, "local-service",
+                "Daily systems: new-day state before the login S18",
+                detailExtra = jobj("now_epoch" to now, "served_time" to served, "day_clock" to "service_local")) { owned, cur ->
+                DailyRoutes.refreshPlan(owned, cur, seeds, inputs, now, characterId!!, served, social, questClaims)
+            }
+            log("transaction_committed", "action" to "daily_login_refresh", "character_id" to characterId, "revision" to result["revision"],
+                "changed" to plan.data.keys.filter { it.endsWith("_after") || it == "title_reward_flag" }.sortedWith(io.github.okexodus.openknights.exact.Json.CodePointOrder))
+            stateStore!!.read()
+        } catch (e: Exception) {      // a login must not fail on this side system
+            guard(e)
+            log("daily_login_refresh_error", "character_id" to characterId, "error" to described(e))
+            current
+        }
+    }
+
+    private fun worldContext(): DailyRoutes.WorldContext =
+        DailyRoutes.WorldContext(service.world, service.auth.registry, service.powerOf, emptyList()) { ctx, current ->
+            val world = ctx.world
+            val registry = ctx.registry
+            if (world == null || registry == null) {
+                if (current == null) emptyList()
+                else listOf(WorldParticipants.characterParticipant(jobj("character_id" to null, "created_at_utc" to ""), current, ctx.powerOf))
+            } else WorldParticipants.worldParticipants(world, registry, ctx.powerOf)
+        }
+
+    /** Owned login burst frames of the daily / social systems; never fails a login. */
+    private fun dailyLoginFrames(current: StateStore.Current, now: Long): List<Frame> = try {
+        DailyRoutes.loginBurstFrames(current, seeds(current), service.inputs, now, servedTime(current, now))
+    } catch (e: Exception) {
+        guard(e)
+        log("daily_login_frames_error", "character_id" to characterId, "error" to described(e))
+        emptyList()
     }
 
     private fun seeds(current: StateStore.Current) = SystemSeeds.seedsFor(service.freshSystems, current)
@@ -330,10 +406,32 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         }
     }
 
-    /** The Goals' login revision; returns (current, [S3108] or []). */
-    private fun goalsLogin(current: StateStore.Current): Pair<StateStore.Current, List<Frame>> {
-        if (!sweepEnabled()) return current to emptyList()
-        throw NotPorted("goals login")
+    /** Before the startup: the `goal_refresh` revision when something changes; (current, [S3108] or []). */
+    private fun goalsLogin(initial: StateStore.Current): Pair<StateStore.Current, List<Frame>> {
+        if (!sweepEnabled()) return initial to emptyList()
+        var current = initial
+        val inputs = service.inputs
+        val now = service.clock.now()
+        val seeds = seeds(current)
+        val power = service.powerOf
+        var payload: ByteArray?
+        try {
+            val (result, plan) = stateStore!!.acquisitionTransaction("goal_refresh", characterId!!, deploymentPolicy(), inputs, "local-service",
+                "Goals: seed / due days before the login", detailExtra = jobj("now_epoch" to now, "contract" to "docs/GOALS_CONTRACT.md")) { owned, cur ->
+                Goals.planLogin(owned, cur, seeds, inputs, now, power)
+            }
+            payload = (plan["s3108_hex"] as io.github.okexodus.openknights.exact.JStr).value.hexBytes()
+            current = stateStore!!.read()
+            log("transaction_committed", "action" to "goal_refresh", "character_id" to characterId, "revision" to result["revision"],
+                "seeded" to plan["seeded"], "changed_rows" to plan["changed_rows"])
+        } catch (unchanged: Goals.Unchanged) {
+            payload = unchanged.payload
+        } catch (e: Exception) {      // a login must not fail on this side system
+            guard(e)
+            log("goals_login_error", "character_id" to characterId, "error" to described(e))
+            return current to emptyList()
+        }
+        return current to (if (payload == null) emptyList() else listOf(Goals.S_LIST to payload))
     }
 
     /** S2880 (totems) and S548 (album) in the startup burst where live has them; never fails a login. */
@@ -354,10 +452,19 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return placed
     }
 
-    /** S3745 right after the S18 for an in-game-created character: its alternate team. */
+    /** S3745 right after the S18 (the live position) for an in-game-created character: its alternate team. */
     private fun altTeamStartup(initial: List<Frame>, current: StateStore.Current): List<Frame> {
         if (initial.any { it.first == 3745 }) return initial
-        throw NotPorted("alt_team startup")
+        val payload = try {
+            AltTeam.infoPayload(current, AltTeam.openRows(service.inputs))
+        } catch (e: Exception) {
+            guard(e)
+            log("alt_team_startup_skipped", "character_id" to characterId, "error" to described(e))
+            return initial
+        }
+        val index = initial.indexOfFirst { it.first == 18 }
+        if (index < 0) return initial
+        return initial.subList(0, index + 1) + listOf(3745 to payload) + initial.subList(index + 1, initial.size)
     }
 
     /** S2240 for the owned leader hero, generated from the character's current heroes. */
@@ -381,9 +488,49 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return listOf(2240 to HeroEvolution.leaderInfoPayload(info.long("uid"), info.long("progress_key")))
     }
 
+    /** Owned login frames of the acquisition systems (live: S354 free-draw timers in the login burst). */
     private fun acquisitionLoginFrames(): List<Frame> {
         if (stateStore == null || characterId == null || deploymentPolicy() == null) return emptyList()
-        throw NotPorted("acquisition login frames")
+        val inputs = service.inputs
+        val current: StateStore.Current
+        val now: Long
+        val remaining: List<Long>
+        try {
+            current = stateStore!!.read()
+            now = service.clock.now()
+            val stored = current.document(StateStore.SUMMON_STATE)
+            val document = if (Py.truthy(stored)) stored as JObj else Summon.initialDocument(current, now)
+            remaining = Summon.freeCdRemaining(document, now)
+        } catch (e: Exception) {      // a login must not fail on this side system
+            guard(e)
+            log("acquisition_login_frames_error", "character_id" to characterId, "error" to described(e))
+            return emptyList()
+        }
+        log("summon_free_cd_served", "character_id" to characterId, "remaining" to remaining,
+            "stored" to (current.document(StateStore.SUMMON_STATE).let { it != null && it != io.github.okexodus.openknights.exact.JNull }))
+        val frames = mutableListOf<Frame>(Summon.S_FREE_CD to Summon.freeCdPayload(remaining[0], remaining[1]))
+        if (Recharge.hasCharged(current.state, current.document("recharge_ledger"))) {
+            // a character that has topped up gets S1248 00 at login: the "2x Bonus" badges stay off (labeled policy)
+            frames.add(Recharge.S_CHARGED to byteArrayOf(0))
+        }
+        try {
+            val vipBlock = current.state.obj("subsystems")["vip"]
+            if (vipBlock != null && vipBlock != io.github.okexodus.openknights.exact.JNull) {
+                frames += Claims.buyCountFrames((vipBlock as JObj).arr("wire_values"), inputs)
+            }
+            frames += dailyLoginFrames(current, now)
+            frames.add(Claims.S_EVENT_UPDATE to Claims.cardStatePayload(current.document("month_cards"), Shops.dayOf(now)))
+        } catch (e: Exception) {
+            guard(e)
+            log("claims_login_frames_error", "character_id" to characterId, "error" to described(e))
+        }
+        val catalog = service.acquisitionCatalog
+        if (catalog != null && Py.truthy(catalog["lucky"])) {
+            // Live: the Lucky Shop S3170 arrives unsolicited in every login burst.
+            val (entries, left, _) = Shops.luckyView(catalog, current.document("lucky_state"), now, poolPolicy = service.policyAllows("lucky_refresh"))
+            frames.add(Shops.S_LUCKY_INFO to Shops.encodeLuckyInfo(entries, left, left, catalog.obj("lucky").long("flag")))
+        }
+        return frames
     }
 
     /** After-query login frames of the sweep features (S1824 temporary VIP, S3904); never fails a login. */
@@ -399,9 +546,19 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         }
     }
 
+    /** Replies to the initialization queries the daily systems own (S320, S322, S2720, S1154, S1152, S3296). */
     private fun dailyQueryFrames(): List<Frame> {
         if (stateStore == null || characterId == null || deploymentPolicy() == null) return emptyList()
-        throw NotPorted("daily_routes login query frames")
+        return try {
+            val current = stateStore!!.read()
+            val seeds = seeds(current)
+            val now = service.clock.now()
+            DailyRoutes.loginQueryFrames(current, seeds, service.inputs, now, worldContext(), characterId!!, trainingPage?.toLong())
+        } catch (e: Exception) {
+            guard(e)
+            log("daily_query_frames_error", "character_id" to characterId, "error" to described(e))
+            emptyList()
+        }
     }
 
     private fun socialContext(clockOffset: Long? = null): SocialRoutes.SocialContext =
@@ -635,8 +792,22 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             log("rejected_daily", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
             return listOf(6 to TransactionPackets.errorPayload(code))
         }
-        if (opcode in Routes.DAILY_QUERIES) group(opcode, "daily query reply")
-        group(opcode, "daily system")
+        if (opcode !in DailyRoutes.QUERIES) group(opcode, "daily system")
+        val packets = try {
+            val now = service.clock.now()
+            val current = stateStore!!.read()
+            DailyRoutes.queryReply(opcode, payload, current, seeds(current), service.inputs, now, worldContext(), characterId!!)
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? Acquisition.Rejected)?.code ?: 102
+            log("rejected_daily", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("daily_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("daily_query_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first })
+        return packets
     }
 
     /** Social requests (guild, friends, chat, mail); only the three initialization queries are ported yet. */

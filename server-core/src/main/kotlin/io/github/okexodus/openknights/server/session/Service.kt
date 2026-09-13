@@ -80,6 +80,19 @@ class Service(
     /** The release data's day-zero seed frames of the fresh systems (`snapshot.fresh_systems`). */
     val freshSystems: Map<Int, List<ByteArray>>? by lazy { releaseData?.let { io.github.okexodus.openknights.server.game.SystemSeeds.freshSystems(it) } }
 
+    /** The acquisition catalog (`snapshot.acquisition_catalog`: release-data/shop-catalog.json). */
+    val acquisitionCatalog: JObj? by lazy { releaseData?.let { io.github.okexodus.openknights.server.game.Shops.releaseCatalog(it) } }
+
+    /** The labeled local RNG policy document (`snapshot.acquisition_policy`, bound to every character in release). */
+    var acquisitionPolicy: JObj? = null
+
+    /** `acquisition.policy_allows(policy, key)`: an optional draw the policy names with its one allowed value. */
+    fun policyAllows(key: String): Boolean {
+        val allowed = mapOf("lucky_refresh" to "uniform_over_observed_pools", "fuse_roll" to "displayed_rate_plus_luck_v1")
+        val document = acquisitionPolicy ?: return false
+        return document.strOrNull(key) == allowed.getValue(key)
+    }
+
     /** The evolution rows (`snapshot.evolution_inputs` / `leader_inputs`). */
     val evolutionInputs: io.github.okexodus.openknights.server.game.EvolutionInputs by lazy { io.github.okexodus.openknights.server.game.EvolutionInputs(tables) }
 
@@ -165,11 +178,34 @@ class Service(
                 io.github.okexodus.openknights.server.game.FreshProfile.freshStartup(current, owned.characterId, clock.s14())
             }
             val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
+            service.acquisitionPolicy = checkAcquisitionPolicy(data.document("policies/acquisition-rng.json"))
+            io.github.okexodus.openknights.server.game.Events.setActive(io.github.okexodus.openknights.server.game.Events.releaseEvents(data))
+            service.acquisitionCatalog
+            service.freshSystems
             service.powerOf = io.github.okexodus.openknights.server.game.BattleStats.participantPower(service.freshSystems, service.evolutionInputs, service.inputs)
             world?.powerOf = service.powerOf
             val factory = ReleaseFactory(service, root, generation, data.freshTemplate())
             service.characterFactory = { accountId, name, gender, starter, actor -> factory.create(accountId, name, gender, starter, actor) }
             return service
+        }
+
+        /** `check_acquisition_policy`: the labeled local RNG policy document (never presented as recovered odds). */
+        fun checkAcquisitionPolicy(document: JObj): JObj {
+            if (document.strOrNull("profile") != "acquisition_rng_policy_v1" || document.strOrNull("class") != "preservation_policy_rng") {
+                throw IllegalArgumentException("Acquisition policy must be profile acquisition_rng_policy_v1, class preservation_policy_rng")
+            }
+            // release policies are bound to every character (scope all_characters or listed with the loaded set)
+            if (document.strOrNull("scope") !in setOf("all_characters", "listed_characters")) {
+                throw IllegalArgumentException("Acquisition policy scope must be all_characters or listed_characters")
+            }
+            if (listOf(document["box_draw"], document["summon_draw"], document["roulette_draw"]).map { (it as? io.github.okexodus.openknights.exact.JStr)?.value } !=
+                listOf("weighted_row_per_slot", "configured_weights_v1", "uniform_over_evidenced_slots")) {
+                throw IllegalArgumentException("Acquisition policy draws must be weighted_row_per_slot / configured_weights_v1 / uniform_over_evidenced_slots")
+            }
+            for ((key, value) in listOf("lucky_refresh" to "uniform_over_observed_pools", "fuse_roll" to "displayed_rate_plus_luck_v1")) {
+                if (key in document && document.strOrNull(key) != value) throw IllegalArgumentException("Acquisition policy $key must be $value")
+            }
+            return document
         }
 
         /** The unborn generation's registry with the implicit device owner (never a world). */
