@@ -68,7 +68,26 @@ object Publish {
 
     /** A temporary file next to `target` (`.<name>.<tag>-<random><suffix>`), like the reference's mkstemp. */
     fun temporaryBeside(target: Path, tag: String, suffix: String): Path =
-        Files.createTempFile(target.toAbsolutePath().parent, ".${target.fileName}.$tag-", suffix)
+        createTemporary(target.toAbsolutePath().parent, ".${target.fileName}.$tag-", suffix)
+
+    private const val NAME_CHARACTERS = "abcdefghijklmnopqrstuvwxyz0123456789_"
+
+    /**
+     * A new empty file `prefix + 8 random characters + suffix` in [folder] (the reference's `tempfile.mkstemp` names).
+     * Short on purpose: SQLite opens paths only up to the platform's classic length limit, and the JDK's own
+     * temporary names add up to 20 digits.
+     */
+    fun createTemporary(folder: Path, prefix: String, suffix: String): Path {
+        val random = java.util.concurrent.ThreadLocalRandom.current()
+        repeat(100) {
+            val name = buildString { append(prefix); repeat(8) { append(NAME_CHARACTERS[random.nextInt(NAME_CHARACTERS.length)]) }; append(suffix) }
+            try {
+                return Files.createFile(folder.resolve(name))
+            } catch (_: java.nio.file.FileAlreadyExistsException) {
+            }
+        }
+        throw java.nio.file.FileAlreadyExistsException(folder.resolve(prefix + "*" + suffix).toString())
+    }
 
     /**
      * Replace a small JSON file atomically: `json.dumps(document, indent=1, sort_keys=True) + "\n"` written in text
@@ -76,7 +95,7 @@ object Publish {
      */
     fun writeJsonAtomic(path: Path, document: io.github.okexodus.openknights.exact.JValue) {
         val text = (Json.dumps(document, sortKeys = true, indent = 1) + "\n").replace("\n", System.lineSeparator())
-        val temporary = Files.createTempFile(path.toAbsolutePath().parent, ".${path.fileName}.", ".tmp")
+        val temporary = createTemporary(path.toAbsolutePath().parent, ".${path.fileName}.", ".tmp")
         try {
             Files.write(temporary, text.toByteArray(Charsets.UTF_8))
             fsyncFile(temporary)

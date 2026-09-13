@@ -71,27 +71,41 @@ class Service(
     /** Whether the in-game list offers "Create a character" (always in release mode). */
     var creationEnabled = true
 
-    /** Character creation (world birth on the first); null until the character-creation system is ported. */
-    var characterFactory: ((accountId: String, name: String, gender: Int, starter: Long) -> String)? = null
+    /** Character creation (world birth on the first): returns the created character (`character_id`, …). */
+    var characterFactory: ((accountId: String, name: String, gender: Int, starter: Long, actor: String) -> JObj)? = null
+
+    /** The universal Power of a character save (`snapshot.power_of`), bound into the world's participant lists. */
+    var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
 
     fun settle(reason: String) {
         val now = clock.now()
         settleHooks.forEach { it(reason, now) }
     }
 
-    /** Frames to every open, initialised game session of a participant (the reference's `push_to_role`). */
+    /**
+     * Frames to every open, initialised game session of a participant (the reference's `push_to_role`); a builder
+     * makes the frames against each recipient's own clock offset (times shown by the client).
+     */
     @Synchronized
-    fun pushToRole(role: Long, frames: List<Pair<Int, ByteArray>>, origin: Session? = null): Int {
+    fun pushToRole(role: Long, origin: Session? = null, frames: (clockOffset: Long) -> List<Pair<Int, ByteArray>>): Int {
         var delivered = 0
+        var sent: List<Pair<Int, ByteArray>> = emptyList()
         for ((session, writer) in liveGameSessions.entries.toList()) {
-            if (session === origin || session.closed || !session.queries.complete || session.role != role) continue
-            writer(frames)
+            if (session === origin || session.closed || !session.queriesSent) continue
+            if (session.socialRole != role) continue
+            sent = frames(session.clockOffset)
+            writer(sent)
             delivered++
         }
-        if (delivered > 0) log.log("response_batch", "service" to "game", "opcodes" to frames.map { it.first }, "pushed" to "social",
-            "to_role" to role, "bytes" to frames.sumOf { it.second.size + 4 })
+        if (delivered > 0) log.log("response_batch", "service" to "game", "opcodes" to sent.map { it.first }, "pushed" to "social",
+            "to_role" to role, "bytes" to sent.sumOf { it.second.size + 4 })
         return delivered
     }
+
+    fun pushToRole(role: Long, frames: List<Pair<Int, ByteArray>>, origin: Session? = null): Int = pushToRole(role, origin) { frames }
+
+    /** Wire role ids of the characters with an open, initialized game session (`online_roles`), sorted. */
+    fun onlineRoles(): List<Long> = liveGameSessions.keys.mapNotNull { s -> s.socialRole?.takeIf { s.queriesSent && !s.closed } }.toSortedSet().toList()
 
     companion object {
         const val OWNER = "owner"
@@ -104,6 +118,7 @@ class Service(
         fun release(driver: SqlDriver, dataRoot: Path, apk: Path, releaseData: Path, log: ServiceLog, loaded: GameTables? = null): Service {
             val data = ReleaseData(releaseData)
             val tables = loaded ?: GameTables(ApkTables(apk))
+            data.tables = tables
             log.log("release_apk_bound", "label" to "Pocket Knights 4.4.9", "tables" to tables.names().size,
                 "note" to "game tables from the player's APK only; no download overlay (D1)")
             val root = DataRoot(dataRoot, driver).open()
@@ -129,7 +144,10 @@ class Service(
             val select = CharacterSelect(data.offers(), CharacterSelect.labeledRowIds(tables), texts.str("announcement"), texts.str("create_row"))
             log.log("release_data_bound", "files" to data.manifest.obj("files").size, "gate" to data.gate().str("routes"),
                 "born" to root.born, "generation" to generation.fileName.toString(), "safety_copies" to copies)
-            return Service(driver, log, clock, tables, data, auth, world, select, root, generation)
+            val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
+            val factory = ReleaseFactory(service, root, generation, data.freshTemplate())
+            service.characterFactory = { accountId, name, gender, starter, actor -> factory.create(accountId, name, gender, starter, actor) }
+            return service
         }
 
         /** The unborn generation's registry with the implicit device owner (never a world). */
