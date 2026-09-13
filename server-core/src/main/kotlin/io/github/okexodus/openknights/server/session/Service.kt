@@ -147,6 +147,17 @@ class Service(
             val select = CharacterSelect(data.offers(), CharacterSelect.labeledRowIds(tables), texts.str("announcement"), texts.str("create_row"))
             log.log("release_data_bound", "files" to data.manifest.obj("files").size, "gate" to data.gate().str("routes"),
                 "born" to root.born, "generation" to generation.fileName.toString(), "safety_copies" to copies)
+            // Refuse an inconsistent root before accepting any client: every registered character is a fresh
+            // character of this world with its own wire id.
+            for (owned in registry.listCharacters()) {
+                val current = registry.resolveStateStore(owned.characterId, owned.accountId).read()
+                val profile = current.characterProfile ?: throw IllegalArgumentException("Release mode serves only characters created in release mode")
+                val member = world?.member(owned.characterId)
+                if (member == null || member.long("wire_account_id") != profile.obj("document").long("wire_account_id")) {
+                    throw IllegalArgumentException("A character of the data root is not an active member of its world")
+                }
+                io.github.okexodus.openknights.server.game.FreshProfile.freshStartup(current, owned.characterId, clock.s14())
+            }
             val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
             val factory = ReleaseFactory(service, root, generation, data.freshTemplate())
             service.characterFactory = { accountId, name, gender, starter, actor -> factory.create(accountId, name, gender, starter, actor) }
