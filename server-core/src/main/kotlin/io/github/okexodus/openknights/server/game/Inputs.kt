@@ -240,7 +240,14 @@ open class AcquisitionInputs(val tables: GameTables) {
     }
 
     /** `property_value_inputs(kind, template, grade)`: the gear / jewelry evolve inputs, or null when they cannot be formed. */
-    open fun propertyValueInputs(kind: String, template: Long, grade: Long): JObj? = throw NotPorted("pk_equip_evolve_contract inputs")
+    open fun propertyValueInputs(kind: String, template: Long, grade: Long): JObj? = try {
+        if (kind == "gear") PkEquipEvolveContract.gearEvolveInputs(tables, template, grade)
+        else PkEquipEvolveContract.jewelEvolveInputs(tables, template, grade)
+    } catch (e: IllegalArgumentException) {
+        null            // the reference's ValueError (unknown template, random range, non-unique rows, atoi bound)
+    } catch (e: NoSuchElementException) {
+        null            // a missing table (a ValueError of the reference's catalog)
+    }
 
     private var rebornRowsCache: List<JObj>? = null
 
@@ -254,7 +261,8 @@ open class AcquisitionInputs(val tables: GameTables) {
     }.also { rebornRowsCache = it }
 
     /** The shared owned-hero stat model's inputs at a packed template (`pk_fortify_contract.hero_stat_inputs`). */
-    open fun heroStatInputs(template: Long): JObj = throw NotPorted("pk_fortify_contract.hero_stat_inputs")
+    open fun heroStatInputs(template: Long): JObj =
+        PkFortifyContract.heroStatInputs(tables, template).also { it["template"] = JInt(template) }
 
     /** viplv row of a VIP level: 104 Gold, 105 Diamonds, 202 item, 103 EXP (the first matching row). */
     fun vipDaily(level: Long): JObj? {
@@ -301,8 +309,89 @@ open class AcquisitionInputs(val tables: GameTables) {
         return (groups[PyValues.strip(group.toString())] ?: emptyList()).filter { it.first < grade }.sumOf { it.second }
     }
 
-    /** `battle_stat_tables()`: the stat model's config rows (docs of the reference, BATTLE_STATS.md section 2). */
-    open fun battleStatTables(): JObj = throw NotPorted("pk_acquisition_inputs.battle_stat_tables")
+    private var battleStatTablesCache: JObj? = null
+
+    /**
+     * `battle_stat_tables()`: the config rows read by the client's GetHeroAbility / GetBattleSlotAbility /
+     * HeroAddCombEffect, keyed and laid out as its loaders do: integers through C `atoi` (empty → 0, no bound), byte
+     * members cut to 8 bits, map key = col 101 with key 0 skipped and the FIRST row of a repeated key kept. Built once
+     * per instance; maps keyed by integers are objects whose keys are the decimal keys in first-occurrence order (the
+     * reference's dictionaries, as `json.dumps` writes them).
+     */
+    @Synchronized
+    open fun battleStatTables(): JObj {
+        battleStatTablesCache?.let { return it }
+
+        fun atoi(value: String?): Long {
+            var text = value ?: ""
+            var i = 0
+            while (i < text.length) { val cp = text.codePointAt(i); if (!io.github.okexodus.openknights.exact.PyText.isSpace(cp)) break; i += Character.charCount(cp) }
+            text = text.substring(i)
+            var sign = 1L
+            if (text.isNotEmpty() && (text[0] == '+' || text[0] == '-')) { sign = if (text[0] == '-') -1L else 1L; text = text.substring(1) }
+            var end = 0
+            while (end < text.length) { val cp = text.codePointAt(end); if (!io.github.okexodus.openknights.exact.PyText.isDigit(cp)) break; end += Character.charCount(cp) }
+            return if (end > 0) sign * PyValues.parseInt(text.substring(0, end)).longValueExact() else 0L
+        }
+
+        fun keyed(table: String, key: String = "101"): LinkedHashMap<Long, GameTable.Row> {
+            val out = LinkedHashMap<Long, GameTable.Row>()
+            for (f in rows(table)) {
+                val k = atoi(f.field(key)) and 0xFFFFFFFFL
+                if (k != 0L && k !in out) out[k] = f
+            }
+            return out
+        }
+
+        fun byte(value: String?, signed: Boolean = false): Long {
+            val b = atoi(value) and 0xFF
+            return if (signed && b > 127) b - 256 else b
+        }
+
+        fun n(f: GameTable.Row, c: Int): Long = atoi(f.field(c.toString()))
+        fun pairs(f: GameTable.Row, cols: List<Pair<Int, Int>>): JArr = JArr(cols.mapTo(ArrayList()) { (t, v) -> jarr(n(f, t), n(f, v)) })
+        fun <V> byKey(map: Map<Long, V>, value: (Long, V) -> JValue): JObj {
+            val out = JObj()
+            for ((k, f) in map) out[k.toString()] = value(k, f)
+            return out
+        }
+
+        val prop = JObj()
+        for (key in listOf(243, 4001, 4007)) {
+            val row = single("property", key)
+            prop[key.toString()] = if (row == null) io.github.okexodus.openknights.exact.JNull else JInt(atoi(row.field("102")))
+        }
+        val sixPairs = listOf(307 to 308, 310 to 311, 313 to 314, 316 to 317, 319 to 320, 322 to 323)
+        val jewelPairs = listOf(124 to 125, 126 to 127, 128 to 129, 130 to 131, 132 to 133, 134 to 135)
+        val secondary = LinkedHashMap<Long, JArr>()
+        for ((t, f) in keyed("fujiangshuxing", "102")) secondary[t] = jarr(t, n(f, 103))
+        val tables = jobj(
+            "title" to byKey(keyed("title")) { _, f -> jarr(n(f, 201), n(f, 202), n(f, 203)) },
+            "technology" to byKey(keyed("technology")) { _, f -> jarr(n(f, 106), n(f, 107)) },
+            "questmedal" to JArr(keyed("questmedal").entries.sortedBy { it.key }.mapTo(ArrayList()) { (k, f) ->
+                jarr(k, n(f, 301), n(f, 201), n(f, 202), n(f, 203), n(f, 204)) }),
+            "god_skill" to byKey(keyed("zhushenzhili")) { _, f -> jarr(n(f, 111), n(f, 112)) },
+            "property" to prop,
+            "totem" to byKey(keyed("totem")) { _, f ->
+                jobj("group" to n(f, 104), "stats" to JArr((0 until 4).mapTo(ArrayList()) { i -> jarr(n(f, 111 + 3 * i), n(f, 112 + 3 * i), n(f, 113 + 3 * i)) })) },
+            "totem_adv" to JArr(keyed("totem_jinhua").values.mapTo(ArrayList()) { f -> jarr(byte(f.field("102")), n(f, 104), n(f, 115)) }),
+            "zodiac" to byKey(keyed("zodiac")) { _, f -> jarr(n(f, 106), n(f, 107), n(f, 108)) },
+            "photo" to JArr(keyed("tujian").entries.mapTo(ArrayList()) { (k, f) ->
+                jarr(byte(f.field("102")), k, JArr((104 until 112).map { n(f, it) }.filter { it != 0L }.mapTo(ArrayList()) { JInt(it) }),
+                    pairs(f, listOf(112 to 113, 114 to 115, 116 to 117, 118 to 119))) }),
+            "equip" to byKey(keyed("equip")) { _, f -> jarr(n(f, 107), byte(f.field("400")), pairs(f, sixPairs)) },
+            "jewel" to byKey(keyed("jewelry")) { _, f -> jarr(n(f, 107), byte(f.field("105"), signed = true), pairs(f, jewelPairs)) },
+            "gem" to byKey(keyed("baoshi")) { _, f -> jarr(n(f, 103), n(f, 104)) },
+            "secondary_effect" to JArr(secondary.values.sortedWith(compareBy<JArr>({ it[0].long }, { it[1].long })).toMutableList<JValue>()),
+            "combo" to JArr(keyed("hero_zuhe").entries.sortedBy { it.key }.mapTo(ArrayList()) { (k, f) ->
+                jobj("key" to k, "enabled" to byte(f.field("103")), "hero" to n(f, 104),
+                    "partners" to JArr(listOf(105 to 106, 107 to 108, 109 to 110, 111 to 112).mapTo(ArrayList()) { (t, i) -> jarr(byte(f.field(t.toString())), n(f, i)) }),
+                    "bonuses" to pairs(f, listOf(113 to 114, 115 to 116, 117 to 118, 119 to 120, 121 to 122))) }),
+            "hero_class" to byKey(keyed("hero")) { _, f -> JInt(byte(f.field("103"))) },
+        )
+        battleStatTablesCache = tables
+        return tables
+    }
 }
 
 /** The daily / social systems' catalog inputs (`tools/pk_daily_inputs.py`), on top of the acquisition inputs. */
