@@ -99,6 +99,16 @@ class Service(
     /** The universal Power of a character save (`snapshot.power_of` = `battle_stats.participant_power(snapshot)`). */
     var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
 
+    /**
+     * The labeled local policies of the hero systems in their loaded shape (`ReleaseData.policy`; `configure_release`):
+     * evolution test tiers, item-Fortify bonus draws, Power Up draws, ordinary-Ascension materials. A session applies
+     * them through its bound-policy check.
+     */
+    var evolutionTestPolicy: JObj? = null
+    var fortifyBonusPolicy: JObj? = null
+    var powerUpPolicy: JObj? = null
+    var ascensionPolicy: JObj? = null
+
     fun settle(reason: String) {
         val now = clock.now()
         settleHooks.forEach { it(reason, now) }
@@ -179,6 +189,10 @@ class Service(
             }
             val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
             service.acquisitionPolicy = checkAcquisitionPolicy(data.document("policies/acquisition-rng.json"))
+            service.evolutionTestPolicy = data.policy("evolution")
+            service.fortifyBonusPolicy = data.policy("fortify-bonus")
+            service.powerUpPolicy = data.policy("power-up")
+            service.ascensionPolicy = data.policy("ascension")
             io.github.okexodus.openknights.server.game.Events.setActive(io.github.okexodus.openknights.server.game.Events.releaseEvents(data))
             service.acquisitionCatalog
             service.freshSystems

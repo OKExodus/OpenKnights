@@ -264,6 +264,30 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return FreshProfile.DeploymentPolicy(profile)
     }
 
+    /**
+     * A labeled local policy for this character (`_bound_policy`): the characters its document binds and every fresh
+     * character (operator decision 2026-09-12: the whole game is playable for the characters players create).
+     */
+    private fun boundPolicy(loaded: JObj?): JObj? {
+        if (loaded == null || loaded.isEmpty()) return null
+        val bound = loaded["characters"] as? io.github.okexodus.openknights.exact.JArr
+        if (bound != null && bound.any { (it as? io.github.okexodus.openknights.exact.JStr)?.value == characterId }) return loaded
+        val fresh = try { stateStore != null && stateStore!!.read().characterProfile != null } catch (e: Exception) { guard(e); false }
+        return if (fresh) loaded else null
+    }
+
+    /** The labeled local TEST policy (extended tiers, the third material slot, level gates). */
+    private fun evolutionTestPolicy() = boundPolicy(service.evolutionTestPolicy)
+
+    /** The labeled local item-Fortify bonus RNG policy. */
+    private fun fortifyBonusPolicy() = boundPolicy(service.fortifyBonusPolicy)
+
+    /** The labeled local Power Up RNG policy. */
+    private fun powerUpPolicy() = boundPolicy(service.powerUpPolicy)
+
+    /** The labeled local ordinary-Ascension (hero cards) policy. */
+    private fun ascensionPolicy() = boundPolicy(service.ascensionPolicy)
+
     private fun isFreshCharacter(): Boolean {
         freshCharacter?.let { return it }
         val fresh = try { stateStore?.read()?.characterProfile != null } catch (e: Exception) { guard(e); false }

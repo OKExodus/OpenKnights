@@ -50,6 +50,16 @@ class ReleaseData(directory: Path) {
 
     fun sha256(name: String): String = manifest.obj("files").obj(name).str("sha256")
 
+    /**
+     * A labeled local policy in its loaded shape (`policy`): `{document, path, sha256, all_characters, characters}`, bound
+     * to every character (`characters` is empty).
+     */
+    fun policy(name: String): JObj {
+        val file = "policies/$name.json"
+        return io.github.okexodus.openknights.exact.jobj("document" to document(file), "path" to label(file), "sha256" to sha256(file),
+            "all_characters" to true, "characters" to io.github.okexodus.openknights.exact.JArr())
+    }
+
     fun startupDefaults(): JObj = document("startup-defaults.json")
 
     /** The three starter templates the creation screens offer (fresh profile `offers`). */

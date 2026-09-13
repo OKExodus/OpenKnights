@@ -226,6 +226,9 @@ object FreshProfile {
         val sourcePath: String = "character_profile:${profile.obj("document").str("character_id")}"
         val sha256: String = profile.str("document_sha256")
         val document: JObj get() = profile.obj("document")
+        /** Heroes out exploring / mining: none for a fresh character (`exploration_uids` / `mining_uids` = ()). */
+        val explorationUids: List<Long> = emptyList()
+        val miningUids: List<Long> = emptyList()
 
         fun validateCurrent(current: StateStore.Current, characterId: String) {
             val p = current.characterProfile
