@@ -123,7 +123,7 @@ object Shops {
         val period = PyDocs.long(PyDocs.at(lucky, "refresh_period_s"))
         val anchor = PyDocs.long(PyDocs.at(lucky, "refresh_anchor_epoch"))
         val cycle = if (now >= anchor) Math.floorDiv(now - anchor, period) else -1L
-        val doc = (if (PyDocs.truthy(document)) document!! else jobj("profile" to "lucky_state_v1", "cycle" to cycle, "bought" to JArr())).deepCopy() as JObj
+        val doc = (if (Py.truthy(document)) document!! else jobj("profile" to "lucky_state_v1", "cycle" to cycle, "bought" to JArr())).deepCopy() as JObj
         if (PyDocs.at(doc, "cycle") != JInt(cycle)) {
             doc["cycle"] = JInt(cycle)
             doc["bought"] = JArr()
@@ -133,9 +133,9 @@ object Shops {
         val remaining = maxOf(0L, deadline - now)
         val observed = lucky["observed_cycles"] as? JObj ?: JObj()
         val base: List<JValue> = when {
-            PyDocs.truthy(doc["pools"]) -> poolEntries(lucky, doc.arr("pools"))
+            Py.truthy(doc["pools"]) -> poolEntries(lucky, doc.arr("pools"))
             cycle.toString() in observed -> poolEntries(lucky, observed.arr(cycle.toString()))
-            poolPolicy && cycle >= 0 && PyDocs.truthy(lucky["pools"]) -> poolEntries(lucky, drawLuckyPools(lucky, cycleSeed(cycle)).map { JInt(it) })
+            poolPolicy && cycle >= 0 && Py.truthy(lucky["pools"]) -> poolEntries(lucky, drawLuckyPools(lucky, cycleSeed(cycle)).map { JInt(it) })
             else -> lucky.arr("entries")
         }
         val bought = PyDocs.at(doc, "bought") as JArr

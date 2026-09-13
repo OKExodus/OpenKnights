@@ -34,7 +34,7 @@ object LeaderRepair {
             try {
                 val template = HeroFortify.heroUidOf(fields, TEMPLATE)
                 val inputs = evolutionInputs(unpackedTemplate(template))
-                if (HeroStats.truthy(inputs["is_leader"])) leaders.add(fields)
+                if (Py.truthy(inputs["is_leader"])) leaders.add(fields)
             } catch (e: IllegalArgumentException) {
                 continue
             }

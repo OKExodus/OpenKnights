@@ -68,7 +68,8 @@ object Castle {
 
     fun castleLevel(state: JObj): JValue = buildingLevels(state)[CASTLE] ?: JInt(1)
 
-    private fun setBuilding(state: JObj, ident: Long, level: JValue) {
+    /** `_set_building(state, ident, level)` (the sweep features' Warehouse repair calls it too). */
+    fun setBuilding(state: JObj, ident: Long, level: JValue) {
         val section = state.obj("subsystems").obj("buildings")
         for (entry in section.arr("entries")) {
             val wire = entry.asObj.arr("wire_values")
@@ -81,7 +82,7 @@ object Castle {
 
     /** The per-character Castle document; the daily collect counts restart at the device's local midnight. */
     fun castleDocument(document: JValue?, now: Long): JObj {
-        val doc = if (PyDocs.truthy(document)) copy(document!!) else jobj("profile" to CASTLE_PROFILE)
+        val doc = if (Py.truthy(document)) copy(document!!) else jobj("profile" to CASTLE_PROFILE)
         if (PyDocs.get(doc, "day") != JStr(Shops.dayOf(now))) {
             doc["day"] = JStr(Shops.dayOf(now))
             doc["collected"] = jobj(GOLD_T.toString() to 0, HONOR_T.toString() to 0, RUNES_T.toString() to 0)
@@ -176,7 +177,7 @@ object Castle {
     }
 
     fun guildTechPayload(document: JObj?): ByteArray {
-        if (document == null || document.isEmpty() || !PyDocs.truthy(document["in_guild"])) return byteArrayOf(0)
+        if (document == null || document.isEmpty() || !Py.truthy(document["in_guild"])) return byteArrayOf(0)
         val techs = document.arr("techs")
         val w = WireWriter().raw(PyDocs.bytes(listOf(1L, techs.size.toLong())))
         for (t in techs) w.values("IHH", t.asArr)
@@ -194,7 +195,7 @@ object Castle {
     fun alchemyView(state: JObj, document: JObj?, inputs: DailyInputs, now: Long): Pair<JArr, JObj> {
         val values = alchemyValues(state)
         val stored = PyDocs.get(document ?: JObj(), "alchemy")
-        val timers = PyDocs.shallow(if (PyDocs.truthy(stored)) stored as JObj
+        val timers = PyDocs.shallow(if (Py.truthy(stored)) stored as JObj
             else jobj("refresh_until" to (BigInteger.valueOf(now) + PyDocs.int(values[3])), "anchor" to now))
         values[3] = JInt(maxOf(BigInteger.ZERO, PyDocs.int(PyDocs.at(timers, "refresh_until")) - BigInteger.valueOf(now)))
         val period = inputs.prop(74, 1800)

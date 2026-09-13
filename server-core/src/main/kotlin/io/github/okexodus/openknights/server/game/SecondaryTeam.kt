@@ -4,7 +4,9 @@ import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.TypedValues
+import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 
 /**
@@ -48,6 +50,18 @@ object SecondaryTeam {
     private fun byte(value: Long, label: String): Int {
         require(value in 0..255) { "$label must be a byte" }
         return value.toInt()
+    }
+
+    /** `decode_secondary_team`: the S3745 entries and max open count; the payload must round-trip. */
+    fun decodeSecondaryTeam(payload: ByteArray): JObj {
+        val r = WireReader(payload)
+        val entries = JArr()
+        repeat(r.u8()) { entries.add(jobj("position" to r.u8(), "hero" to TypedValues.readFields(r))) }
+        val maxOpen = r.u8()
+        if (r.offset != payload.size) throw PyValues.ValueError("Trailing bytes in secondary-team payload")
+        val again = encodeSecondaryTeam(entries.map { it.asObj.long("position") to it.asObj.arr("hero") }, maxOpen.toLong())
+        if (!again.contentEquals(payload)) throw PyValues.ValueError("Secondary-team payload does not round-trip")
+        return jobj("entries" to entries, "max_open_positions" to maxOpen)
     }
 
     /** `encode_secondary_team`: entries `[{"position", "hero"}]` and `max_open_positions`. */

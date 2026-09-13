@@ -1,10 +1,14 @@
 package io.github.okexodus.openknights.server.game
 
+import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JObj
+import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.exact.jarr
+import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireWriter
-import io.github.okexodus.openknights.server.DeviceClock
 import io.github.okexodus.openknights.server.game.WorldParticipants.Participant
 
 /**
@@ -74,13 +78,31 @@ object Guild {
         return w.u8(claimed).u32(guild.long("diamonds", 0)).bytes()
     }
 
+    /**
+     * The S2330 document: the character's own levels (the Castle's `guild_tech_state`) shown only while in a guild,
+     * capped by that guild's tech levels; techs never raised start at level 1.
+     */
+    fun personalTechView(personal: JObj?, guild: JObj?, inputs: DailyInputs): JObj {
+        if (!Py.truthy(guild)) return jobj("profile" to "guild_tech_state_v1", "in_guild" to false, "techs" to JArr())
+        val levels = LinkedHashMap<JValue, JValue>()
+        for (t in ((if (Py.truthy(personal)) personal!! else JObj())["techs"] ?: JArr()) as JArr) levels[t.asArr[0]] = t.asArr[1]
+        val techs = JArr()
+        val guildTechs = guild!!.obj("techs")
+        for (ident in guildTechs.keys.map { PyValues.parseLong(it) }.sorted()) {
+            val row = inputs.guildTech(ident)
+            if (row == null || row.bool("guild_only")) continue
+            techs.add(jarr(ident, levels[JInt(ident)] ?: JInt(1), PyDocs.at(guildTechs, ident.toString())))
+        }
+        return jobj("profile" to "guild_tech_state_v1", "in_guild" to true, "techs" to techs)
+    }
+
     /** Daily Gold donation cap: 21,000 × player level (labeled policy). */
     fun goldCap(person: Participant?, inputs: DailyInputs): Long = 21_000L * (person?.level ?: 1)
 
-    /** `shops.day_of` in release: the device clock's local day. */
-    fun day(now: Long): String = DeviceClock.active!!.localDay(now)
+    /** `_day(now)`: the device clock's local day ([Shops.dayOf]). */
+    fun day(now: Long): String = Shops.dayOf(now)
 
-    private fun hour(now: Long): Int = DeviceClock.active!!.localDateTime(now).hour
+    private fun hour(now: Long): Int = Shops.localDatetime(now).hour
 
     /** The day's matching result is due: signed up today, matching began (19:00 local) and nobody was told yet. */
     fun warResultsDue(guild: JObj, now: Long): Boolean {
@@ -92,7 +114,7 @@ object Guild {
 
     /** Epoch of today's 19:00 on the device clock. */
     fun matchTime(now: Long): Long {
-        val at = DeviceClock.active!!.localDateTime(now)
+        val at = Shops.localDatetime(now)
         return now - ((at.hour - WAR_MATCH_HOUR) * 3600L + at.minute * 60L + at.second)
     }
 }

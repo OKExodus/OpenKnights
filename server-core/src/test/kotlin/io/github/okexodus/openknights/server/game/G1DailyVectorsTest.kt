@@ -281,7 +281,7 @@ class G1DailyVectorsTest {
             outcome("$label acquisition_frames", vector["acquisition_frames"], {
                 val cur = currentOf(save)
                 val stored = PyDocs.get(cur, "summon_state")
-                val summon = if (PyDocs.truthy(stored)) stored as JObj else Summon.initialDocument(cur, now)
+                val summon = if (Py.truthy(stored)) stored as JObj else Summon.initialDocument(cur, now)
                 val (a, b) = Summon.freeCdRemaining(summon, now)
                 val frames = mutableListOf<Frame>(Summon.S_FREE_CD to Summon.freeCdPayload(a, b))
                 if (Recharge.hasCharged(cur.state, PyDocs.get(cur, "recharge_ledger"))) frames.add(Recharge.S_CHARGED to byteArrayOf(0))

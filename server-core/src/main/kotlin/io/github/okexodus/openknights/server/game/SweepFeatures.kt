@@ -13,7 +13,6 @@ import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
-import io.github.okexodus.openknights.server.DeviceClock
 import io.github.okexodus.openknights.server.store.StateStore
 
 /**
@@ -39,10 +38,6 @@ object SweepFeatures {
     const val TOTEM_PROFILE = "totem_state_v1"
     const val ALBUM_PROFILE = "album_state_v1"
     const val REBIRTH_SHOP_WINDOW = 600007
-
-    /** castle.py: the Warehouse building id and the S72 capacity reply. */
-    const val WAREHOUSE = 6L
-    const val S_ITEM_CAPACITY = 72
 
     /** The request changes nothing: reply with these frames and write no revision. */
     class Unchanged(packets: List<Frame>, fields: JObj? = null) : Exception("unchanged") {
@@ -169,8 +164,8 @@ object SweepFeatures {
      */
     fun afterQueryFrames(inputs: AcquisitionInputs?, current: StateStore.Current? = null, now: Long? = null): List<Frame> {
         val document = documentOf(current, "rebirth_shop")
-        if (document != null && now != null && document["day"] == JStr(dayOf(now))) {
-            return listOf(S_REBIRTH_SHOP to rebirthListPayload(document, now))
+        if (document != null && now != null && document["day"] == JStr(Shops.dayOf(now))) {
+            return listOf(S_REBIRTH_SHOP to RebirthShop.listPayload(document, now))
         }
         return listOf(S_REBIRTH_SHOP to rebirthShopStopgap(inputs))
     }
@@ -233,7 +228,7 @@ object SweepFeatures {
      */
     fun tmpVipView(document: JObj, now: Long, vipLevel: Long = 0): Pair<Int, Long> {
         if (vipLevel >= TMP_VIP_LEVEL) return TMP_VIP_EXPIRED to 0L
-        if (!HeroStats.truthy(document["claimed"])) return TMP_VIP_UNCLAIMED to 0L
+        if (!Py.truthy(document["claimed"])) return TMP_VIP_UNCLAIMED to 0L
         val left = ((document["expires_at"] as? JInt)?.value?.toLong()?.takeIf { it != 0L } ?: 0L) - now
         if (left > 0) return TMP_VIP_ACTIVE to minOf(left, (document["duration_seconds"] as? JInt)?.value?.toLong() ?: TMP_VIP_SECONDS)
         return TMP_VIP_EXPIRED to 0L
@@ -250,7 +245,7 @@ object SweepFeatures {
      * reads the view without the real VIP level here). `now` defaults to the device clock.
      */
     fun tmpVipLevel(current: StateStore.Current?, vipLevel: Long, now: Long? = null, seeds: SystemSeeds.SeedFrames? = null): Long {
-        val (state, _) = tmpVipView(tmpVipDocument(current, seeds), now ?: deviceClock().now())
+        val (state, _) = tmpVipView(tmpVipDocument(current, seeds), now ?: Summon.nowEpoch())
         return if (state == TMP_VIP_ACTIVE) maxOf(vipLevel, TMP_VIP_LEVEL) else vipLevel
     }
 
@@ -263,22 +258,22 @@ object SweepFeatures {
     // === Warehouse ==================================================================================================
 
     fun warehouseMaxLevel(inputs: AcquisitionInputs): Long {
-        val row = if (inputs is DailyInputs) inputs.building(WAREHOUSE) else null
+        val row = if (inputs is DailyInputs) inputs.building(Castle.WAREHOUSE) else null
         return (row?.get("max_level") as? JInt)?.value?.toLong()?.takeIf { it != 0L } ?: 200L
     }
 
     /** The capacities to open: always the maximum Warehouse level's limit; null when the save has no Warehouse. */
     fun openedLimit(state: JObj, inputs: AcquisitionInputs): List<Long>? {
-        if (WAREHOUSE !in buildingLevels(state)) return null
-        return warehouseCapacity(warehouseMaxLevel(inputs), inputs)
+        if (Castle.WAREHOUSE !in Castle.buildingLevels(state)) return null
+        return Castle.warehouseCapacity(warehouseMaxLevel(inputs), inputs as DailyInputs)
     }
 
     /** Warehouse building → its maximum level; (before, after) or null when already there. */
     fun raiseWarehouse(state: JObj, inputs: AcquisitionInputs): Pair<Long, Long>? {
-        val level = buildingLevels(state)[WAREHOUSE]
+        val level = Castle.buildingLevels(state)[Castle.WAREHOUSE]?.long
         val top = warehouseMaxLevel(inputs)
         if (level == null || level >= top) return null
-        setBuilding(state, WAREHOUSE, top)
+        Castle.setBuilding(state, Castle.WAREHOUSE, JInt(top))
         return level to top
     }
 
@@ -292,13 +287,13 @@ object SweepFeatures {
         val state = owned.state
         val before = ((state["item_capacity_values"] as? JArr) ?: JArr()).map { it.long }
         if (before.size != 3) throw Acquisition.Rejected("The save carries no bag capacities")
-        val level = buildingLevels(state)[WAREHOUSE]
+        val level = Castle.buildingLevels(state)[Castle.WAREHOUSE]?.long
         val limit = openedLimit(state, inputs)
         val after = if (limit == null) before else before.zip(limit).map { (b, cap) -> maxOf(b, cap) }
         val raised = raiseWarehouse(state, inputs)
         val reply = ArrayList<Frame>()
-        reply.add(S_ITEM_CAPACITY to itemCapacityPayload(after))
-        if (raised != null) reply.add(0, 640 to WireWriter().u8(WAREHOUSE.toInt()).number('H', raised.second).bytes())
+        reply.add(Castle.S_ITEM_CAPACITY to Castle.itemCapacityPayload(after.map { JInt(it) }))
+        if (raised != null) reply.add(0, 640 to WireWriter().u8(Castle.WAREHOUSE.toInt()).number('H', raised.second).bytes())
         if (after == before && raised == null) {
             throw Unchanged(reply, jobj("capacities" to after, "warehouse_level" to level))
         }
@@ -313,7 +308,7 @@ object SweepFeatures {
         val before = ((state["item_capacity_values"] as? JArr) ?: JArr()).map { it.long }
         val limit = openedLimit(state, inputs)
         if (before.size != 3 || limit == null) return false
-        return before.zip(limit).any { (b, cap) -> b < cap } || (buildingLevels(state)[WAREHOUSE] ?: 0L) < warehouseMaxLevel(inputs)
+        return before.zip(limit).any { (b, cap) -> b < cap } || (Castle.buildingLevels(state)[Castle.WAREHOUSE]?.long ?: 0L) < warehouseMaxLevel(inputs)
     }
 
     /** The same raise as C77, without a frame (the login S18 carries the triple); [Unchanged] when nothing is below. */
@@ -322,65 +317,5 @@ object SweepFeatures {
         plan.packets = emptyList()
         plan["evidence_class"] = "native_use_formula_login_repair_policy"
         return plan
-    }
-
-    // --- helpers of other modules this one calls (castle.py, rebirth_shop.py / shops.py) ---------------------------
-
-    /** `castle.building_levels(state)`: {building id: level} of the S18 buildings (a later entry wins). */
-    fun buildingLevels(state: JObj): Map<Long, Long> {
-        val out = LinkedHashMap<Long, Long>()
-        for (e in state.obj("subsystems").obj("buildings").arr("entries")) {
-            val wire = e.asObj.arr("wire_values")
-            out[wire[0].long] = wire[1].long
-        }
-        return out
-    }
-
-    /** `castle._set_building(state, ident, level)`. */
-    fun setBuilding(state: JObj, ident: Long, level: Long) {
-        val section = state.obj("subsystems").obj("buildings")
-        for (e in section.arr("entries")) {
-            val wire = e.asObj.arr("wire_values")
-            if (wire[0].long == ident) { wire[1] = JInt(level); return }
-        }
-        val entries = section.arr("entries")
-        entries.add(jobj("wire_values" to jarr(ident, level)))
-        val sorted = entries.sortedBy { it.asObj.arr("wire_values")[0].long }
-        entries.clear(); entries.addAll(sorted)
-        section["count"] = JInt(entries.size)
-    }
-
-    /** `castle.warehouse_capacity(level, inputs)`: [P3 + L, P3 + L // 2, P3 + L // 2] with P3 = property 3 (default 50). */
-    fun warehouseCapacity(level: Long, inputs: AcquisitionInputs): List<Long> {
-        val base = (inputs as DailyInputs).prop(3, 50)
-        return listOf(base + level, base + Math.floorDiv(level, 2L), base + Math.floorDiv(level, 2L))
-    }
-
-    /** `castle.item_capacity_payload(values)`: S72 `u16 items, u16 fragments, u16 blueprints`. */
-    fun itemCapacityPayload(values: List<Long>): ByteArray {
-        if (values.size != 3) throw io.github.okexodus.openknights.protocol.ProtocolException("pack expected 3 items for packing (got ${values.size})")
-        val w = WireWriter()
-        values.forEach { w.number('H', it) }
-        return w.bytes()
-    }
-
-    private fun deviceClock(): DeviceClock = DeviceClock.active ?: throw IllegalStateException("The device clock is not installed")
-
-    /** `shops.day_of(now)` of the release service: the device clock's local day. */
-    private fun dayOf(now: Long): String = deviceClock().localDay(now)
-
-    /** `rebirth_shop.list_payload(document, now)`: the three shops' lists and the countdown to the next local day. */
-    private fun rebirthListPayload(document: JObj, now: Long): ByteArray {
-        val shops = listOf(13L, 14L, 15L)
-        val w = WireWriter().u8(shops.size)
-        for (shop in shops) {
-            val entry = document.obj("shops").obj(shop.toString())
-            val entries = entry.arr("entries")
-            w.u32(shop).u8(entries.size)
-            for (e in entries) w.values("IBB", e.asArr)
-            w.number('I', entry.getValue("used"))
-        }
-        w.u32(maxOf(0L, deviceClock().nextDayStart(now) - now))
-        return w.bytes()
     }
 }

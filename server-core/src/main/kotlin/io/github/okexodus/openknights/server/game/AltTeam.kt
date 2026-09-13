@@ -36,7 +36,7 @@ object AltTeam {
 
     fun documentOf(current: StateStore.Current): JObj {
         val doc = PyDocs.get(current, "alt_team")
-        val d = if (PyDocs.truthy(doc)) doc as JObj else JObj()
+        val d = if (Py.truthy(doc)) doc as JObj else JObj()
         return jobj("profile" to PROFILE, "max_open" to PyDocs.int(d["max_open"] ?: JInt(0)),
             "slots" to JArr(((d["slots"] ?: JArr()) as JArr).mapTo(ArrayList()) { JArr(it.asArr.toMutableList()) }))
     }

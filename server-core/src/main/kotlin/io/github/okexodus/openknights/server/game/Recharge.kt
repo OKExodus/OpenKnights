@@ -16,15 +16,15 @@ object Recharge {
 
     /** True once the character has topped up (a recorded top-up, or VIP EXP from an earlier one). */
     fun hasCharged(state: JObj?, ledger: JValue?): Boolean {
-        val doc = if (PyDocs.truthy(ledger)) ledger as JObj else JObj()
+        val doc = if (Py.truthy(ledger)) ledger as JObj else JObj()
         if (PyDocs.compare(doc["transactions"] ?: JInt(0), JInt(0)) > 0) return true
-        val props = (if (PyDocs.truthy(state)) state!! else JObj())["role_properties"]
+        val props = (if (Py.truthy(state)) state!! else JObj())["role_properties"]
         for (f in (props ?: JArr()) as JArr) {
             val field = f.asObj
             if (field["id"] == JInt(VIP_EXP)) {
                 val value = field.obj("value")
                 val bits = value["bits"] ?: JInt(0)
-                return PyDocs.compare(if (PyDocs.truthy(bits)) bits else JInt(0), JInt(0)) > 0
+                return PyDocs.compare(if (Py.truthy(bits)) bits else JInt(0), JInt(0)) > 0
             }
         }
         return false

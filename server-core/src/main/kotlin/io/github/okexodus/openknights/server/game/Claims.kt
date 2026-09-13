@@ -31,7 +31,7 @@ object Claims {
      */
     fun vipBlockFor(document: JValue?, vipLevel: Long, inputs: AcquisitionInputs, today: String?, block: List<JValue>? = null): List<Long> {
         val row = inputs.vipRow(vipLevel)
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
         val claimed = if (PyDocs.get(doc, "claim_day") == (today?.let { JStr(it) })) 1L else 0L
         val apMax = row.long("ap_buys_107")
         val enMax = row.long("energy_buys_108")
@@ -86,11 +86,11 @@ object Claims {
     /** {card: {owned, days, claimable}} of the recharge monthly cards 3 and 4. */
     fun cardView(document: JValue?, today: String): Map<String, JObj> {
         val cards = LinkedHashMap<String, JObj>()
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
         for (card in listOf("3", "4")) {
             val raw = doc[card]
-            val entry = if (PyDocs.truthy(raw)) raw as JObj else JObj()
-            val owned = PyDocs.truthy(entry["owned"])
+            val entry = if (Py.truthy(raw)) raw as JObj else JObj()
+            val owned = Py.truthy(entry["owned"])
             cards[card] = jobj("owned" to owned, "days" to (entry["days"] ?: JInt(0)),
                 "claimable" to (owned && PyDocs.get(entry, "claim_day") != JStr(today)))
         }
@@ -103,7 +103,7 @@ object Claims {
         body.add(YKHD.toByte())
         YKHD_EVENT_CARDS.forEach { body.add(it) }
         for ((_, view) in cardView(document, today).toSortedMap()) {
-            val bytes = if (PyDocs.truthy(view["owned"])) PyDocs.bytes(listOf(1L, PyDocs.long(view["days"]), if (view.bool("claimable")) 1L else 0L))
+            val bytes = if (Py.truthy(view["owned"])) PyDocs.bytes(listOf(1L, PyDocs.long(view["days"]), if (view.bool("claimable")) 1L else 0L))
                 else byteArrayOf(0)
             bytes.forEach { body.add(it) }
         }

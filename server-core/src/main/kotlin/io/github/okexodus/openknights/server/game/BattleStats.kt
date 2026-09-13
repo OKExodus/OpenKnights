@@ -11,9 +11,7 @@ import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
-import io.github.okexodus.openknights.protocol.TypedValues
 import io.github.okexodus.openknights.protocol.WireReader
-import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
 
@@ -218,7 +216,7 @@ object BattleStats {
             for (s in (state["formation"] as? JArr) ?: JArr()) {
                 val slot = s.asObj
                 val id = slot.long("slot_id")
-                if (id in MAIN_SLOTS && HeroStats.truthy(slot["hero_uid"])) m[id] = slot
+                if (id in MAIN_SLOTS && Py.truthy(slot["hero_uid"])) m[id] = slot
             }
         }
         val secondary: LongArray? = secondarySlots()
@@ -546,7 +544,7 @@ object BattleStats {
             val base = jobj("slot_id" to slotId, "hero_uid" to 0, "position" to null, "counted" to false, "hp" to 0, "atk" to 0,
                 "def" to 0, "crit" to 0, "reborn_atk" to 0, "reborn_def" to 0, "score" to 0, "terms" to JObj(), "combos" to JArr(),
                 "evidence_class" to EVIDENCE)
-            if (slot == null || slotId !in MAIN_SLOTS || !HeroStats.truthy(slot["hero_uid"])) {
+            if (slot == null || slotId !in MAIN_SLOTS || !Py.truthy(slot["hero_uid"])) {
                 base["reason"] = io.github.okexodus.openknights.exact.JStr("no hero in a main formation slot (HeroBenchLine::GetBattleScore skips it)")
                 return base
             }
@@ -651,12 +649,12 @@ object BattleStats {
         }
         payloads[GodSkills.INIT_OPCODE]?.let { raw ->
             val god = JObj()
-            for (hero in decodeGodSkillList(raw)) god[hero.long("uid").toString()] = JArr(hero.arr("skills").mapTo(ArrayList()) { JArr(it.asArr.toMutableList()) })
+            for (hero in GodSkills.decodeGodSkillList(raw)) god[hero.long("uid").toString()] = JArr(hero.arr("skills").mapTo(ArrayList()) { JArr(it.asArr.toMutableList()) })
             world["god_skills"] = god
         }
         payloads[2880]?.let { world["totems"] = decodeTotemInit(it) }
         payloads[3745]?.let { raw ->
-            val team = decodeSecondaryTeam(raw)
+            val team = SecondaryTeam.decodeSecondaryTeam(raw)
             world["secondary_team"] = JArr(team.arr("entries").mapTo(ArrayList()) { e ->
                 jarr(e.asObj.getValue("position"), SecondaryTeam.heroUid(e.asObj.arr("hero"))) })
         }
@@ -693,10 +691,10 @@ object BattleStats {
         val seeds = SystemSeeds.seedsFor(freshSystems, current)
         val heroes = SecondaryTeam.ownedHeroes(current.state)
         val frames = SweepFeatures.startupFrames(current, seeds)
-        val payloads = linkedMapOf(548 to frames.album, 2880 to frames.totems, 320 to questsPayload(questDocument(current, seeds)))
+        val payloads = linkedMapOf(548 to frames.album, 2880 to frames.totems, 320 to Quests.questsPayload(DailyRoutes.questDocument(current, seeds)))
         val god = current.godSkills
         if (god != null) payloads[GodSkills.INIT_OPCODE] = GodSkills.startupPayload(god.obj("document"), heroes.keys)
-        if (current.characterProfile != null) payloads[3745] = altTeamInfoPayload(current)
+        if (current.characterProfile != null) payloads[3745] = AltTeam.infoPayload(current, emptyMap())
         val info = leaderInputs.leaderInfo(heroes)
         if (info != null) payloads[HeroEvolution.LEADER_INFO_OPCODE] = HeroEvolution.leaderInfoPayload(info.long("uid"), info.long("progress_key"))
         return payloads
@@ -726,93 +724,4 @@ object BattleStats {
      */
     fun participantPower(freshSystems: Map<Int, List<ByteArray>>?, leaderInputs: EvolutionInputs, inputs: AcquisitionInputs?): (StateStore.Current) -> BigInteger? =
         { current -> try { powerOf(freshSystems, leaderInputs, current, inputs) } catch (e: Exception) { if (e is NotPorted) throw e; null } }
-
-    // --- builders of other modules the stat frames come from -------------------------------------------------------------
-    // The reference calls daily_routes.quest_document, quests.quests_payload, alt_team.info_payload,
-    // god_skills.decode_god_skill_list and secondary_team.decode_secondary_team; they are written out here with the
-    // same rules until those modules are ported.
-
-    /** `daily_routes.quest_document`: the stored `quest_state`, else seeded from the first decodable seed S320. */
-    fun questDocument(current: StateStore.Current, seeds: SystemSeeds.SeedFrames?): JObj {
-        (current.document("quest_state") as? JObj)?.let { return it }
-        var payload: ByteArray? = null
-        var provenance: JObj? = null
-        if (seeds != null) {
-            for ((index, candidate) in seeds.all(320).withIndex()) {
-                try { decodeQuests(candidate) } catch (e: IllegalArgumentException) { continue } catch (e: IndexOutOfBoundsException) { continue }
-                payload = candidate
-                provenance = seeds.provenance(320, index)
-                break
-            }
-        }
-        val decoded = if (payload != null && payload.isNotEmpty()) decodeQuests(payload) else jobj("quests" to JArr(), "points" to 0)
-        return jobj("profile" to "quest_state_v1", "quests" to decoded["quests"], "points" to decoded["points"], "seed" to provenance)
-    }
-
-    /** `quests.decode_quests`: S320 `u8 n, n × (u32 id, u8 state, u32 progress), u32 points`. */
-    fun decodeQuests(payload: ByteArray): JObj {
-        val n = payload[0].toInt() and 0xFF
-        val r = WireReader(payload).also { it.offset = 1 }
-        val rows = JArr()
-        repeat(n) { rows.add(jarr(r.u32(), r.u8(), r.u32())) }
-        val points = r.u32()
-        if (1 + 9 * n + 4 != payload.size) throw PyValues.ValueError("S320 has trailing bytes")
-        return jobj("quests" to rows, "points" to points)
-    }
-
-    /** `quests.quests_payload`: the rows sorted, then the points. */
-    fun questsPayload(document: JObj): ByteArray {
-        val rows = document.arr("quests").map { it.asArr }.sortedWith { a, b -> compareLists(a, b) }
-        if (rows.size > 255) throw PyValues.ValueError("bytes must be in range(0, 256)")
-        val w = WireWriter().u8(rows.size)
-        for (r in rows) w.values("IBI", r)
-        w.number('I', document.getValue("points"))
-        return w.bytes()
-    }
-
-    private fun compareLists(a: JArr, b: JArr): Int {
-        for (i in 0 until minOf(a.size, b.size)) {
-            val c = a[i].big.compareTo(b[i].big)
-            if (c != 0) return c
-        }
-        return a.size.compareTo(b.size)
-    }
-
-    /** `alt_team.info_payload(current, {})` (no open-rows table: the stored max open count). */
-    fun altTeamInfoPayload(current: StateStore.Current): ByteArray {
-        val doc = current.document("alt_team") as? JObj
-        val maxOpen = (doc?.get("max_open") as? JInt)?.value?.toLong() ?: 0L
-        val slots = ((doc?.get("slots") as? JArr) ?: JArr()).map { s -> val a = s.asArr; a[0].long to a[1].long }
-        val heroes = SecondaryTeam.ownedHeroes(current.state)
-        val live = slots.filter { it.second in heroes }.sortedWith(compareBy({ it.first }, { it.second }))
-        return SecondaryTeam.encodeSecondaryTeam(live.map { (p, u) -> p to heroes.getValue(u) }, maxOpen)
-    }
-
-    /** `god_skills.decode_god_skill_list`: S2848 → [{"uid", "skills": [[skill, progress], ...]}] in wire order. */
-    fun decodeGodSkillList(payload: ByteArray): List<JObj> {
-        val r = WireReader(payload)
-        val heroes = ArrayList<JObj>()
-        val count = r.u32()
-        for (h in 0L until count) {
-            val uid = r.u32()
-            val skills = JArr()
-            val n = r.u32()
-            for (s in 0L until n) skills.add(jarr(r.u32(), r.u32()))
-            heroes.add(jobj("uid" to uid, "skills" to skills))
-        }
-        if (r.offset != payload.size) throw PyValues.ValueError("God-skill list has trailing bytes")
-        return heroes
-    }
-
-    /** `secondary_team.decode_secondary_team`: the S3745 entries and max open count; the payload must round-trip. */
-    fun decodeSecondaryTeam(payload: ByteArray): JObj {
-        val r = WireReader(payload)
-        val entries = JArr()
-        repeat(r.u8()) { entries.add(jobj("position" to r.u8(), "hero" to TypedValues.readFields(r))) }
-        val maxOpen = r.u8()
-        if (r.offset != payload.size) throw PyValues.ValueError("Trailing bytes in secondary-team payload")
-        val again = SecondaryTeam.encodeSecondaryTeam(entries.map { it.asObj.long("position") to it.asObj.arr("hero") }, maxOpen.toLong())
-        if (!again.contentEquals(payload)) throw PyValues.ValueError("Secondary-team payload does not round-trip")
-        return jobj("entries" to entries, "max_open_positions" to maxOpen)
-    }
 }

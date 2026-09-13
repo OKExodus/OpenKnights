@@ -1,11 +1,9 @@
 package io.github.okexodus.openknights.server.game
 
 import io.github.okexodus.openknights.exact.JArr
-import io.github.okexodus.openknights.exact.JBool
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
-import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.PyInt
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jobj
@@ -97,7 +95,7 @@ object HeroStats {
         }
         if (awakenLevel.signum() != 0) {
             if ("awaken_slots" !in inputs) throw reject.of("Awakened hero requires its herojuexing slots in the catalog inputs", ERROR_INVALID)
-            if (!truthy(inputs["awaken_slots"])) throw reject.of("Awakened hero has no configured herojuexing row", ERROR_INVALID)
+            if (!Py.truthy(inputs["awaken_slots"])) throw reject.of("Awakened hero has no configured herojuexing row", ERROR_INVALID)
         }
         val bonus = awakenPermille(awakenLevel, inputs["awaken_slots"] as? JArr)
         return bonus.map { 10000 + superPermille + it }
@@ -211,15 +209,4 @@ object HeroStats {
     /** `wire_grow_bits(full_grow, widths)`: the low bits the wire field keeps of each growth value. */
     fun wireGrowBits(fullGrow: List<BigInteger>, widths: List<Int>): List<BigInteger> =
         fullGrow.indices.filter { it < widths.size }.map { fullGrow[it].and(BigInteger.ONE.shiftLeft(widths[it]) - BigInteger.ONE) }
-
-    /** Python truthiness of a document value. */
-    internal fun truthy(value: JValue?): Boolean = when (value) {
-        null, JNull -> false
-        is JBool -> value.value
-        is JInt -> value.value.signum() != 0
-        is JArr -> value.isNotEmpty()
-        is JObj -> value.isNotEmpty()
-        is io.github.okexodus.openknights.exact.JStr -> value.value.isNotEmpty()
-        is io.github.okexodus.openknights.exact.JFloat -> value.value != 0.0
-    }
 }

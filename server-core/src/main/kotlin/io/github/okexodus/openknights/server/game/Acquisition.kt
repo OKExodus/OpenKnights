@@ -117,6 +117,22 @@ object Acquisition {
         for (fid in listOf(19L, 20L, 21L, 24L)) if (fid !in byId) byId[fid] = jobj("id" to fid, "value" to jobj("tag" to 5, "bits" to 0))
         return JArr(byId.values.toMutableList())
     }
+
+    // --- buffs ---
+
+    /** [(buff, seconds left)] of the running buffs, ascending by buff id. */
+    fun buffView(document: JValue?, now: Long): List<Pair<BigInteger, BigInteger>> {
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
+        val ends = (doc["ends"] ?: JObj()) as JObj
+        return ends.entries.map { PyValues.parseInt(it.key) to it.value }.sortedBy { it.first }
+            .filter { PyDocs.compare(it.second, JInt(now)) > 0 }.map { it.first to (PyDocs.int(it.second) - BigInteger.valueOf(now)) }
+    }
+
+    /** The S18 `buffs` section. */
+    fun buffsSection(document: JValue?, now: Long): JObj {
+        val entries = buffView(document, now).map { (b, left) -> jobj("wire_values" to listOf(b, left)) }
+        return jobj("count" to entries.size, "entries" to entries)
+    }
 }
 
 /**

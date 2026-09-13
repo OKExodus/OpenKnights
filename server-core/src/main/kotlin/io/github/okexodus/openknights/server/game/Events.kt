@@ -242,7 +242,7 @@ object Events {
         val activities = (definitions["activities"] ?: JArr()) as JArr
         val defined = LinkedHashMap<JValue, JObj>().also { m -> activities.forEach { m[it.asObj["id"]!!] = it.asObj } }
         val before = PyDocs.sortedDump(JArr(entries.toMutableList()))
-        if (!PyDocs.truthy(definitions["retain_captured"])) entries = entries.filter { PyDocs.at(it.asObj, "wire_u32_1") in defined }
+        if (!Py.truthy(definitions["retain_captured"])) entries = entries.filter { PyDocs.at(it.asObj, "wire_u32_1") in defined }
         val byId = LinkedHashMap<JValue, JObj>().also { m -> entries.forEach { m[PyDocs.at(it.asObj, "wire_u32_1")] = it.asObj } }
         val rebuilt = ArrayList<JValue>()
         for (a in activities) {
