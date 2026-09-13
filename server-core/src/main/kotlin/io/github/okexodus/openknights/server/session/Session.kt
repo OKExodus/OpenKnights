@@ -338,6 +338,13 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         }
     }
 
+    /**
+     * After a counted action: the follow-up `daily_counters` revision (quests, Daily Mission, Royal Door tasks, then the
+     * world's Door EXP and new-medal mails). Returns the extra frames; never fails the action (`_daily_counters`).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun dailyCounters(action: String, plan: JObj): List<Frame> = throw NotPorted("daily counters after $action")
+
     private fun worldContext(): DailyRoutes.WorldContext =
         DailyRoutes.WorldContext(service.world, service.auth.registry, service.powerOf, emptyList()) { ctx, current ->
             val world = ctx.world
@@ -715,22 +722,24 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             service.settle("heartbeat")
             return listOf(14 to service.clock.s14(), 8 to ByteArray(0))
         }
-        if ((opcode == 3777 || opcode == 3779) && isFreshCharacter()) group(opcode, "alternate team")
-        if (opcode == 3779 || opcode == 3777) group(opcode, "secondary team (derived characters)")
-        if (opcode == 69) group(opcode, "hero Fortify")
+        if ((opcode == 3777 || opcode == 3779) && isFreshCharacter()) return altTeamRoute(opcode, payload)
+        if (opcode == 3779) return secondaryReplaceRoute(payload)
+        if (opcode == 3777) return secondaryUnlockRoute(payload)
+        if (opcode == 69) return heroFortifyRoute(payload)
         if (opcode == 81) group(opcode, "gear Fortify")
-        if (opcode == 71) group(opcode, "hero evolution")
-        if (opcode == 2083) group(opcode, "leader evolution")
-        if (opcode == 91 || opcode == 93 || opcode == 2641) group(opcode, "EXP-item Fortify")
-        if (opcode == 2561) group(opcode, "leader class change")
+        if (opcode == 71) return evolutionRoute(payload)
+        if (opcode == 2083) return leaderEvolutionRoute(payload)
+        if (opcode == 91 || opcode == 2641) return itemFortifyRoute(opcode, payload)
+        if (opcode == 93) group(opcode, "EXP-item Fortify")
+        if (opcode == 2561) return changeJobRoute(payload)
         if (opcode == 1569) group(opcode, "rename")
         if (opcode == 1537) group(opcode, "gift code")
         if (opcode == 643 || opcode == 645) group(opcode, "roulette rank")
         if (opcode in setOf(2049, 2629, 2593, 2817)) group(opcode, "gear / jewelry evolve")
         if (opcode in Routes.FORMATION) group(opcode, "formation")
-        if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) group(opcode, "hero cards")
+        if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
         if (opcode == 705) group(opcode, "rank list")
-        if (opcode in Routes.ACQUISITION) group(opcode, "acquisition")
+        if (opcode in Routes.ACQUISITION) return acquisitionRoute(opcode, payload)
         if (opcode in Routes.DAILY && (queriesSent || opcode !in QUERY_SEQUENCE)) return dailyRoute(opcode, payload)
         if (opcode in Routes.SOCIAL && (queriesSent || opcode !in QUERY_SEQUENCE) &&
             (opcode !in QUERY_SEQUENCE || service.world != null)) return socialRoute(opcode, payload)
@@ -781,6 +790,20 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         }
         return legacyHandle(opcode, payload)
     }
+
+    // --- hero Fortify, EXP-item Fortify, leader class change, Rebirth Evolve / Fortify, Reborn ------------------------
+
+    /** C69 ordinary hero Fortify (docs/FORTIFY_CONTRACT.md): commit first, then the observed reply order. */
+    private fun heroFortifyRoute(payload: ByteArray): List<Frame> = group(69, "hero Fortify")
+
+    /** C91 hero / C2641 jewelry EXP-item Fortify (docs/ITEM_FORTIFY_CONTRACT.md). */
+    private fun itemFortifyRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "EXP-item Fortify")
+
+    /** C2561 leader class change (`_change_job_route`). */
+    private fun changeJobRoute(payload: ByteArray): List<Frame> = group(2561, "leader class change")
+
+    /** The acquisition family (`_acquisition_route`); group 2 serves Rebirth Evolve C101, Fortify C99 and Reborn C95. */
+    private fun acquisitionRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "acquisition")
 
     /** Daily requests: commit first, then the live reply order. Only the query replies are ported so far. */
     private fun dailyRoute(opcode: Int, payload: ByteArray): List<Frame> {
@@ -839,6 +862,26 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             "now_epoch" to now, "served_time" to served, "online" to service.onlineRoles(), "clock_offset" to ctx.clockOffset)
         return packets
     }
+
+    // --- alternate team, hero evolution, hero cards -------------------------------------------------------------------
+
+    /** C3777 / C3779 of a created character (`_alt_team_route`). */
+    private fun altTeamRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "alternate team")
+
+    /** C3779 of a character without a creation profile (`replace_secondary_hero`). */
+    private fun secondaryReplaceRoute(payload: ByteArray): List<Frame> = group(3779, "secondary team (derived characters)")
+
+    /** C3777 of a character without a creation profile (`unlock_secondary_position`). */
+    private fun secondaryUnlockRoute(payload: ByteArray): List<Frame> = group(3777, "secondary team (derived characters)")
+
+    /** C71 ordinary hero evolution (docs/EVOLUTION_CONTRACT.md). */
+    private fun evolutionRoute(payload: ByteArray): List<Frame> = group(71, "hero evolution")
+
+    /** C2083 leader hero evolution (docs/EVOLUTION_CONTRACT.md). */
+    private fun leaderEvolutionRoute(payload: ByteArray): List<Frame> = group(2083, "leader evolution")
+
+    /** Power Up C3693 / C3713 / C3721, Astral Power C2497, Ascension C3907 (`_hero_card_route`). */
+    private fun heroCardRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "hero cards")
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */
     private fun legacyHandle(opcode: Int, payload: ByteArray): List<Frame> {
