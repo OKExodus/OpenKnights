@@ -14,7 +14,6 @@ import java.nio.channels.OverlappingFileLockException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.nio.file.StandardOpenOption
-import java.util.UUID
 
 /** The data root cannot be used as it is (the message is safe to show). */
 class DataRootError(message: String) : IllegalArgumentException(message)
@@ -41,7 +40,7 @@ class DataRoot(path: Path, private val driver: SqlDriver) {
         const val BOTS_SCHEMA_VERSION = 1
         val GENERATION = Regex("w-\\d{8}T\\d{6}Z-[0-9a-f]{8}")
 
-        fun newGenerationName(): String = "w-${PyTime.nowStamp()}-${UUID.randomUUID().toString().replace("-", "").take(8)}"
+        fun newGenerationName(): String = "w-${PyTime.nowStamp()}-${io.github.okexodus.openknights.server.Entropy.current.uuid4Hex().take(8)}"
     }
 
     val root: Path = path.toAbsolutePath().normalize()
@@ -136,7 +135,7 @@ class DataRoot(path: Path, private val driver: SqlDriver) {
 
     fun moveToTrash(path: Path, tag: String): Path {
         var target = trash.resolve("${PyTime.nowStamp()}-$tag-${path.fileName}")
-        while (Files.exists(target)) target = target.resolveSibling(target.fileName.toString() + "-" + UUID.randomUUID().toString().take(4))
+        while (Files.exists(target)) target = target.resolveSibling(target.fileName.toString() + "-" + io.github.okexodus.openknights.server.Entropy.current.uuid4Hex().take(4))
         Files.move(path, target)
         return target
     }

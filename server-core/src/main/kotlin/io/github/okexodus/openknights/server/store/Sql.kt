@@ -125,6 +125,11 @@ private class JdbcConnection(private val connection: Connection) : SqlConnection
     }
 
     override fun execute(sql: String, vararg args: Any?): Int {
+        if (args.isEmpty() && sql.startsWith("backup to ")) {
+            // sqlite-jdbc runs its "backup to" command outside any statement: executeUpdate, no update count to read
+            connection.createStatement().use { s -> s.executeUpdate(sql) }
+            return 0
+        }
         if (args.isEmpty()) {
             connection.createStatement().use { s ->
                 return if (s.execute(sql)) 0 else s.updateCount.coerceAtLeast(0)

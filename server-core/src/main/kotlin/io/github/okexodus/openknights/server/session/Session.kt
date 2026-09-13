@@ -245,6 +245,10 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
 
     /** The connection ended (the reference logs the presence change of a game session here). */
     fun disconnected() {
-        if (kind == "game" && characterId != null && queries.complete) log("social_logout", "character_id" to characterId)
+        // The reference sets the presence offline here and tells the watching friends (social_logout).
+        if (kind == "game" && characterId != null && queries.complete) {
+            log("not_implemented", "service" to kind, "feature" to "presence offline at the connection close (social_logout)",
+                "character_id" to characterId)
+        }
     }
 }

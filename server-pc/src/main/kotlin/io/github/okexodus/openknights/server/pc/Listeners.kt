@@ -1,10 +1,12 @@
 package io.github.okexodus.openknights.server.pc
 
+import io.github.okexodus.openknights.exact.Now
 import io.github.okexodus.openknights.exact.Json
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.FrameDecoder
 import io.github.okexodus.openknights.protocol.Frames
+import io.github.okexodus.openknights.server.session.AuthGateway
 import io.github.okexodus.openknights.server.session.Service
 import io.github.okexodus.openknights.server.session.Session
 import io.github.okexodus.openknights.server.store.AuthenticationRejected
@@ -70,7 +72,8 @@ class Listeners(
 
     /** Run on the dispatcher thread; its exception is rethrown here as itself. */
     private fun <T> onDispatcher(block: () -> T): T = try {
-        dispatcher.submit(Callable { block() }).get()
+        // one clock value per request: every write of the request carries the same time (as the harness pins it)
+        dispatcher.submit(Callable { Now.pinned(System.currentTimeMillis() / 1000.0) { block() } }).get()
     } catch (e: java.util.concurrent.ExecutionException) {
         throw e.cause ?: e
     }
@@ -161,17 +164,17 @@ class Listeners(
                 "transfer-encoding" !in headers && version == "HTTP/1.1") { "Only the local origin is accepted" }
             if (method == "GET" && path == "/" && (headers["content-length"] ?: "0").toInt() == 0) {
                 status = 200; contentType = "text/html; charset=utf-8"; content = page
-            } else if (method == "POST" && path in setOf("/api/login", "/api/device", "/api/recharge")) {
+            } else if (method == "POST" && path in AuthGateway.PATHS) {
                 require(headers["content-type"] == "application/json") { "JSON required" }
                 val size = (headers["content-length"] ?: "-1").toInt()
                 require(size in 1..8192) { "Body size invalid" }
                 val data = input.readNBytes(size)
                 require(data.size == size) { "Body truncated" }
                 val body = Json.loads(data)
-                val result = onDispatcher { api(path, body) }
-                status = 200
-                content = Json.dumps(result).toByteArray()
-                log.log("local_auth_http", "action" to path.substringAfterLast('/'), "accepted" to true)
+                val response = onDispatcher { AuthGateway.respond(service, path, body) }
+                status = response.status
+                content = response.body.toByteArray()
+                log.log("local_auth_http", "action" to path.substringAfterLast('/'), "accepted" to (status == 200))
             } else {
                 status = 404; content = """{"error":"Not found"}""".toByteArray()
             }
@@ -197,28 +200,6 @@ class Listeners(
                 "Content-Security-Policy: $policy\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n"
             socket.getOutputStream().apply { write(head.toByteArray(Charsets.US_ASCII) + content); flush() }
         } catch (_: IOException) {}
-    }
-
-    /** The sign-in API: the device owner's password-free sign-in. Free top-ups need an entered game session (P4). */
-    private fun api(path: String, body: io.github.okexodus.openknights.exact.JValue): io.github.okexodus.openknights.exact.JObj {
-        val request = body as? io.github.okexodus.openknights.exact.JObj ?: throw IllegalArgumentException("JSON object required")
-        return when (path) {
-            "/api/device" -> {
-                require(request.isEmpty()) { "Unsupported authentication request" }
-                val issued = service.auth.deviceLogin()
-                jobj("token" to issued.token, "ingame_select" to true, "expires_at_utc" to issued.session.expiresAtUtc, "device" to true)
-            }
-            "/api/login" -> {
-                require(request.keys == setOf("username", "password")) { "Unsupported authentication request" }
-                throw AuthenticationRejected("Local credentials rejected")     // release mode: the device owner only
-            }
-            else -> {
-                val token = request.asObj.strOrNull("token") ?: throw IllegalArgumentException("Recharge requires the session token")
-                service.auth.authenticate(token)
-                // No game session can be entered before the game systems are ported: the reference's own answer.
-                throw HttpError(409, Json.dumps(jobj("error" to "No active game session for this login")).toByteArray())
-            }
-        }
     }
 
     override fun close() {

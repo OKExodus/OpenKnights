@@ -17,7 +17,6 @@ import io.github.okexodus.openknights.server.store.WorldDirectory
 import java.io.Writer
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.UUID
 
 /** The service log: one JSON object per line (`timestamp_utc`, `event`, fields), to standard output and a file. */
 class ServiceLog(file: Path? = null, private val echo: Boolean = true) : AutoCloseable {
@@ -102,9 +101,9 @@ class Service(
          * The world is born with the first character; until then the owner's sign-in sessions wait in an unborn
          * generation. The data root's lock is held until [close].
          */
-        fun release(driver: SqlDriver, dataRoot: Path, apk: Path, releaseData: Path, log: ServiceLog): Service {
+        fun release(driver: SqlDriver, dataRoot: Path, apk: Path, releaseData: Path, log: ServiceLog, loaded: GameTables? = null): Service {
             val data = ReleaseData(releaseData)
-            val tables = GameTables(ApkTables(apk))
+            val tables = loaded ?: GameTables(ApkTables(apk))
             log.log("release_apk_bound", "label" to "Pocket Knights 4.4.9", "tables" to tables.names().size,
                 "note" to "game tables from the player's APK only; no download overlay (D1)")
             val root = DataRoot(dataRoot, driver).open()
@@ -139,7 +138,7 @@ class Service(
                 val registry = AccountRegistry.initialize(path, driver)
                 LocalAuth.initialize(registry, actor = "release-service")
                 // The account schema requires a password: random, never shown, never used (device sign-in).
-                registry.createAccount(OWNER, UUID.randomUUID().toString() + UUID.randomUUID().toString(), actor = "release-service")
+                registry.createAccount(OWNER, io.github.okexodus.openknights.server.Entropy.current.tokenUrlsafe(32), actor = "release-service")
             }
             return AccountRegistry(path, driver, strictPaths = true)
         }

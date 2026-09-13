@@ -9,9 +9,6 @@ import io.github.okexodus.openknights.exact.jobj
 import java.nio.file.Files
 import java.nio.file.Path
 import java.security.MessageDigest
-import java.security.SecureRandom
-import java.util.Base64
-import java.util.UUID
 import javax.crypto.SecretKeyFactory
 import javax.crypto.spec.PBEKeySpec
 
@@ -28,7 +25,6 @@ class AccountRegistry(path: Path, private val driver: SqlDriver, val strictPaths
         const val PASSWORD_ITERATIONS = 600_000
         val USERNAME = Regex("[A-Za-z0-9][A-Za-z0-9_.-]{0,63}")
         val STATE_IDENTITY_FIELDS = listOf("revision", "source_sha256", "payload_sha256", "inventory_schema_version", "inventory_sha256")
-        private val random = SecureRandom()
 
         const val DDL_V1 = """
             CREATE TABLE accounts (
@@ -122,9 +118,9 @@ class AccountRegistry(path: Path, private val driver: SqlDriver, val strictPaths
         label(actor, "Actor")
         val encoded = password.toByteArray(Charsets.UTF_8)
         require(encoded.size in 12..1024) { "Password must contain 12 to 1024 UTF-8 bytes" }
-        val salt = ByteArray(32).also { random.nextBytes(it) }
+        val salt = io.github.okexodus.openknights.server.Entropy.current.tokenBytes(32)
         val verifier = pbkdf2(password, salt)
-        val accountId = "acc_" + UUID.randomUUID().toString().replace("-", "")
+        val accountId = "acc_" + io.github.okexodus.openknights.server.Entropy.current.uuid4Hex()
         val timestamp = PyTime.nowIsoMillis()
         connect().use { db ->
             db.immediate {
@@ -194,12 +190,11 @@ class AuthenticationRejected(message: String) : IllegalArgumentException(message
  * Persistent local sessions (`local_auth.py`): a random 256-bit token (base64url, 43 characters) of which only the
  * SHA-256 is stored, a lifetime that slides while the session is used, and the password-free device owner.
  */
-class LocalAuth(val registry: AccountRegistry, private val clock: () -> Long = { System.currentTimeMillis() / 1000 }) {
+class LocalAuth(val registry: AccountRegistry, private val clock: () -> Long = { io.github.okexodus.openknights.exact.Now.epoch() }) {
     companion object {
         const val DEFAULT_SESSION_TTL = 3600
         const val MAX_SESSION_TTL = 86400
         val TOKEN = Regex("[A-Za-z0-9_-]{43}")
-        private val random = SecureRandom()
 
         const val DDL_SESSIONS = """CREATE TABLE local_sessions (
                     session_id TEXT PRIMARY KEY,
@@ -316,10 +311,9 @@ class LocalAuth(val registry: AccountRegistry, private val clock: () -> Long = {
 
     private fun issue(accountId: String, ttlSeconds: Int, actor: String, detail: JObj): Issued {
         val now = epoch()
-        val raw = ByteArray(32).also { random.nextBytes(it) }
-        val token = Base64.getUrlEncoder().withoutPadding().encodeToString(raw)
+        val token = io.github.okexodus.openknights.server.Entropy.current.tokenUrlsafe(32)
         val tokenHash = tokenHash(token)
-        val sessionId = "sess_" + UUID.randomUUID().toString().replace("-", "")
+        val sessionId = "sess_" + io.github.okexodus.openknights.server.Entropy.current.uuid4Hex()
         val row = registry.connect().use { db ->
             db.immediate {
                 db.execute("INSERT INTO local_sessions VALUES(?,?,?,?,?,?,?,?)", sessionId, tokenHash, accountId, null,
