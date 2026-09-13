@@ -59,7 +59,9 @@ object Fixtures {
 
     fun zip(entries: Map<String, ByteArray>): ByteArray {
         val out = ByteArrayOutputStream()
-        ZipWriter(out).use { writer -> entries.forEach { (name, data) -> writer.addStored(name, data) } }
+        ZipWriter(out).use { writer ->
+            entries.forEach { (name, data) -> writer.addStored(name, data, alignment = if (name.endsWith(".so")) 16384 else 4) }
+        }
         return out.toByteArray()
     }
 

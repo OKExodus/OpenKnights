@@ -1,0 +1,44 @@
+{
+  "about": "Edits to the game's own Java classes. Each class and method must be found exactly once, or the patcher stops without writing anything.",
+  "classes": [
+    {
+      "class": "Lcom/gamed9/platform/EnjoySDK;",
+      "why": "The game's sign-in and purchase calls go to the local server instead of the publisher's services; start-up, reporting and account-centre calls do nothing.",
+      "replace_methods": [
+        "edits/EnjoySDK.onLogin.smali",
+        "edits/EnjoySDK.onBuy.smali",
+        "edits/EnjoySDK.getKeParams.smali"
+      ],
+      "inert_methods": [
+        "public onCreate(Landroid/os/Bundle;)V",
+        "public onPause()V",
+        "public onResume()V",
+        "public onStart()V",
+        "public onStop()V",
+        "public onCallReportEvent(Lcom/gamed9/platform/api/Request;)V",
+        "public onCallReportLevelUp(Lcom/gamed9/platform/api/Request;)V",
+        "public onCallReportLogin(Lcom/gamed9/platform/api/Request;)V",
+        "public onSwitchAccount()V",
+        "public onUserCenter()V"
+      ]
+    },
+    {
+      "class": "Lcom/gamed9/platform/api/PlatformMgr;",
+      "why": "The analytics module is not loaded, and calls made while the native side is not ready return success instead of failing.",
+      "replace_strings": [
+        { "before": "\"EnjoySDK:User,Pay;AppsFlyer\"", "after": "\"EnjoySDK:User,Pay\"" }
+      ],
+      "replace_methods": [
+        "edits/PlatformMgr.callNative.smali"
+      ]
+    }
+  ],
+  "add_classes": [
+    "LocalLogin.smali",
+    "LocalLoginBridge.smali",
+    "LocalLoginClient.smali",
+    "LocalLoginComplete.smali",
+    "LocalRecharge.smali",
+    "LocalToast.smali"
+  ]
+}

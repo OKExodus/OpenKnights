@@ -24,6 +24,10 @@ tasks.processResources {
     filesMatching("io/github/okexodus/openknights/patcher/build-info.properties") {
         expand("version" to version)
     }
+    // Our own patch data (smali, byte patches, branding) from the repository's patches/ folder.
+    from(rootProject.layout.projectDirectory.dir("patches")) {
+        into("io/github/okexodus/openknights/patches")
+    }
 }
 
 tasks.test {

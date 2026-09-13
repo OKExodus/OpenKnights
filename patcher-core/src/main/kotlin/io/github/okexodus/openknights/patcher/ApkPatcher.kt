@@ -1,0 +1,149 @@
+package io.github.okexodus.openknights.patcher
+
+import io.github.okexodus.openknights.patcher.input.ApkSource
+import io.github.okexodus.openknights.patcher.input.IdentifiedInput
+import io.github.okexodus.openknights.patcher.patch.Branding
+import io.github.okexodus.openknights.patcher.patch.CodePatch
+import io.github.okexodus.openknights.patcher.patch.ManifestPatch
+import io.github.okexodus.openknights.patcher.patch.NativePatchSet
+import io.github.okexodus.openknights.patcher.patch.ResourcePatch
+import io.github.okexodus.openknights.patcher.report.Report
+import io.github.okexodus.openknights.patcher.res.ResourceTable
+import io.github.okexodus.openknights.patcher.util.Hashing
+import io.github.okexodus.openknights.patcher.zip.ZipEntry
+import io.github.okexodus.openknights.patcher.zip.ZipWriter
+import java.nio.file.Files
+import java.nio.file.Path
+
+/** How the patched app reaches its server. */
+enum class ServerMode {
+    /** The server runs on a PC; the phone or emulator reaches it through `adb reverse` (ports 17777, 17778, 19121). */
+    DEV_SERVER,
+}
+
+class PatchOptions(
+    val version: AppVersion = BuildInfo.version,
+    val mode: ServerMode = ServerMode.DEV_SERVER,
+    val packageName: String = PACKAGE,
+    val label: String = LABEL,
+    /** Use the OpenKnights icon (otherwise the game keeps its own). */
+    val icon: Boolean = true,
+) {
+    companion object {
+        const val PACKAGE = "io.github.okexodus.openknights"
+        const val LABEL = "OpenKnights"
+    }
+}
+
+/**
+ * Builds the unsigned OpenKnights APK from a checked input: every step reads the original, checks its patch sites and
+ * writes new data; unchanged entries are copied without recompressing. The original files are only read.
+ */
+class ApkPatcher(
+    private val options: PatchOptions = PatchOptions(),
+    private val nativePatches: NativePatchSet = NativePatchSet.bundled,
+    private val codePatch: CodePatch = CodePatch(),
+    private val branding: Branding = Branding(),
+) {
+    /** Writes the unsigned APK to [output] and adds each step to [report]. */
+    fun build(input: IdentifiedInput, output: Path, report: Report, log: (String) -> Unit = {}) {
+        val base = input.base
+
+        log("Patching the app manifest")
+        val tableBytes = base.archive.read("resources.arsc")
+        val table = ResourceTable.read(tableBytes)
+        val resources = ResourcePatch(table)
+        val merges = input.densitySplits.map { split ->
+            log("Merging the resources of ${split.manifest.split}")
+            val splitTable = ResourceTable.read(split.archive.read("resources.arsc"))
+            resources.merge(split.manifest.split ?: split.name, splitTable) to split
+        }
+        val icon = if (options.icon) branding.addIcon(resources) else null
+        val manifest = ManifestPatch(options.packageName, options.label, options.version, icon?.iconId)
+            .apply(base.archive.read("AndroidManifest.xml"))
+        val newTable = resources.encode()
+
+        log("Patching the game's code")
+        val dexNames = base.archive.entries.map { it.name }.filter { Regex("classes\\d*\\.dex").matches(it) }
+        val code = codePatch.apply(dexNames.associateWith { base.archive.read(it) })
+
+        log("Patching the program library")
+        val (libApk, libEntry) = input.nativeLibrary
+        val (library, sites) = nativePatches.apply(libApk.archive.read(libEntry))
+
+        // Entries from the density splits: every file their merged resources point at.
+        val splitFiles = LinkedHashMap<String, Pair<ApkSource, ZipEntry>>()
+        for ((merge, split) in merges) {
+            for (path in merge.files) {
+                val entry = split.archive[path] ?: throw PatchFailure(FailureCode.PATCH_SITE_MISMATCH,
+                    "The ${split.manifest.split} part lists $path but does not contain it. Nothing was patched.")
+                val inBase = base.archive[path]
+                if (inBase != null) {
+                    if (inBase.crc != entry.crc || inBase.size != entry.size) throw PatchFailure(FailureCode.PATCH_SITE_MISMATCH,
+                        "$path differs between the main APK and ${split.manifest.split}. Nothing was patched.")
+                    continue
+                }
+                splitFiles.putIfAbsent(path, split to entry)
+            }
+        }
+
+        log("Writing the patched app")
+        val replaced = mapOf("AndroidManifest.xml" to manifest.manifest, "resources.arsc" to newTable) + code.dexFiles
+        var copied = 0
+        Files.newOutputStream(output).use { stream ->
+            ZipWriter(stream).use { zip ->
+                for (entry in base.archive.entries) {
+                    // A universal APK carries the library itself; the patched copy is written below.
+                    if (entry.isDirectory || isDropped(entry.name) || entry.name == nativePatches.file) continue
+                    val data = replaced[entry.name]
+                    if (data != null) zip.addStored(entry.name, data) else { zip.copy(base.archive, entry); copied++ }
+                }
+                code.dexFiles[code.addedDex]?.let { zip.addStored(code.addedDex, it) }
+                zip.addStored(nativePatches.file, library, alignment = LIBRARY_ALIGNMENT)
+                for ((path, source) in splitFiles) zip.copy(source.first.archive, source.second)
+                icon?.files?.forEach { (path, data) -> zip.addStored(path, data) }
+            }
+        }
+
+        report.step("manifest", mapOf(
+            "package" to options.packageName, "label" to options.label,
+            "version_name" to options.version.toString(), "version_code" to options.version.versionCode,
+            "icon_resource" to icon?.iconId?.let { "0x%08x".format(it) },
+            "removed" to manifest.removedComponents, "removed_attributes" to manifest.removedAttributes,
+            "sha256" to Hashing.sha256(manifest.manifest),
+        ))
+        report.step("resources", mapOf(
+            "merged" to merges.map { (m, _) -> mapOf("split" to m.split, "entries" to m.entries, "new_ids" to m.newIds.size,
+                "new_configurations" to m.newConfigs, "files" to m.files.size) },
+            "files_copied_from_splits" to splitFiles.size,
+            "icon_files" to icon?.files?.keys?.toList(),
+            "sha256" to Hashing.sha256(newTable),
+        ))
+        report.step("code", mapOf(
+            "edited_classes" to code.edits.map { mapOf("class" to it.className, "dex" to it.dex, "replaced_methods" to it.replacedMethods,
+                "inert_methods" to it.inertMethods, "replaced_strings" to it.replacedStrings,
+                "original_smali_sha256" to it.originalSmaliSha256, "patched_smali_sha256" to it.editedSmaliSha256) },
+            "added_dex" to code.addedDex, "added_classes" to code.addedClasses,
+            "dex_sha256" to code.dexFiles.mapValues { Hashing.sha256(it.value) },
+        ))
+        report.step("native_library", mapOf(
+            "file" to nativePatches.file, "source_sha256" to nativePatches.sourceSha256, "result_sha256" to Hashing.sha256(library),
+            "sites" to sites.map { mapOf("id" to it.id, "offset" to it.offset, "before" to it.before, "after" to it.after) },
+        ))
+        report.step("assemble", mapOf(
+            "entries_copied_unchanged" to copied, "dropped" to base.archive.entries.map { it.name }.filter(::isDropped),
+            "unsigned_sha256" to Hashing.sha256(output), "unsigned_size" to Files.size(output),
+        ))
+    }
+
+    companion object {
+        /** Native libraries are stored uncompressed at a 16 KB boundary, which also suits 4 KB page devices. */
+        const val LIBRARY_ALIGNMENT = 16384
+
+        /** The original signature and its source stamp: they belong to the publisher's key, not ours. */
+        fun isDropped(name: String): Boolean =
+            name == "stamp-cert-sha256" || name == "META-INF/MANIFEST.MF" ||
+                (name.startsWith("META-INF/") && name.count { it == '/' } == 1 &&
+                    (name.endsWith(".SF") || name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC")))
+    }
+}
