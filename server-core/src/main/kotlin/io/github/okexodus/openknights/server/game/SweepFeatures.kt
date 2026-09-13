@@ -230,7 +230,16 @@ object SweepFeatures {
         if (vipLevel >= TMP_VIP_LEVEL) return TMP_VIP_EXPIRED to 0L
         if (!Py.truthy(document["claimed"])) return TMP_VIP_UNCLAIMED to 0L
         val left = ((document["expires_at"] as? JInt)?.value?.toLong()?.takeIf { it != 0L } ?: 0L) - now
-        if (left > 0) return TMP_VIP_ACTIVE to minOf(left, (document["duration_seconds"] as? JInt)?.value?.toLong() ?: TMP_VIP_SECONDS)
+        if (left > 0) {
+            // `document.get("duration_seconds", TMP_VIP_SECONDS)`: absent → the default; a stored null fails like the reference's min()
+            val duration = document["duration_seconds"]
+            val seconds = when (duration) {
+                null -> TMP_VIP_SECONDS
+                is JInt -> duration.value.toLong()
+                else -> throw IllegalStateException("'<' not supported between instances of 'NoneType' and 'int'")
+            }
+            return TMP_VIP_ACTIVE to minOf(left, seconds)
+        }
         return TMP_VIP_EXPIRED to 0L
     }
 
