@@ -23,5 +23,7 @@ rootProject.name = "OpenKnights"
 include("exact")
 include("protocol")
 include("game-data")
+include("server-core")
+include("server-pc")
 include("patcher-core")
 include("patcher-cli")

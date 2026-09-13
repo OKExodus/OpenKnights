@@ -1,0 +1,2567 @@
+{
+ "profile": "openknights_vectors_v1",
+ "primitive": "session",
+ "generator": "reference implementation, CPython 3.13",
+ "description": "S7720 character lists, row labels, S18 mode 2 offers and S6 error payloads",
+ "mode_2": [
+  {
+   "offers": [
+    40001001,
+    40004001,
+    40007001
+   ],
+   "payload_hex": "0002000000e95d6202a169620259756202"
+  },
+  {
+   "offers": [
+    1,
+    2,
+    3
+   ],
+   "payload_hex": "0002000000010000000200000003000000"
+  }
+ ],
+ "errors": [
+  {
+   "code": 102,
+   "payload_hex": "66000000"
+  },
+  {
+   "code": 2001,
+   "payload_hex": "d1070000"
+  },
+  {
+   "code": 69575,
+   "payload_hex": "c70f0100"
+  },
+  {
+   "code": -1,
+   "payload_hex": "ffffffff"
+  }
+ ],
+ "count": 60,
+ "vectors": [
+  {
+   "rows": [
+    {
+     "id": 10105,
+     "member": {
+      "name": "Umber55",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 181,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Umber55  Lv181  Mage"
+    },
+    {
+     "id": 10872,
+     "member": {
+      "name": "Iris98",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 434,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Iris98  Lv434  Hunter"
+    },
+    {
+     "id": 10477,
+     "member": {
+      "name": "Thistle62",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 285,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Thistle62  Lv285  Saved"
+    }
+   ],
+   "last_id": 64465,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0300792700000000556d626572353520204c7631383120204d616765000101782a0000000049726973393820204c76343334202048756e746572000101ed280000000054686973746c65363220204c7632383520205361766564000100c3a974c3a920e4b8ade6968700d1fb"
+  },
+  {
+   "rows": [],
+   "last_id": 16556,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0000c3a974c3a920e4b8ade6968700ac40"
+  },
+  {
+   "rows": [
+    {
+     "id": 10287,
+     "member": {
+      "name": "Ember65",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 226,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Ember65  Lv226  Warrior"
+    },
+    {
+     "id": 10298,
+     "member": {
+      "name": "Spruce19",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 197,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Spruce19  Lv197  Hunter"
+    },
+    {
+     "id": 10660,
+     "member": {
+      "name": "Cedar92",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 401,
+     "leader": null,
+     "badge": 0,
+     "label": "Cedar92  Lv401  Saved"
+    }
+   ],
+   "last_id": 64898,
+   "announcement": "Welcome",
+   "payload_hex": "03002f2800000000456d626572363520204c76323236202057617272696f720001003a2800000000537072756365313920204c76313937202048756e746572000100a429000000004365646172393220204c763430312020536176656400010057656c636f6d650082fd"
+  },
+  {
+   "rows": [
+    {
+     "id": 10950,
+     "member": {
+      "name": "Delta51",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 208,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Delta51  Lv208  Saved"
+    },
+    {
+     "id": 10702,
+     "member": {
+      "name": "Delta15",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 146,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Delta15  Lv146  Saved"
+    },
+    {
+     "id": 10727,
+     "member": {
+      "name": "Fjord67",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 458,
+     "leader": null,
+     "badge": 0,
+     "label": "Fjord67  Lv458  Saved"
+    },
+    {
+     "id": 10226,
+     "member": {
+      "name": "Yarrow45",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 363,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Yarrow45  Lv363  Saved"
+    }
+   ],
+   "last_id": 27457,
+   "announcement": "",
+   "payload_hex": "0400c62a0000000044656c7461353120204c7632303820205361766564000100ce290000000044656c7461313520204c7631343620205361766564000101e72900000000466a6f7264363720204c7634353820205361766564000100f22700000000596172726f77343520204c763336332020536176656400010100416b"
+  },
+  {
+   "rows": [
+    {
+     "id": 10889,
+     "member": {
+      "name": "Ridge83",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 61,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Ridge83  Lv61  Saved"
+    },
+    {
+     "id": 10330,
+     "member": {
+      "name": "Spruce5",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 223,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Spruce5  Lv223  Saved"
+    },
+    {
+     "id": 10485,
+     "member": {
+      "name": "Quartz39",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 394,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Quartz39  Lv394  Warrior"
+    },
+    {
+     "id": 10677,
+     "member": {
+      "name": "Delta64",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 468,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Delta64  Lv468  Hunter"
+    },
+    {
+     "id": 10889,
+     "member": {
+      "name": "Vale86",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 433,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Vale86  Lv433  Saved"
+    }
+   ],
+   "last_id": 48096,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0500892a000000005269646765383320204c763631202053617665640001005a28000000005370727563653520204c7632323320205361766564000101f5280000000051756172747a333920204c76333934202057617272696f72000100b5290000000044656c7461363420204c76343638202048756e746572000100892a0000000056616c65383620204c7634333320205361766564000100c3a974c3a920e4b8ade6968700e0bb"
+  },
+  {
+   "rows": [],
+   "last_id": 4039,
+   "announcement": "",
+   "payload_hex": "000000c70f"
+  },
+  {
+   "rows": [
+    {
+     "id": 10465,
+     "member": {
+      "name": "Thistle30",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 433,
+     "leader": null,
+     "badge": 0,
+     "label": "Thistle30  Lv433  Saved"
+    }
+   ],
+   "last_id": 64997,
+   "announcement": "Welcome",
+   "payload_hex": "0100e1280000000054686973746c65333020204c763433332020536176656400010057656c636f6d6500e5fd"
+  },
+  {
+   "rows": [
+    {
+     "id": 10994,
+     "member": {
+      "name": "Willow47",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 49,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Willow47  Lv49  Saved"
+    },
+    {
+     "id": 10588,
+     "member": {
+      "name": "Meadow16",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 382,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Meadow16  Lv382  Mage"
+    },
+    {
+     "id": 10637,
+     "member": {
+      "name": "Ridge90",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 46,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Ridge90  Lv46  Warrior"
+    },
+    {
+     "id": 10862,
+     "member": {
+      "name": "Spruce92",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 193,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Spruce92  Lv193  Saved"
+    },
+    {
+     "id": 10504,
+     "member": {
+      "name": "Brook81",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 109,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Brook81  Lv109  Saved"
+    },
+    {
+     "id": 10082,
+     "member": {
+      "name": "Pebble16",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 367,
+     "leader": null,
+     "badge": 1,
+     "label": "Pebble16  Lv367  Saved"
+    }
+   ],
+   "last_id": 23326,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "0600f22a0000000057696c6c6f77343720204c763439202053617665640001015c29000000004d6561646f77313620204c7633383220204d6167650001008d29000000005269646765393020204c763436202057617272696f720001006e2a00000000537072756365393220204c763139332020536176656400010108290000000042726f6f6b383120204c7631303920205361766564000100622700000000506562626c65313620204c76333637202053617665640001014c696e65206f6e650d0a4c696e652074776f001e5b"
+  },
+  {
+   "rows": [
+    {
+     "id": 10385,
+     "member": {
+      "name": "Willow49",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 292,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Willow49  Lv292  Mage"
+    },
+    {
+     "id": 10723,
+     "member": {
+      "name": "Onyx94",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 267,
+     "leader": null,
+     "badge": 1,
+     "label": "Onyx94  Lv267  Saved"
+    }
+   ],
+   "last_id": 32649,
+   "announcement": "",
+   "payload_hex": "020091280000000057696c6c6f77343920204c7632393220204d616765000100e329000000004f6e7978393420204c763236372020536176656400010100897f"
+  },
+  {
+   "rows": [
+    {
+     "id": 10788,
+     "member": {
+      "name": "Delta56",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 381,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Delta56  Lv381  Warrior"
+    },
+    {
+     "id": 10964,
+     "member": {
+      "name": "Zephyr63",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 370,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Zephyr63  Lv370  Saved"
+    },
+    {
+     "id": 10837,
+     "member": {
+      "name": "Amber72",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 76,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Amber72  Lv76  Warrior"
+    },
+    {
+     "id": 10223,
+     "member": {
+      "name": "Cedar44",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 320,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Cedar44  Lv320  Warrior"
+    },
+    {
+     "id": 10534,
+     "member": {
+      "name": "Quartz32",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 125,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Quartz32  Lv125  Mage"
+    }
+   ],
+   "last_id": 4943,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "0500242a0000000044656c7461353620204c76333831202057617272696f72000101d42a000000005a6570687972363320204c7633373020205361766564000100552a00000000416d626572373220204c763736202057617272696f72000101ef27000000004365646172343420204c76333230202057617272696f7200010026290000000051756172747a333220204c7631323520204d6167650001004c696e65206f6e650d0a4c696e652074776f004f13"
+  },
+  {
+   "rows": [
+    {
+     "id": 10358,
+     "member": {
+      "name": "Nectar27",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 56,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Nectar27  Lv56  Hunter"
+    },
+    {
+     "id": 10975,
+     "member": {
+      "name": "Zephyr18",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 95,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Zephyr18  Lv95  Saved"
+    },
+    {
+     "id": 10465,
+     "member": {
+      "name": "Pebble19",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 431,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Pebble19  Lv431  Saved"
+    }
+   ],
+   "last_id": 1213,
+   "announcement": "",
+   "payload_hex": "03007628000000004e6563746172323720204c763536202048756e746572000100df2a000000005a6570687972313820204c76393520205361766564000101e12800000000506562626c65313920204c763433312020536176656400010100bd04"
+  },
+  {
+   "rows": [
+    {
+     "id": 10900,
+     "member": {
+      "name": "Spruce13",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 407,
+     "leader": null,
+     "badge": 0,
+     "label": "Spruce13  Lv407  Warrior"
+    },
+    {
+     "id": 10201,
+     "member": {
+      "name": "Fjord85",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 277,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Fjord85  Lv277  Hunter"
+    },
+    {
+     "id": 10290,
+     "member": {
+      "name": "Ridge61",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 217,
+     "leader": null,
+     "badge": 1,
+     "label": "Ridge61  Lv217  Warrior"
+    },
+    {
+     "id": 10813,
+     "member": {
+      "name": "Quartz29",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 308,
+     "leader": null,
+     "badge": 1,
+     "label": "Quartz29  Lv308  Saved"
+    },
+    {
+     "id": 10426,
+     "member": {
+      "name": "Umber31",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 127,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Umber31  Lv127  Saved"
+    }
+   ],
+   "last_id": 39102,
+   "announcement": "",
+   "payload_hex": "0500942a00000000537072756365313320204c76343037202057617272696f72000100d92700000000466a6f7264383520204c76323737202048756e7465720001013228000000005269646765363120204c76323137202057617272696f720001013d2a0000000051756172747a323920204c7633303820205361766564000101ba2800000000556d626572333120204c763132372020536176656400010000be98"
+  },
+  {
+   "rows": [
+    {
+     "id": 10751,
+     "member": {
+      "name": "Pebble44",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 94,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Pebble44  Lv94  Mage"
+    }
+   ],
+   "last_id": 13774,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "0100ff2900000000506562626c65343420204c76393420204d6167650001004c696e65206f6e650d0a4c696e652074776f00ce35"
+  },
+  {
+   "rows": [
+    {
+     "id": 10392,
+     "member": {
+      "name": "Kettle8",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 329,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Kettle8  Lv329  Saved"
+    },
+    {
+     "id": 10894,
+     "member": {
+      "name": "Umber59",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 162,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Umber59  Lv162  Hunter"
+    },
+    {
+     "id": 10487,
+     "member": {
+      "name": "Brook19",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 443,
+     "leader": null,
+     "badge": 0,
+     "label": "Brook19  Lv443  Saved"
+    },
+    {
+     "id": 10652,
+     "member": {
+      "name": "Yarrow51",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 183,
+     "leader": null,
+     "badge": 0,
+     "label": "Yarrow51  Lv183  Saved"
+    },
+    {
+     "id": 10537,
+     "member": {
+      "name": "Yarrow57",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 364,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Yarrow57  Lv364  Mage"
+    },
+    {
+     "id": 10997,
+     "member": {
+      "name": "Delta65",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 391,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Delta65  Lv391  Saved"
+    }
+   ],
+   "last_id": 17052,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "06009828000000004b6574746c653820204c76333239202053617665640001008e2a00000000556d626572353920204c76313632202048756e746572000101f7280000000042726f6f6b313920204c76343433202053617665640001009c2900000000596172726f77353120204c7631383320205361766564000100292900000000596172726f77353720204c7633363420204d616765000100f52a0000000044656c7461363520204c7633393120205361766564000101c3a974c3a920e4b8ade69687009c42"
+  },
+  {
+   "rows": [],
+   "last_id": 6817,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "00004c696e65206f6e650d0a4c696e652074776f00a11a"
+  },
+  {
+   "rows": [
+    {
+     "id": 10520,
+     "member": {
+      "name": "Lumen74",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 412,
+     "leader": null,
+     "badge": 0,
+     "label": "Lumen74  Lv412  Saved"
+    }
+   ],
+   "last_id": 22684,
+   "announcement": "Welcome",
+   "payload_hex": "01001829000000004c756d656e373420204c763431322020536176656400010057656c636f6d65009c58"
+  },
+  {
+   "rows": [
+    {
+     "id": 10756,
+     "member": {
+      "name": "Thistle85",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 456,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Thistle85  Lv456  Mage"
+    },
+    {
+     "id": 10643,
+     "member": {
+      "name": "Ember79",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 193,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Ember79  Lv193  Saved"
+    },
+    {
+     "id": 10862,
+     "member": {
+      "name": "Grove20",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 449,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Grove20  Lv449  Saved"
+    },
+    {
+     "id": 10076,
+     "member": {
+      "name": "Umber36",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 376,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Umber36  Lv376  Saved"
+    }
+   ],
+   "last_id": 35400,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0400042a0000000054686973746c65383520204c7634353620204d616765000101932900000000456d626572373920204c76313933202053617665640001006e2a0000000047726f7665323020204c76343439202053617665640001015c2700000000556d626572333620204c7633373620205361766564000101c3a974c3a920e4b8ade6968700488a"
+  },
+  {
+   "rows": [
+    {
+     "id": 10018,
+     "member": {
+      "name": "Vale91",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 222,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Vale91  Lv222  Saved"
+    },
+    {
+     "id": 10890,
+     "member": {
+      "name": "Thistle59",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 166,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Thistle59  Lv166  Hunter"
+    }
+   ],
+   "last_id": 45664,
+   "announcement": "",
+   "payload_hex": "020022270000000056616c65393120204c76323232202053617665640001018a2a0000000054686973746c65353920204c76313636202048756e7465720001010060b2"
+  },
+  {
+   "rows": [
+    {
+     "id": 10624,
+     "member": {
+      "name": "Ember71",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 275,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Ember71  Lv275  Saved"
+    }
+   ],
+   "last_id": 37957,
+   "announcement": "Welcome",
+   "payload_hex": "0100802900000000456d626572373120204c763237352020536176656400010057656c636f6d65004594"
+  },
+  {
+   "rows": [],
+   "last_id": 15553,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0000c3a974c3a920e4b8ade6968700c13c"
+  },
+  {
+   "rows": [
+    {
+     "id": 10817,
+     "member": {
+      "name": "Willow75",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 48,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Willow75  Lv48  Saved"
+    },
+    {
+     "id": 11002,
+     "member": {
+      "name": "Onyx15",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 169,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Onyx15  Lv169  Saved"
+    },
+    {
+     "id": 10409,
+     "member": {
+      "name": "Amber88",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 484,
+     "leader": null,
+     "badge": 0,
+     "label": "Amber88  Lv484  Warrior"
+    },
+    {
+     "id": 10721,
+     "member": {
+      "name": "Amber1",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 116,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Amber1  Lv116  Saved"
+    },
+    {
+     "id": 10247,
+     "member": {
+      "name": "Brook9",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 40,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Brook9  Lv40  Saved"
+    }
+   ],
+   "last_id": 2170,
+   "announcement": "Welcome",
+   "payload_hex": "0500412a0000000057696c6c6f77373520204c76343820205361766564000100fa2a000000004f6e7978313520204c7631363920205361766564000101a92800000000416d626572383820204c76343834202057617272696f72000100e12900000000416d6265723120204c763131362020536176656400010107280000000042726f6f6b3920204c7634302020536176656400010157656c636f6d65007a08"
+  },
+  {
+   "rows": [
+    {
+     "id": 10320,
+     "member": {
+      "name": "Meadow89",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 444,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Meadow89  Lv444  Mage"
+    },
+    {
+     "id": 10277,
+     "member": {
+      "name": "Grove17",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 415,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Grove17  Lv415  Saved"
+    }
+   ],
+   "last_id": 57050,
+   "announcement": "Welcome",
+   "payload_hex": "02005028000000004d6561646f77383920204c7634343420204d61676500010125280000000047726f7665313720204c763431352020536176656400010157656c636f6d6500dade"
+  },
+  {
+   "rows": [
+    {
+     "id": 10204,
+     "member": {
+      "name": "Onyx65",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 413,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Onyx65  Lv413  Saved"
+    }
+   ],
+   "last_id": 56699,
+   "announcement": "Welcome",
+   "payload_hex": "0100dc27000000004f6e7978363520204c763431332020536176656400010157656c636f6d65007bdd"
+  },
+  {
+   "rows": [
+    {
+     "id": 10994,
+     "member": {
+      "name": "Umber38",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 164,
+     "leader": null,
+     "badge": 0,
+     "label": "Umber38  Lv164  Mage"
+    },
+    {
+     "id": 10981,
+     "member": {
+      "name": "Ridge82",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 236,
+     "leader": null,
+     "badge": 1,
+     "label": "Ridge82  Lv236  Hunter"
+    },
+    {
+     "id": 10829,
+     "member": {
+      "name": "Pebble35",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 296,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Pebble35  Lv296  Warrior"
+    }
+   ],
+   "last_id": 58631,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0300f22a00000000556d626572333820204c7631363420204d616765000100e52a000000005269646765383220204c76323336202048756e7465720001014d2a00000000506562626c65333520204c76323936202057617272696f72000100c3a974c3a920e4b8ade696870007e5"
+  },
+  {
+   "rows": [],
+   "last_id": 52078,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0000c3a974c3a920e4b8ade69687006ecb"
+  },
+  {
+   "rows": [
+    {
+     "id": 10685,
+     "member": {
+      "name": "Ridge49",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 80,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Ridge49  Lv80  Saved"
+    },
+    {
+     "id": 10370,
+     "member": {
+      "name": "Fjord9",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 152,
+     "leader": null,
+     "badge": 1,
+     "label": "Fjord9  Lv152  Saved"
+    }
+   ],
+   "last_id": 37439,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0200bd29000000005269646765343920204c76383020205361766564000101822800000000466a6f72643920204c7631353220205361766564000101c3a974c3a920e4b8ade69687003f92"
+  },
+  {
+   "rows": [
+    {
+     "id": 10747,
+     "member": {
+      "name": "Kettle97",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 261,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Kettle97  Lv261  Saved"
+    },
+    {
+     "id": 10420,
+     "member": {
+      "name": "Quartz28",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 79,
+     "leader": null,
+     "badge": 1,
+     "label": "Quartz28  Lv79  Hunter"
+    },
+    {
+     "id": 10278,
+     "member": {
+      "name": "Kettle88",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 338,
+     "leader": null,
+     "badge": 1,
+     "label": "Kettle88  Lv338  Saved"
+    },
+    {
+     "id": 10700,
+     "member": {
+      "name": "Yarrow62",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 89,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Yarrow62  Lv89  Mage"
+    },
+    {
+     "id": 10067,
+     "member": {
+      "name": "Meadow3",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 162,
+     "leader": null,
+     "badge": 0,
+     "label": "Meadow3  Lv162  Mage"
+    }
+   ],
+   "last_id": 65284,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "0500fb29000000004b6574746c65393720204c7632363120205361766564000100b4280000000051756172747a323820204c763739202048756e7465720001012628000000004b6574746c65383820204c7633333820205361766564000101cc2900000000596172726f77363220204c76383920204d6167650001005327000000004d6561646f773320204c7631363220204d6167650001004c696e65206f6e650d0a4c696e652074776f0004ff"
+  },
+  {
+   "rows": [
+    {
+     "id": 10281,
+     "member": {
+      "name": "Cedar31",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 145,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Cedar31  Lv145  Warrior"
+    },
+    {
+     "id": 10144,
+     "member": {
+      "name": "Vale81",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 238,
+     "leader": null,
+     "badge": 1,
+     "label": "Vale81  Lv238  Warrior"
+    },
+    {
+     "id": 10702,
+     "member": {
+      "name": "Zephyr7",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 402,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Zephyr7  Lv402  Saved"
+    },
+    {
+     "id": 10167,
+     "member": {
+      "name": "Quartz85",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 277,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Quartz85  Lv277  Saved"
+    },
+    {
+     "id": 10685,
+     "member": {
+      "name": "Iris55",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 185,
+     "leader": null,
+     "badge": 0,
+     "label": "Iris55  Lv185  Warrior"
+    },
+    {
+     "id": 10268,
+     "member": {
+      "name": "Quartz87",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 445,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Quartz87  Lv445  Mage"
+    }
+   ],
+   "last_id": 57726,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "06002928000000004365646172333120204c76313435202057617272696f72000100a0270000000056616c65383120204c76323338202057617272696f72000101ce29000000005a65706879723720204c7634303220205361766564000100b7270000000051756172747a383520204c7632373720205361766564000101bd290000000049726973353520204c76313835202057617272696f720001001c280000000051756172747a383720204c7634343520204d616765000100c3a974c3a920e4b8ade69687007ee1"
+  },
+  {
+   "rows": [],
+   "last_id": 8366,
+   "announcement": "Welcome",
+   "payload_hex": "000057656c636f6d6500ae20"
+  },
+  {
+   "rows": [
+    {
+     "id": 10645,
+     "member": {
+      "name": "Cedar90",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 413,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Cedar90  Lv413  Saved"
+    },
+    {
+     "id": 10955,
+     "member": {
+      "name": "Umber13",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 297,
+     "leader": null,
+     "badge": 1,
+     "label": "Umber13  Lv297  Saved"
+    },
+    {
+     "id": 10902,
+     "member": {
+      "name": "Harbor34",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 156,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Harbor34  Lv156  Mage"
+    }
+   ],
+   "last_id": 39115,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "03009529000000004365646172393020204c7634313320205361766564000100cb2a00000000556d626572313320204c7632393720205361766564000101962a00000000486172626f72333420204c7631353620204d6167650001004c696e65206f6e650d0a4c696e652074776f00cb98"
+  },
+  {
+   "rows": [
+    {
+     "id": 10798,
+     "member": {
+      "name": "Umber8",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 467,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Umber8  Lv467  Hunter"
+    },
+    {
+     "id": 10826,
+     "member": {
+      "name": "Delta29",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 413,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Delta29  Lv413  Saved"
+    },
+    {
+     "id": 10054,
+     "member": {
+      "name": "Quartz97",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 465,
+     "leader": null,
+     "badge": 1,
+     "label": "Quartz97  Lv465  Mage"
+    }
+   ],
+   "last_id": 45626,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "03002e2a00000000556d6265723820204c76343637202048756e7465720001014a2a0000000044656c7461323920204c763431332020536176656400010146270000000051756172747a393720204c7634363520204d616765000101c3a974c3a920e4b8ade69687003ab2"
+  },
+  {
+   "rows": [],
+   "last_id": 26252,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "00004c696e65206f6e650d0a4c696e652074776f008c66"
+  },
+  {
+   "rows": [],
+   "last_id": 16147,
+   "announcement": "",
+   "payload_hex": "000000133f"
+  },
+  {
+   "rows": [
+    {
+     "id": 10625,
+     "member": {
+      "name": "Nectar29",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 158,
+     "leader": null,
+     "badge": 1,
+     "label": "Nectar29  Lv158  Saved"
+    },
+    {
+     "id": 10038,
+     "member": {
+      "name": "Willow79",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 88,
+     "leader": null,
+     "badge": 0,
+     "label": "Willow79  Lv88  Mage"
+    },
+    {
+     "id": 10925,
+     "member": {
+      "name": "Vale27",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 152,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Vale27  Lv152  Saved"
+    },
+    {
+     "id": 10735,
+     "member": {
+      "name": "Nectar51",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 376,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Nectar51  Lv376  Saved"
+    }
+   ],
+   "last_id": 48888,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "04008129000000004e6563746172323920204c763135382020536176656400010136270000000057696c6c6f77373920204c76383820204d616765000100ad2a0000000056616c65323720204c7631353220205361766564000100ef29000000004e6563746172353120204c76333736202053617665640001004c696e65206f6e650d0a4c696e652074776f00f8be"
+  },
+  {
+   "rows": [
+    {
+     "id": 10457,
+     "member": {
+      "name": "Spruce52",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 268,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Spruce52  Lv268  Saved"
+    },
+    {
+     "id": 10257,
+     "member": {
+      "name": "Fjord4",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 75,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Fjord4  Lv75  Mage"
+    }
+   ],
+   "last_id": 22920,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "0200d92800000000537072756365353220204c7632363820205361766564000100112800000000466a6f72643420204c76373520204d6167650001004c696e65206f6e650d0a4c696e652074776f008859"
+  },
+  {
+   "rows": [
+    {
+     "id": 10566,
+     "member": {
+      "name": "Pebble37",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 201,
+     "leader": null,
+     "badge": 1,
+     "label": "Pebble37  Lv201  Warrior"
+    },
+    {
+     "id": 10681,
+     "member": {
+      "name": "Meadow7",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 93,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Meadow7  Lv93  Saved"
+    },
+    {
+     "id": 10472,
+     "member": {
+      "name": "Lumen13",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 9,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Lumen13  Lv9  Mage"
+    },
+    {
+     "id": 10421,
+     "member": {
+      "name": "Kettle51",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 182,
+     "leader": null,
+     "badge": 0,
+     "label": "Kettle51  Lv182  Warrior"
+    }
+   ],
+   "last_id": 33596,
+   "announcement": "Welcome",
+   "payload_hex": "0400462900000000506562626c65333720204c76323031202057617272696f72000101b929000000004d6561646f773720204c76393320205361766564000100e828000000004c756d656e313320204c763920204d616765000100b528000000004b6574746c65353120204c76313832202057617272696f7200010057656c636f6d65003c83"
+  },
+  {
+   "rows": [
+    {
+     "id": 10700,
+     "member": {
+      "name": "Juniper4",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 92,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Juniper4  Lv92  Hunter"
+    },
+    {
+     "id": 10444,
+     "member": {
+      "name": "Iris19",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 28,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Iris19  Lv28  Saved"
+    },
+    {
+     "id": 10472,
+     "member": {
+      "name": "Amber51",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 456,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Amber51  Lv456  Saved"
+    }
+   ],
+   "last_id": 55134,
+   "announcement": "",
+   "payload_hex": "0300cc29000000004a756e697065723420204c763932202048756e746572000100cc280000000049726973313920204c76323820205361766564000101e82800000000416d626572353120204c7634353620205361766564000101005ed7"
+  },
+  {
+   "rows": [],
+   "last_id": 17355,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "00004c696e65206f6e650d0a4c696e652074776f00cb43"
+  },
+  {
+   "rows": [
+    {
+     "id": 10041,
+     "member": {
+      "name": "Ridge49",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 97,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Ridge49  Lv97  Saved"
+    },
+    {
+     "id": 10355,
+     "member": {
+      "name": "Quartz4",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 121,
+     "leader": null,
+     "badge": 0,
+     "label": "Quartz4  Lv121  Hunter"
+    },
+    {
+     "id": 10324,
+     "member": {
+      "name": "Yarrow6",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 55,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Yarrow6  Lv55  Warrior"
+    },
+    {
+     "id": 10336,
+     "member": {
+      "name": "Umber5",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 81,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Umber5  Lv81  Mage"
+    },
+    {
+     "id": 10362,
+     "member": {
+      "name": "Umber49",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 431,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Umber49  Lv431  Saved"
+    }
+   ],
+   "last_id": 54934,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "05003927000000005269646765343920204c7639372020536176656400010173280000000051756172747a3420204c76313231202048756e746572000100542800000000596172726f773620204c763535202057617272696f72000100602800000000556d6265723520204c76383120204d6167650001007a2800000000556d626572343920204c76343331202053617665640001004c696e65206f6e650d0a4c696e652074776f0096d6"
+  },
+  {
+   "rows": [
+    {
+     "id": 10196,
+     "member": {
+      "name": "Iris25",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 275,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Iris25  Lv275  Mage"
+    },
+    {
+     "id": 10275,
+     "member": {
+      "name": "Amber90",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 142,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Amber90  Lv142  Saved"
+    },
+    {
+     "id": 10528,
+     "member": {
+      "name": "Yarrow1",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 62,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Yarrow1  Lv62  Warrior"
+    },
+    {
+     "id": 10501,
+     "member": {
+      "name": "Umber6",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 326,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Umber6  Lv326  Warrior"
+    },
+    {
+     "id": 10673,
+     "member": {
+      "name": "Harbor32",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 3,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Harbor32  Lv3  Saved"
+    },
+    {
+     "id": 10316,
+     "member": {
+      "name": "Kettle37",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 161,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Kettle37  Lv161  Warrior"
+    }
+   ],
+   "last_id": 63234,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0600d4270000000049726973323520204c7632373520204d616765000101232800000000416d626572393020204c7631343220205361766564000101202900000000596172726f773120204c763632202057617272696f72000100052900000000556d6265723620204c76333236202057617272696f72000101b12900000000486172626f72333220204c7633202053617665640001014c28000000004b6574746c65333720204c76313631202057617272696f72000101c3a974c3a920e4b8ade696870002f7"
+  },
+  {
+   "rows": [
+    {
+     "id": 10206,
+     "member": {
+      "name": "Harbor83",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 489,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Harbor83  Lv489  Saved"
+    },
+    {
+     "id": 10643,
+     "member": {
+      "name": "Vale41",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 143,
+     "leader": null,
+     "badge": 1,
+     "label": "Vale41  Lv143  Hunter"
+    },
+    {
+     "id": 10717,
+     "member": {
+      "name": "Cedar87",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 465,
+     "leader": null,
+     "badge": 1,
+     "label": "Cedar87  Lv465  Saved"
+    },
+    {
+     "id": 10119,
+     "member": {
+      "name": "Meadow16",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 171,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Meadow16  Lv171  Saved"
+    },
+    {
+     "id": 10258,
+     "member": {
+      "name": "Kettle40",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 114,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Kettle40  Lv114  Hunter"
+    }
+   ],
+   "last_id": 39667,
+   "announcement": "Welcome",
+   "payload_hex": "0500de2700000000486172626f72383320204c763438392020536176656400010193290000000056616c65343120204c76313433202048756e746572000101dd29000000004365646172383720204c76343635202053617665640001018727000000004d6561646f77313620204c76313731202053617665640001011228000000004b6574746c65343020204c76313134202048756e74657200010157656c636f6d6500f39a"
+  },
+  {
+   "rows": [],
+   "last_id": 18605,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "00004c696e65206f6e650d0a4c696e652074776f00ad48"
+  },
+  {
+   "rows": [
+    {
+     "id": 10498,
+     "member": {
+      "name": "Thistle17",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 65,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Thistle17  Lv65  Saved"
+    },
+    {
+     "id": 10969,
+     "member": {
+      "name": "Umber86",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 342,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Umber86  Lv342  Saved"
+    },
+    {
+     "id": 10404,
+     "member": {
+      "name": "Kettle43",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 411,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Kettle43  Lv411  Warrior"
+    },
+    {
+     "id": 10613,
+     "member": {
+      "name": "Fjord46",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 213,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Fjord46  Lv213  Saved"
+    },
+    {
+     "id": 10645,
+     "member": {
+      "name": "Nectar47",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 73,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Nectar47  Lv73  Saved"
+    }
+   ],
+   "last_id": 44718,
+   "announcement": "Welcome",
+   "payload_hex": "050002290000000054686973746c65313720204c76363520205361766564000100d92a00000000556d626572383620204c7633343220205361766564000101a428000000004b6574746c65343320204c76343131202057617272696f72000101752900000000466a6f7264343620204c76323133202053617665640001009529000000004e6563746172343720204c7637332020536176656400010057656c636f6d6500aeae"
+  },
+  {
+   "rows": [
+    {
+     "id": 10498,
+     "member": {
+      "name": "Ridge52",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 497,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Ridge52  Lv497  Saved"
+    },
+    {
+     "id": 10840,
+     "member": {
+      "name": "Brook34",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 316,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Brook34  Lv316  Saved"
+    }
+   ],
+   "last_id": 19724,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "02000229000000005269646765353220204c7634393720205361766564000101582a0000000042726f6f6b333420204c7633313620205361766564000100c3a974c3a920e4b8ade69687000c4d"
+  },
+  {
+   "rows": [
+    {
+     "id": 10686,
+     "member": {
+      "name": "Brook87",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 173,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Brook87  Lv173  Saved"
+    }
+   ],
+   "last_id": 29019,
+   "announcement": "Welcome",
+   "payload_hex": "0100be290000000042726f6f6b383720204c763137332020536176656400010157656c636f6d65005b71"
+  },
+  {
+   "rows": [
+    {
+     "id": 10526,
+     "member": {
+      "name": "Cedar11",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 267,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Cedar11  Lv267  Warrior"
+    },
+    {
+     "id": 10966,
+     "member": {
+      "name": "Fjord38",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 305,
+     "leader": null,
+     "badge": 0,
+     "label": "Fjord38  Lv305  Saved"
+    },
+    {
+     "id": 10056,
+     "member": {
+      "name": "Ember29",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 97,
+     "leader": null,
+     "badge": 0,
+     "label": "Ember29  Lv97  Saved"
+    }
+   ],
+   "last_id": 55646,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "03001e29000000004365646172313120204c76323637202057617272696f72000101d62a00000000466a6f7264333820204c7633303520205361766564000100482700000000456d626572323920204c763937202053617665640001004c696e65206f6e650d0a4c696e652074776f005ed9"
+  },
+  {
+   "rows": [
+    {
+     "id": 10071,
+     "member": {
+      "name": "Quartz97",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 280,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Quartz97  Lv280  Saved"
+    },
+    {
+     "id": 10516,
+     "member": {
+      "name": "Quartz33",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 125,
+     "leader": null,
+     "badge": 0,
+     "label": "Quartz33  Lv125  Saved"
+    },
+    {
+     "id": 10139,
+     "member": {
+      "name": "Kettle79",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 436,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Kettle79  Lv436  Saved"
+    }
+   ],
+   "last_id": 37729,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "030057270000000051756172747a393720204c763238302020536176656400010014290000000051756172747a333320204c76313235202053617665640001009b27000000004b6574746c65373920204c7634333620205361766564000101c3a974c3a920e4b8ade69687006193"
+  },
+  {
+   "rows": [
+    {
+     "id": 10763,
+     "member": {
+      "name": "Iris41",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 63,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Iris41  Lv63  Warrior"
+    },
+    {
+     "id": 10457,
+     "member": {
+      "name": "Nectar88",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 280,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Nectar88  Lv280  Warrior"
+    },
+    {
+     "id": 10295,
+     "member": {
+      "name": "Ridge32",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 76,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Ridge32  Lv76  Warrior"
+    },
+    {
+     "id": 10285,
+     "member": {
+      "name": "Brook28",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 306,
+     "leader": null,
+     "badge": 0,
+     "label": "Brook28  Lv306  Warrior"
+    },
+    {
+     "id": 11004,
+     "member": {
+      "name": "Zephyr19",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 121,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Zephyr19  Lv121  Saved"
+    }
+   ],
+   "last_id": 25411,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "05000b2a0000000049726973343120204c763633202057617272696f72000100d928000000004e6563746172383820204c76323830202057617272696f720001013728000000005269646765333220204c763736202057617272696f720001012d280000000042726f6f6b323820204c76333036202057617272696f72000100fc2a000000005a6570687972313920204c76313231202053617665640001014c696e65206f6e650d0a4c696e652074776f004363"
+  },
+  {
+   "rows": [
+    {
+     "id": 10527,
+     "member": {
+      "name": "Spruce60",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 43,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Spruce60  Lv43  Saved"
+    },
+    {
+     "id": 10451,
+     "member": {
+      "name": "Juniper59",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 180,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Juniper59  Lv180  Saved"
+    },
+    {
+     "id": 10399,
+     "member": {
+      "name": "Brook50",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 252,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Brook50  Lv252  Saved"
+    },
+    {
+     "id": 10834,
+     "member": {
+      "name": "Yarrow27",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 109,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Yarrow27  Lv109  Warrior"
+    }
+   ],
+   "last_id": 59956,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "04001f2900000000537072756365363020204c76343320205361766564000100d328000000004a756e69706572353920204c76313830202053617665640001019f280000000042726f6f6b353020204c7632353220205361766564000101522a00000000596172726f77323720204c76313039202057617272696f720001014c696e65206f6e650d0a4c696e652074776f0034ea"
+  },
+  {
+   "rows": [
+    {
+     "id": 10720,
+     "member": {
+      "name": "Harbor73",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 145,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Harbor73  Lv145  Saved"
+    },
+    {
+     "id": 10124,
+     "member": {
+      "name": "Nectar29",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 327,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Nectar29  Lv327  Saved"
+    }
+   ],
+   "last_id": 9626,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0200e02900000000486172626f72373320204c76313435202053617665640001018c27000000004e6563746172323920204c7633323720205361766564000101c3a974c3a920e4b8ade69687009a25"
+  },
+  {
+   "rows": [
+    {
+     "id": 10048,
+     "member": {
+      "name": "Ridge85",
+      "kind": "fresh",
+      "starter": 40001001
+     },
+     "level": 80,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Ridge85  Lv80  Mage"
+    },
+    {
+     "id": 10470,
+     "member": {
+      "name": "Quartz8",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 158,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Quartz8  Lv158  Saved"
+    }
+   ],
+   "last_id": 40336,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "02004027000000005269646765383520204c76383020204d616765000101e6280000000051756172747a3820204c76313538202053617665640001014c696e65206f6e650d0a4c696e652074776f00909d"
+  },
+  {
+   "rows": [
+    {
+     "id": 10412,
+     "member": {
+      "name": "Spruce16",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 170,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Spruce16  Lv170  Mage"
+    },
+    {
+     "id": 10973,
+     "member": {
+      "name": "Harbor64",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 47,
+     "leader": null,
+     "badge": 0,
+     "label": "Harbor64  Lv47  Saved"
+    }
+   ],
+   "last_id": 46636,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0200ac2800000000537072756365313620204c7631373020204d616765000101dd2a00000000486172626f72363420204c76343720205361766564000100c3a974c3a920e4b8ade69687002cb6"
+  },
+  {
+   "rows": [
+    {
+     "id": 10083,
+     "member": {
+      "name": "Ember65",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 98,
+     "leader": null,
+     "badge": 0,
+     "label": "Ember65  Lv98  Saved"
+    },
+    {
+     "id": 10500,
+     "member": {
+      "name": "Umber47",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 352,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Umber47  Lv352  Mage"
+    },
+    {
+     "id": 10091,
+     "member": {
+      "name": "Onyx93",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 245,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Onyx93  Lv245  Saved"
+    },
+    {
+     "id": 10358,
+     "member": {
+      "name": "Onyx51",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 370,
+     "leader": null,
+     "badge": 0,
+     "label": "Onyx51  Lv370  Saved"
+    },
+    {
+     "id": 10741,
+     "member": {
+      "name": "Pebble28",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 36,
+     "leader": null,
+     "badge": 1,
+     "label": "Pebble28  Lv36  Saved"
+    }
+   ],
+   "last_id": 53560,
+   "announcement": "\u00e9t\u00e9 \u4e2d\u6587",
+   "payload_hex": "0500632700000000456d626572363520204c76393820205361766564000100042900000000556d626572343720204c7633353220204d6167650001016b27000000004f6e7978393320204c76323435202053617665640001017628000000004f6e7978353120204c7633373020205361766564000100f52900000000506562626c65323820204c76333620205361766564000101c3a974c3a920e4b8ade696870038d1"
+  },
+  {
+   "rows": [
+    {
+     "id": 10426,
+     "member": {
+      "name": "Vale4",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 170,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Vale4  Lv170  Warrior"
+    },
+    {
+     "id": 10807,
+     "member": {
+      "name": "Willow5",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 99,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Willow5  Lv99  Warrior"
+    },
+    {
+     "id": 10706,
+     "member": {
+      "name": "Iris11",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 395,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Iris11  Lv395  Saved"
+    },
+    {
+     "id": 10500,
+     "member": {
+      "name": "Juniper68",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 389,
+     "leader": null,
+     "badge": 0,
+     "label": "Juniper68  Lv389  Saved"
+    },
+    {
+     "id": 10707,
+     "member": {
+      "name": "Kettle15",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 319,
+     "leader": 12345001,
+     "badge": 0,
+     "label": "Kettle15  Lv319  Saved"
+    }
+   ],
+   "last_id": 42646,
+   "announcement": "Welcome",
+   "payload_hex": "0500ba280000000056616c653420204c76313730202057617272696f72000100372a0000000057696c6c6f773520204c763939202057617272696f72000100d2290000000049726973313120204c76333935202053617665640001010429000000004a756e69706572363820204c7633383920205361766564000100d329000000004b6574746c65313520204c763331392020536176656400010057656c636f6d650096a6"
+  },
+  {
+   "rows": [
+    {
+     "id": 10483,
+     "member": {
+      "name": "Brook96",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 254,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Brook96  Lv254  Mage"
+    },
+    {
+     "id": 10557,
+     "member": {
+      "name": "Kettle1",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 229,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Kettle1  Lv229  Mage"
+    },
+    {
+     "id": 10951,
+     "member": {
+      "name": "Nectar93",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 14,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Nectar93  Lv14  Saved"
+    },
+    {
+     "id": 10861,
+     "member": {
+      "name": "Cedar98",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 185,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Cedar98  Lv185  Saved"
+    },
+    {
+     "id": 10839,
+     "member": {
+      "name": "Brook16",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 378,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Brook16  Lv378  Saved"
+    },
+    {
+     "id": 10342,
+     "member": {
+      "name": "Ridge16",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 75,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Ridge16  Lv75  Mage"
+    }
+   ],
+   "last_id": 61138,
+   "announcement": "",
+   "payload_hex": "0600f3280000000042726f6f6b393620204c7632353420204d6167650001013d29000000004b6574746c653120204c7632323920204d616765000100c72a000000004e6563746172393320204c763134202053617665640001016d2a000000004365646172393820204c7631383520205361766564000101572a0000000042726f6f6b313620204c76333738202053617665640001006628000000005269646765313620204c76373520204d61676500010000d2ee"
+  },
+  {
+   "rows": [
+    {
+     "id": 10472,
+     "member": {
+      "name": "Nectar77",
+      "kind": "derived",
+      "starter": 40001001
+     },
+     "level": 204,
+     "leader": null,
+     "badge": 0,
+     "label": "Nectar77  Lv204  Saved"
+    },
+    {
+     "id": 10481,
+     "member": {
+      "name": "Vale7",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 128,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Vale7  Lv128  Saved"
+    },
+    {
+     "id": 10022,
+     "member": {
+      "name": "Kettle87",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 240,
+     "leader": null,
+     "badge": 0,
+     "label": "Kettle87  Lv240  Saved"
+    },
+    {
+     "id": 10202,
+     "member": {
+      "name": "Thistle64",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 416,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Thistle64  Lv416  Saved"
+    },
+    {
+     "id": 10288,
+     "member": {
+      "name": "Cedar93",
+      "kind": "fresh",
+      "starter": 40004001
+     },
+     "level": 257,
+     "leader": 12345001,
+     "badge": 1,
+     "label": "Cedar93  Lv257  Mage"
+    },
+    {
+     "id": 10276,
+     "member": {
+      "name": "Spruce80",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 53,
+     "leader": 40005001,
+     "badge": 0,
+     "label": "Spruce80  Lv53  Mage"
+    }
+   ],
+   "last_id": 23727,
+   "announcement": "Welcome",
+   "payload_hex": "0600e828000000004e6563746172373720204c7632303420205361766564000100f1280000000056616c653720204c76313238202053617665640001002627000000004b6574746c65383720204c7632343020205361766564000100da270000000054686973746c65363420204c76343136202053617665640001003028000000004365646172393320204c7632353720204d616765000101242800000000537072756365383020204c76353320204d61676500010057656c636f6d6500af5c"
+  },
+  {
+   "rows": [
+    {
+     "id": 10657,
+     "member": {
+      "name": "Nectar88",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 180,
+     "leader": null,
+     "badge": 1,
+     "label": "Nectar88  Lv180  Saved"
+    },
+    {
+     "id": 10706,
+     "member": {
+      "name": "Willow46",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 341,
+     "leader": 40001001,
+     "badge": 0,
+     "label": "Willow46  Lv341  Saved"
+    }
+   ],
+   "last_id": 12171,
+   "announcement": "Welcome",
+   "payload_hex": "0200a129000000004e6563746172383820204c7631383020205361766564000101d2290000000057696c6c6f77343620204c763334312020536176656400010057656c636f6d65008b2f"
+  },
+  {
+   "rows": [
+    {
+     "id": 10958,
+     "member": {
+      "name": "Spruce57",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 428,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Spruce57  Lv428  Saved"
+    },
+    {
+     "id": 10970,
+     "member": {
+      "name": "Thistle75",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 410,
+     "leader": null,
+     "badge": 1,
+     "label": "Thistle75  Lv410  Saved"
+    },
+    {
+     "id": 10497,
+     "member": {
+      "name": "Willow79",
+      "kind": "fresh",
+      "starter": null
+     },
+     "level": 351,
+     "leader": 40009003,
+     "badge": 0,
+     "label": "Willow79  Lv351  Hunter"
+    },
+    {
+     "id": 10383,
+     "member": {
+      "name": "Pebble31",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 271,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Pebble31  Lv271  Saved"
+    }
+   ],
+   "last_id": 60601,
+   "announcement": "Welcome",
+   "payload_hex": "0400ce2a00000000537072756365353720204c7634323820205361766564000101da2a0000000054686973746c65373520204c763431302020536176656400010101290000000057696c6c6f77373920204c76333531202048756e7465720001008f2800000000506562626c65333120204c763237312020536176656400010157656c636f6d6500b9ec"
+  },
+  {
+   "rows": [
+    {
+     "id": 10655,
+     "member": {
+      "name": "Brook37",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 226,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Brook37  Lv226  Saved"
+    },
+    {
+     "id": 10496,
+     "member": {
+      "name": "Umber64",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 166,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Umber64  Lv166  Saved"
+    },
+    {
+     "id": 10544,
+     "member": {
+      "name": "Lumen34",
+      "kind": "derived",
+      "starter": 40004001
+     },
+     "level": 188,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Lumen34  Lv188  Saved"
+    },
+    {
+     "id": 10598,
+     "member": {
+      "name": "Quartz56",
+      "kind": "derived",
+      "starter": 40007001
+     },
+     "level": 446,
+     "leader": null,
+     "badge": 0,
+     "label": "Quartz56  Lv446  Saved"
+    },
+    {
+     "id": 10362,
+     "member": {
+      "name": "Ridge22",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 361,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Ridge22  Lv361  Hunter"
+    },
+    {
+     "id": 10360,
+     "member": {
+      "name": "Umber87",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 305,
+     "leader": 40005001,
+     "badge": 1,
+     "label": "Umber87  Lv305  Mage"
+    }
+   ],
+   "last_id": 45842,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "06009f290000000042726f6f6b333720204c7632323620205361766564000101002900000000556d626572363420204c76313636202053617665640001013029000000004c756d656e333420204c763138382020536176656400010166290000000051756172747a353620204c76343436202053617665640001007a28000000005269646765323220204c76333631202048756e746572000101782800000000556d626572383720204c7633303520204d6167650001014c696e65206f6e650d0a4c696e652074776f0012b3"
+  },
+  {
+   "rows": [
+    {
+     "id": 10653,
+     "member": {
+      "name": "Harbor55",
+      "kind": "derived",
+      "starter": null
+     },
+     "level": 330,
+     "leader": 40001001,
+     "badge": 1,
+     "label": "Harbor55  Lv330  Saved"
+    },
+    {
+     "id": 10472,
+     "member": {
+      "name": "Fjord80",
+      "kind": "fresh",
+      "starter": 40007001
+     },
+     "level": 265,
+     "leader": 40009003,
+     "badge": 1,
+     "label": "Fjord80  Lv265  Hunter"
+    }
+   ],
+   "last_id": 52777,
+   "announcement": "Line one\r\nLine two",
+   "payload_hex": "02009d2900000000486172626f72353520204c7633333020205361766564000101e82800000000466a6f7264383020204c76323635202048756e7465720001014c696e65206f6e650d0a4c696e652074776f0029ce"
+  }
+ ]
+}
