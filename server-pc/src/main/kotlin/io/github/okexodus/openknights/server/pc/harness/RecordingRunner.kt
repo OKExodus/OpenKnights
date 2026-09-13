@@ -129,6 +129,12 @@ class RecordingRunner(
         val divergedConns = HashSet<Int>()
         var worldDiverged = false
         var registryDiverged = false
+        // what first made each thing diverge: the port group of an unported step, or a failed step
+        val connCause = HashMap<Int, String>()
+        val characterCause = HashMap<String, String>()
+        var worldCause: String? = null
+        var registryCause: String? = null
+        val waitingByCause = LinkedHashMap<String, Int>()
 
         val rowDeltas = LinkedHashMap<String, MutableList<JObj>>()
         val pristine = bundleDir.resolve(bundle.obj("baseline").str("path"))
@@ -170,13 +176,17 @@ class RecordingRunner(
             else -> "other"
         }
 
-        fun diverge(dbPaths: Collection<String>) {
+        fun diverge(dbPaths: Collection<String>, cause: String) {
             for (p in dbPaths) {
                 divergedDbs.add(p)
                 when (val owner = ownerOf(p)) {
-                    "registry" -> registryDiverged = true
-                    "world" -> worldDiverged = true
-                    else -> if (owner.startsWith("character:")) divergedCharacters.add(owner.removePrefix("character:"))
+                    "registry" -> { registryDiverged = true; if (registryCause == null) registryCause = cause }
+                    "world" -> { worldDiverged = true; if (worldCause == null) worldCause = cause }
+                    else -> if (owner.startsWith("character:")) {
+                        val id = owner.removePrefix("character:")
+                        divergedCharacters.add(id)
+                        characterCause.putIfAbsent(id, cause)
+                    }
                 }
             }
         }
@@ -286,17 +296,26 @@ class RecordingRunner(
                     else -> null
                 }
                 if (reason != null) {
+                    val cause = when {
+                        registryDiverged && kind != "stop" -> registryCause
+                        connId != null && connId in divergedConns -> connCause[connId]
+                        character != null && character in divergedCharacters -> characterCause[character]
+                        worldDiverged && (conn?.kind == "game" || kind == "http") -> worldCause
+                        listing && (divergedCharacters.isNotEmpty() || worldDiverged) -> characterCause.values.firstOrNull() ?: worldCause
+                        else -> group
+                    } ?: "unknown"
+                    waitingByCause[cause] = (waitingByCause[cause] ?: 0) + 1
                     waitingByGroup[group] = (waitingByGroup[group] ?: 0) + 1
                     val label = if (reason.startsWith("not ported yet")) "not ported yet" else reason
                     waitingByReason[label] = (waitingByReason[label] ?: 0) + 1
                     if (label == "not ported yet") notPorted.add(jobj("step" to index, "kind" to kind, "op" to op, "group" to group,
                         "feature" to unported.first().strOrNull("feature")))
-                    diverge(touchedDbs)
+                    diverge(touchedDbs, cause)
                     divergedFiles.addAll(touchedFiles)
                     // the reference's device clock moved its in-memory high-water mark in this step; this server's did not
                     divergedFiles.add("clock.json")
-                    if (character != null && unported.isNotEmpty()) divergedCharacters.add(character)
-                    if (connId != null) divergedConns.add(connId)
+                    if (character != null && unported.isNotEmpty()) { divergedCharacters.add(character); characterCause.putIfAbsent(character, cause) }
+                    if (connId != null) { divergedConns.add(connId); connCause.putIfAbsent(connId, cause) }
                     continue
                 }
                 compared++
@@ -371,10 +390,10 @@ class RecordingRunner(
                         stepFailed = true
                     } else files.pass()
                 }
-                if (differing.isNotEmpty()) { diverge(differing); stepFailed = true }
+                if (differing.isNotEmpty()) { diverge(differing, "failed step $index"); stepFailed = true }
                 if (stepFailed) {
-                    if (character != null) divergedCharacters.add(character)
-                    if (connId != null) divergedConns.add(connId)
+                    if (character != null) { divergedCharacters.add(character); characterCause.putIfAbsent(character, "failed step $index") }
+                    if (connId != null) { divergedConns.add(connId); connCause.putIfAbsent(connId, "failed step $index") }
                 } else replies.pass()
             }
         } finally {
@@ -397,7 +416,8 @@ class RecordingRunner(
             "entropy" to entropy.json(), "excluded_differences" to excludedDifferences,
             "waiting" to jobj("steps" to waitingByGroup.values.sum(),
                 "by_port_group" to JObj(LinkedHashMap(waitingByGroup.toSortedMap().mapValues { JInt(it.value) })),
-                "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) })), "not_ported" to notPorted),
+                "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) })), "not_ported" to notPorted,
+                "by_cause_group" to JObj(LinkedHashMap(waitingByCause.toSortedMap().mapValues { JInt(it.value) }))),
             "final_fingerprint_equal" to finalCheck, "passed" to allPassed)
     }
 
