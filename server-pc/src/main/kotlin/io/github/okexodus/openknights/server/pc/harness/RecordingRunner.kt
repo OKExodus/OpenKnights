@@ -124,6 +124,8 @@ class RecordingRunner(
         var worldDiverged = false
         var registryDiverged = false
 
+        val rowDeltas = LinkedHashMap<String, MutableList<JObj>>()
+        val pristine = bundleDir.resolve(bundle.obj("baseline").str("path"))
         val scanner = DbScanner(root, driver)
         val baselineMine = scanner.scan(force = true)
         for ((path, tablesNow) in baselineMine) {
@@ -238,6 +240,10 @@ class RecordingRunner(
 
                 // --- state after the step: databases and root files on both sides ---
                 val recordedDb = step.obj("db")
+                (step["rows"] as? JObj)?.forEach { (db, tablesDelta) ->
+                    tablesDelta.asObj.forEach { (table, delta) -> rowDeltas.getOrPut("$db|$table") { ArrayList() }.add(delta.asObj) }
+                }
+                recordedDb.forEach { (db, delta) -> if (delta == JNull) rowDeltas.keys.removeIf { it.startsWith("$db|") } }
                 recordedDb.keys.forEach { scanner.refresh(it) }
                 val mine = scanner.scan()
                 recordedDb.forEach { (path, delta) ->
@@ -332,8 +338,10 @@ class RecordingRunner(
                     val actual = scanner.current(path)
                     if (expected != actual) {
                         differing.add(path)
+                        val tablesDiffering = differingTables(expected, actual)
                         databases.fail(jobj("step" to index, "kind" to kind, "op" to op, "database" to path,
-                            "differing_tables" to differingTables(expected, actual)))
+                            "differing_tables" to tablesDiffering,
+                            "first_rows" to firstRowDifferences(path, tablesDiffering, pristine, root, rowDeltas)))
                     } else databases.pass()
                 }
                 for (key in touchedFiles) {
@@ -373,6 +381,48 @@ class RecordingRunner(
                 "by_port_group" to JObj(LinkedHashMap(waitingByGroup.toSortedMap().mapValues { JInt(it.value) })),
                 "by_reason" to JObj(LinkedHashMap(waitingByReason.mapValues { JInt(it.value) }))),
             "final_fingerprint_equal" to finalCheck, "passed" to allPassed)
+    }
+
+    /** Rows of a table in rowid order, valued as the fingerprint writes them ({rowid: [value, ...]}), and its columns. */
+    private fun tableRows(db: Path, table: String): Pair<JArr, LinkedHashMap<Long, JArr>>? {
+        if (!Files.isRegularFile(db)) return null
+        return driver.open(db, io.github.okexodus.openknights.server.store.SqlDriver.Mode.READ_ONLY).use { c ->
+            if (!c.tableExists(table)) return@use null
+            val columns = JArr(c.query("SELECT name FROM pragma_table_info(?) ORDER BY cid", table).mapTo(ArrayList()) { JStr(it.string("name")) })
+            val rows = LinkedHashMap<Long, JArr>()
+            for (row in c.query("SELECT rowid AS \"_rowid_\", * FROM \"$table\" ORDER BY rowid")) {
+                rows[row.long("_rowid_")] = JArr((1 until row.values.size).mapTo(ArrayList()) { i ->
+                    when (val v = row.values[i]) {
+                        null -> JNull
+                        is Long -> JInt(v)
+                        is String -> JStr(v)
+                        is Double -> JFloat(v)
+                        is ByteArray -> jobj("blob" to v.toHexString())
+                        else -> JStr(v.toString())
+                    }
+                })
+            }
+            columns to rows
+        }
+    }
+
+    /** For each differing table: the first row whose expected value (pristine baseline + recorded deltas) differs. */
+    private fun firstRowDifferences(db: String, tables: JValue, pristine: Path, root: Path, deltas: Map<String, List<JObj>>): JValue {
+        val names = (tables as? JArr)?.map { (it as JStr).value } ?: return JNull
+        val out = JObj()
+        for (table in names.take(4)) {
+            val expected = LinkedHashMap(tableRows(pristine.resolve(db), table)?.second ?: LinkedHashMap())
+            for (delta in deltas["$db|$table"] ?: emptyList()) {
+                delta.arr("delete").forEach { expected.remove(it.asInt.toLong()) }
+                delta.arr("upsert").forEach { r -> val a = r.asArr; expected[a[0].asInt.toLong()] = JArr(a.drop(1).toMutableList()) }
+            }
+            val actual = tableRows(root.resolve(db), table)?.second ?: LinkedHashMap()
+            val rowid = (expected.keys + actual.keys).toSortedSet().firstOrNull { expected[it] != actual[it] }
+            out[table] = if (rowid == null) JStr("rows equal (column layout or order differs)") else jobj("rowid" to rowid,
+                "expected" to (expected[rowid]?.let { Json.dumps(it).take(1500) } ?: "absent"),
+                "actual" to (actual[rowid]?.let { Json.dumps(it).take(1500) } ?: "absent"))
+        }
+        return out
     }
 
     private fun differingTables(expected: JObj?, actual: JObj?): JValue {
