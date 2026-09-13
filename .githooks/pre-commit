@@ -1,0 +1,3 @@
+#!/bin/sh
+# Refuses commits that contain game files, private material or AI references.
+exec "$(dirname "$0")/run-guard" --staged
