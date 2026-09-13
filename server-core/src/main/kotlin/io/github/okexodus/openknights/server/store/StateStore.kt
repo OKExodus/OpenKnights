@@ -470,7 +470,8 @@ class StateStore(path: Path, private val driver: SqlDriver) {
         return matches[0]
     }
 
-    private fun setOwnedCount(db: SqlConnection, current: Current, item: JObj, location: String, count: Long) {
+    /** Set one owned item's count in its store, retiring the UID at 0 (`_set_owned_count`). */
+    fun setOwnedCount(db: SqlConnection, current: Current, item: JObj, location: String, count: Long) {
         val uid = (item.arr("wire_values")[0] as JInt).value.toLong()
         if (count != 0L) item.arr("wire_values")[2] = JInt(count)
         when (location) {
