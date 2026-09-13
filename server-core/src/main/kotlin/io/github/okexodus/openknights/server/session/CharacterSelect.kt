@@ -19,7 +19,7 @@ class CharacterSelect(
     rowIds: List<Int>? = null,
     val announcement: String = "",
     val createRowLabel: String = CREATE_ROW_LABEL,
-    clock: () -> Long = { System.currentTimeMillis() / 1000 },
+    clock: () -> Long = { io.github.okexodus.openknights.exact.Now.epoch() },
 ) {
     companion object {
         const val CLICK_TO_LOG_IN = "880010000"

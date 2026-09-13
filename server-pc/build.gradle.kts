@@ -28,6 +28,7 @@ tasks.test {
     inputs.property("openknightsOriginals", providers.environmentVariable("OPENKNIGHTS_ORIGINALS").orElse(""))
     inputs.property("openknightsDevDir", providers.environmentVariable("OPENKNIGHTS_DEV_DIR").orElse(""))
     inputs.property("openknightsBundles", providers.environmentVariable("OPENKNIGHTS_BUNDLES").orElse(""))
+    inputs.property("openknightsReleaseData", providers.environmentVariable("OPENKNIGHTS_RELEASE_DATA").orElse(""))
 }
 
 /**

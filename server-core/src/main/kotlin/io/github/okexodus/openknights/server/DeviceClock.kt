@@ -24,8 +24,8 @@ import java.time.format.DateTimeFormatter
  */
 class DeviceClock(
     private val path: Path?,
-    private val timeSource: () -> Long = { System.currentTimeMillis() / 1000 },
-    private val offsetSource: (Long) -> Int = { epoch -> ZoneId.systemDefault().rules.getOffset(Instant.ofEpochSecond(epoch)).totalSeconds },
+    private val timeSource: () -> Long = { io.github.okexodus.openknights.exact.Now.epoch() },
+    private val offsetSource: (Long) -> Int = { epoch -> io.github.okexodus.openknights.exact.Now.offset(epoch) },
 ) {
     companion object {
         const val PROFILE = "openknights_device_clock_v1"
@@ -103,6 +103,6 @@ class DeviceClock(
         persistedAt = hwmEpoch
         if (path == null) return
         Publish.writeJsonAtomic(path, jobj("profile" to PROFILE, "hwm_epoch" to hwmEpoch, "hwm_day" to hwmDay,
-            "written_at_utc" to io.github.okexodus.openknights.exact.PyTime.isoSecondsUtc(System.currentTimeMillis() / 1000)))
+            "written_at_utc" to io.github.okexodus.openknights.exact.PyTime.nowIsoSeconds()))
     }
 }

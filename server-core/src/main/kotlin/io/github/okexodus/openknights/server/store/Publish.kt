@@ -41,7 +41,7 @@ object Publish {
             throw FileAlreadyExistsException(claim.fileName.toString(), null, "Another publisher holds it (or a crashed one left it)")
         }
         try {
-            Files.writeString(claim, Json.dumps(jobj("pid" to ProcessHandle.current().pid(), "time" to System.currentTimeMillis() / 1000.0)))
+            Files.writeString(claim, Json.dumps(jobj("pid" to ProcessHandle.current().pid(), "time" to io.github.okexodus.openknights.exact.Now.seconds())))
             afterClaim?.invoke()
             if (Files.exists(target)) throw FileAlreadyExistsException(target.fileName.toString(), null, "already exists; publishing never overwrites")
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE)

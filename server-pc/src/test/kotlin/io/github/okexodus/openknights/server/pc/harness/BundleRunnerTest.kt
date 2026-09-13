@@ -85,7 +85,18 @@ class BundleRunnerTest {
         assumeTrue(folder != null && Files.isDirectory(folder), "OPENKNIGHTS_BUNDLES is not set: local-only test skipped")
         val bundles = Files.list(folder!!).use { s -> s.filter { Files.isRegularFile(it.resolve("bundle.json")) }.sorted().toList() }
         val failed = ArrayList<String>()
+        val apk = System.getenv("OPENKNIGHTS_APK")?.let { Path.of(it) }
+            ?: System.getenv("OPENKNIGHTS_ORIGINALS")?.let { Path.of(it, "com.enjoygame.hero2d.apk") }
+        val releaseData = System.getenv("OPENKNIGHTS_RELEASE_DATA")?.let { Path.of(it) }
         for (b in bundles) {
+            if (Files.readString(b.resolve("bundle.json")).take(64).contains("openknights_fixture_bundle_v2")) {
+                // a recording (bundle v2) needs the player's APK and the release data
+                if (apk == null || releaseData == null) continue
+                val report = RecordingRunner(apk, releaseData).run(b, tmp.resolve("work"))
+                println(Json.dumps(jobj("bundle" to report.str("bundle"), "compared" to report["compared_steps"], "waiting" to report.obj("waiting").long("steps"))))
+                if (!report.bool("passed")) failed.add(report.str("bundle"))
+                continue
+            }
             val report = BundleRunner().run(b, tmp.resolve("work"))
             println(Json.dumps(report.obj("covered").let { c -> jobj("bundle" to report.str("bundle"), "login" to c.obj("login_hop").long("passed"),
                 "auth" to c.obj("game_authentication").long("passed"), "codec" to c.obj("codec").long("passed"), "waiting" to report.obj("waiting").long("client_requests")) }))

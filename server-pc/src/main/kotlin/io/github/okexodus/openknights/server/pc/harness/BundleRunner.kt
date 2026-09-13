@@ -292,8 +292,17 @@ fun main(args: Array<String>) {
     val work = Files.createTempDirectory("openknights-bundles-")
     val reports = JArr()
     val folders = Files.list(bundles).use { s -> s.filter { Files.isRegularFile(it.resolve("bundle.json")) }.sorted().toList() }
+    val originals = System.getenv("OPENKNIGHTS_ORIGINALS")
+    val apk = System.getenv("OPENKNIGHTS_APK")?.let { Path.of(it) } ?: originals?.let { Path.of(it, "com.enjoygame.hero2d.apk") }
+    val releaseData = System.getenv("OPENKNIGHTS_RELEASE_DATA")?.let { Path.of(it) }
+    val recordings = if (apk != null && releaseData != null) RecordingRunner(apk, releaseData) else null
     for (folder in folders) {
-        val report = try { BundleRunner().run(folder, work) } catch (e: Exception) {
+        val report = try {
+            if (Files.readString(folder.resolve("bundle.json")).take(64).contains("openknights_fixture_bundle_v2")) {
+                recordings?.run(folder, work) ?: jobj("bundle" to folder.fileName.toString(), "passed" to false,
+                    "error" to "a recording needs OPENKNIGHTS_APK (or OPENKNIGHTS_ORIGINALS) and OPENKNIGHTS_RELEASE_DATA")
+            } else BundleRunner().run(folder, work)
+        } catch (e: Exception) {
             jobj("bundle" to folder.fileName.toString(), "passed" to false, "error" to "${e.javaClass.simpleName}: ${e.message}")
         }
         reports.add(report)

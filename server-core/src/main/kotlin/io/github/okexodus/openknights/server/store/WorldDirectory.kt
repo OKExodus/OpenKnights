@@ -8,7 +8,6 @@ import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jobj
 import java.nio.file.Files
 import java.nio.file.Path
-import java.security.SecureRandom
 
 /**
  * The shared world database (`world.py`, schema v4; v3 is still readable): the character directory (unique names
@@ -68,7 +67,7 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
 
         private fun canonical(value: JValue) = Json.canonical(value)
 
-        fun newSeed(): String = ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it) }
+        fun newSeed(): String = io.github.okexodus.openknights.server.Entropy.current.tokenHex(16)
 
         /** Publish an empty world (schema v4) with its birth documents; never replaces an existing file. */
         fun initialize(path: Path, driver: SqlDriver, worldSeed: String = newSeed()): WorldDirectory {
