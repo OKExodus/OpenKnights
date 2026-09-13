@@ -1,5 +1,6 @@
 plugins {
     alias(libs.plugins.kotlin.jvm)
+    `java-test-fixtures`
 }
 
 kotlin {
@@ -12,6 +13,10 @@ dependencies {
     implementation(libs.smali.baksmali)
     implementation(libs.smali.dexlib2)
     implementation(libs.kotlinx.serialization.json)
+
+    // Made-up games and APKs for tests (no game data), shared with the command line's tests.
+    testFixturesImplementation(libs.kotlinx.serialization.json)
+    testFixturesImplementation(libs.smali.dexlib2)
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)

@@ -1,0 +1,6 @@
+#!/bin/sh
+# OpenKnights Patcher for Linux: patches the game in the "original" folder next to this file.
+HERE=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd) || exit 1
+JAVA="$HERE/runtime/bin/java"
+[ -x "$JAVA" ] || JAVA=java
+exec "$JAVA" -Xmx2g -cp "$HERE/app/*" io.github.okexodus.openknights.patcher.cli.MainKt "$@"
