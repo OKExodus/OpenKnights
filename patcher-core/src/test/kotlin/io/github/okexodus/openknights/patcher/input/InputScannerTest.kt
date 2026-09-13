@@ -1,5 +1,6 @@
 package io.github.okexodus.openknights.patcher.input
 
+import io.github.okexodus.openknights.gamedata.SupportedInput
 import io.github.okexodus.openknights.patcher.FailureCode
 import io.github.okexodus.openknights.patcher.Fixtures
 import io.github.okexodus.openknights.patcher.PatchFailure

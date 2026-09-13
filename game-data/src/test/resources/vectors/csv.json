@@ -1,0 +1,3809 @@
+{
+ "profile": "openknights_vectors_v1",
+ "primitive": "csv",
+ "generator": "reference implementation, CPython 3.13",
+ "description": "csv.reader(strict=True) over UTF-8 text with universal line breaks kept (newline='')",
+ "count": 516,
+ "vectors": [
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\n\n",
+   "rows": [
+    [],
+    []
+   ]
+  },
+  {
+   "text": "a",
+   "rows": [
+    [
+     "a"
+    ]
+   ]
+  },
+  {
+   "text": "a,b\n",
+   "rows": [
+    [
+     "a",
+     "b"
+    ]
+   ]
+  },
+  {
+   "text": "a,b\r\nc,d\r\n",
+   "rows": [
+    [
+     "a",
+     "b"
+    ],
+    [
+     "c",
+     "d"
+    ]
+   ]
+  },
+  {
+   "text": "a\rb\rc",
+   "rows": [
+    [
+     "a"
+    ],
+    [
+     "b"
+    ],
+    [
+     "c"
+    ]
+   ]
+  },
+  {
+   "text": "\"a\nb\",c\n",
+   "rows": [
+    [
+     "a\nb",
+     "c"
+    ]
+   ]
+  },
+  {
+   "text": "\"unterminated",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "a,\"b\"c\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a\"\"b\",\"\"\n",
+   "rows": [
+    [
+     "a\"b",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": ",\n,,\n",
+   "rows": [
+    [
+     "",
+     ""
+    ],
+    [
+     "",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\ufeffh1,h2\n1,2\n",
+   "rows": [
+    [
+     "h1",
+     "h2"
+    ],
+    [
+     "1",
+     "2"
+    ]
+   ]
+  },
+  {
+   "text": "a,b\r\n\r\nc,d",
+   "rows": [
+    [
+     "a",
+     "b"
+    ],
+    [],
+    [
+     "c",
+     "d"
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"\r\ny",
+   "rows": [
+    [
+     "x"
+    ],
+    [
+     "y"
+    ]
+   ]
+  },
+  {
+   "text": "a\n\rb",
+   "rows": [
+    [
+     "a"
+    ],
+    [],
+    [
+     "b"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\"cr\rinside\"\n\"cr\rinside\",",
+   "rows": [
+    [],
+    [
+     "cr\rinside"
+    ],
+    [
+     "cr\rinside",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\"end\"z12\n\u4e2db\u00e9\"multi\nline\"\u4e2d\t",
+   "rows": [
+    [
+     "\u0000\"end\"z12"
+    ],
+    [
+     "\u4e2db\u00e9\"multi"
+    ],
+    [
+     "line\"\u4e2d\t"
+    ]
+   ]
+  },
+  {
+   "text": "\r\nx\"y,\t\u4e2d,\t",
+   "rows": [
+    [],
+    [
+     "x\"y",
+     "\t\u4e2d",
+     "\t"
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"\"q\"\"q\"\n\n",
+   "rows": [
+    [
+     "q\"q\"q\"q"
+    ],
+    []
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"\n\"a,b\"\"\"x\"y\n\"x\"a\"end\"z\u00e9,\"\"\"\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\n\n\"multi\nline\" \"a,b\"\"q\"\"q\"\n\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "12\"\"cr\rinside\"\u00e9\t\"\"",
+   "rows": [
+    [
+     "12\"\"cr"
+    ],
+    [
+     "inside\"\u00e9\t\"\""
+    ]
+   ]
+  },
+  {
+   "text": ",\"\"a,b\"\t\"a,b\"1212\"a,b\"\r\n\n\"multi\nline\"\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\",,\u4e2d,\u0000",
+   "rows": [
+    [
+     "",
+     "",
+     "\u4e2d",
+     "\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "\r\na\"end\"z\r\n\"\"\"\"\u4e2d\"end\"za12\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n\u4e2d\"q\"\"q\"\u0000b\r\"a,b\"\u4e2d\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",b\"\"\u4e2d\"multi\nline\"\"\"q\"\"q\"\"\"\"x\"b\u4e2d",
+   "rows": [
+    [
+     "",
+     "b\"\"\u4e2d\"multi"
+    ],
+    [
+     "line\"\"\"q\"\"q\"\"\"\"x\"b\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\u00e9, \"multi\nline\"\"multi\nline\"x\"y\t\"end\"z\u4e2d\"\"\"end\"z",
+   "rows": [
+    [
+     "x\"y\u00e9",
+     " \"multi"
+    ],
+    [
+     "line\"\"multi"
+    ],
+    [
+     "line\"x\"y\t\"end\"z\u4e2d\"\"\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "b12\r\u0000\r\u0000\"multi\nline\"",
+   "rows": [
+    [
+     "b12"
+    ],
+    [
+     "\u0000"
+    ],
+    [
+     "\u0000\"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": ",\"end\"zb\"\u4e2d\n\"end\"z\"a,b\"\u4e2d ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\u00e9\"x\"\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\"multi\nline\"\n\"x\"y,x\"y12\"\"b\r\n\r\n\r\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\"\"multi\nline\"\"cr\rinside\"\"q\"\"q\"12x\"y 12\n\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9a",
+   "rows": [
+    [
+     "\u00e9a"
+    ]
+   ]
+  },
+  {
+   "text": "b12\n",
+   "rows": [
+    [
+     "b12"
+    ]
+   ]
+  },
+  {
+   "text": "\u0000b\u4e2d\n\u00e9\r\n\n\"\"aa\"end\"za",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"multi\nline\" a\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\nx\"y\tx\"y\"b\"\"\"a",
+   "rows": [
+    [],
+    [
+     "x\"y\tx\"y\"b\"\"\"a"
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\"x\"bx\"y\"end\"zb",
+   "rows": [
+    [
+     "\u00e9\"x\"bx\"y\"end\"zb"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\u4e2d\u4e2d\r\n\"cr\rinside\"\"multi\nline\"\r\n\"cr\rinside\"a12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b\tx\"y\n\u4e2d\"",
+   "rows": [
+    [
+     "b\tx\"y"
+    ],
+    [
+     "\u4e2d\""
+    ]
+   ]
+  },
+  {
+   "text": "\t\u4e2d12\"a\"end\"z\t\u0000\"multi\nline\"\"a,b\"",
+   "rows": [
+    [
+     "\t\u4e2d12\"a\"end\"z\t\u0000\"multi"
+    ],
+    [
+     "line\"\"a",
+     "b\""
+    ]
+   ]
+  },
+  {
+   "text": " \"cr\rinside\"a\u00e9\u00e9\" \"a,b\"\r\n\"\"",
+   "rows": [
+    [
+     " \"cr"
+    ],
+    [
+     "inside\"a\u00e9\u00e9\" \"a",
+     "b\""
+    ],
+    [
+     ""
+    ]
+   ]
+  },
+  {
+   "text": ",",
+   "rows": [
+    [
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "12\"\u4e2d\"cr\rinside\"ba\"end\"z \"q\"\"q\"\n\u00e9",
+   "rows": [
+    [
+     "12\"\u4e2d\"cr"
+    ],
+    [
+     "inside\"ba\"end\"z \"q\"\"q\""
+    ],
+    [
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "12\"\"12a\u00e912\"a,b\"",
+   "rows": [
+    [
+     "12\"\"12a\u00e912\"a",
+     "b\""
+    ]
+   ]
+  },
+  {
+   "text": "12\r\n \"multi\nline\"a\r\n,\"x\"a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "12\u0000\"q\"\"q\"\"cr\rinside\"\"cr\rinside\"\"end\"zax\"y\"\"q\"\"q\"\r\n",
+   "rows": [
+    [
+     "12\u0000\"q\"\"q\"\"cr"
+    ],
+    [
+     "inside\"\"cr"
+    ],
+    [
+     "inside\"\"end\"zax\"y\"\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\u0000x\"y\"\"\"q\"\"q\"\u0000\u00e9b\u00e9,",
+   "rows": [
+    [
+     "\u0000x\"y\"\"\"q\"\"q\"\u0000\u00e9b\u00e9",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": ",b,\t\"x\"\"b\"a,b\"\"q\"\"q\"\u0000\t12\n",
+   "rows": [
+    [
+     "",
+     "b",
+     "\t\"x\"\"b\"a",
+     "b\"\"q\"\"q\"\u0000\t12"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\"end\"z12\"\"b ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\t\n\"multi\nline\"\n\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n \n\"\n\"a,b\"\t\"x\",\"x\" \"\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"\"",
+   "rows": [
+    [
+     "x\"y\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\t\"multi\nline\"\"b\u0000\"\"a,b\"\r\n\r\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": " \n\r\nx\"y12\"q\"\"q\"\"end\"z\u4e2d\"\"multi\nline\"\"multi\nline\"\t",
+   "rows": [
+    [
+     " "
+    ],
+    [],
+    [
+     "x\"y12\"q\"\"q\"\"end\"z\u4e2d\"\"multi"
+    ],
+    [
+     "line\"\"multi"
+    ],
+    [
+     "line\"\t"
+    ]
+   ]
+  },
+  {
+   "text": "\"multi\nline\"\u000012\u4e2db\"\"12\"a,b\"\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\"q\"\"q\"12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\"\"\n\"multi\nline\"",
+   "rows": [
+    [
+     "\u00e9\"\""
+    ],
+    [
+     "multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\r\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": " \"end\"zx\"y\"\"\t\r\n\"\"\"end\"z12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\n\"a,b\"\u00e9\"cr\rinside\"b \u0000\"multi\nline\" ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "12\t x\"y\tb\r\",a\r\r\n",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\n\"\"\r\n\"x\"\u00e9\u00e9\"cr\rinside\"\"x\"x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"ax\"y12\t\"end\"z\"12\"cr\rinside\"b\"end\"z\"x\"\"cr\rinside\"\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\"multi\nline\"",
+   "rows": [
+    [
+     "a,b\"multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": ",\"cr\rinside\"\"a,b\"\r\n\"x\"y   b\"a,b\"\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"\t\"cr\rinside\"",
+   "rows": [
+    [
+     "x\"y\"\t\"cr"
+    ],
+    [
+     "inside\""
+    ]
+   ]
+  },
+  {
+   "text": "\r\"\u0000",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\u00e9\"q\"\"q\"b\u00e9\"end\"z12\u00e9\"a,b\"\"x\"12",
+   "rows": [
+    [
+     "\u00e9\"q\"\"q\"b\u00e9\"end\"z12\u00e9\"a",
+     "b\"\"x\"12"
+    ]
+   ]
+  },
+  {
+   "text": " \"x\"",
+   "rows": [
+    [
+     " \"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\"\u0000x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\",",
+   "rows": [
+    [
+     "x",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\u0000\u00e9",
+   "rows": [
+    [
+     "\u00e9\u0000\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\n ",
+   "rows": [
+    [],
+    [
+     " "
+    ]
+   ]
+  },
+  {
+   "text": "\r",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\t\"\"\r\nb\"end\"z\r\u0000\"end\"z",
+   "rows": [
+    [
+     "\t\"\""
+    ],
+    [
+     "b\"end\"z"
+    ],
+    [
+     "\u0000\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"a\"\"x\"\"cr\rinside\"\n\u4e2d\"x\"\u0000\"x\"\u00e9 ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n\u00e9\r\t\t\u00e9\u0000\u00e9,\u00e9",
+   "rows": [
+    [],
+    [
+     "\u00e9"
+    ],
+    [
+     "\t\t\u00e9\u0000\u00e9",
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d\"\"\n\u4e2d12\"a,b\" 12\"\"\t\t ",
+   "rows": [
+    [
+     "\u4e2d\"\""
+    ],
+    [
+     "\u4e2d12\"a",
+     "b\" 12\"\"\t\t "
+    ]
+   ]
+  },
+  {
+   "text": "12\u0000",
+   "rows": [
+    [
+     "12\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "\t\u00e912\"\"\u4e2db\"x\"\"cr\rinside\"x\"y\"\"\r\n\u00e9\r\n",
+   "rows": [
+    [
+     "\t\u00e912\"\"\u4e2db\"x\"\"cr"
+    ],
+    [
+     "inside\"x\"y\"\""
+    ],
+    [
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\u00e9\"q\"\"q\"x\"yx\"y\u00e9\"x\"\"x\"",
+   "rows": [
+    [
+     "x\"y\u00e9\"q\"\"q\"x\"yx\"y\u00e9\"x\"\"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\u00e9x\"y\u0000\"x\"\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\r\n,\u00e9\u0000\r\n12x\"ya\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " \"multi\nline\"b\"\n \n\r\"a,b\"\n\"multi\nline\" \t\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"cr\rinside\"\"q\"\"q\"",
+   "rows": [
+    [
+     "cr\rinside\"q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\"cr\rinside\"\"q\"\"q\"a\u00e9\"cr\rinside\" ",
+   "rows": [
+    [
+     "x\"y\"cr"
+    ],
+    [
+     "inside\"\"q\"\"q\"a\u00e9\"cr"
+    ],
+    [
+     "inside\" "
+    ]
+   ]
+  },
+  {
+   "text": "12a\t\n",
+   "rows": [
+    [
+     "12a\t"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"multi\nline\", \"multi\nline\"",
+   "rows": [
+    [
+     "cr\rinside\"multi\nline",
+     " \"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"a\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b\"end\"zbb\r\u4e2d\r\n\"a,b\"x\"y\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\r",
+   "rows": [
+    [
+     "a,b"
+    ]
+   ]
+  },
+  {
+   "text": ",\u0000\u4e2d\r\n,\u4e2d\r,\"a,b\"\"cr\rinside\"\"cr\rinside\",x\"y",
+   "rows": [
+    [
+     "",
+     "\u0000\u4e2d"
+    ],
+    [
+     "",
+     "\u4e2d"
+    ],
+    [
+     "",
+     "a,b\"cr\rinside\"cr\rinside",
+     "x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "b\ta\r",
+   "rows": [
+    [
+     "b\ta"
+    ]
+   ]
+  },
+  {
+   "text": "b\u00e9\r\t\u4e2d\u00e9\t\r",
+   "rows": [
+    [
+     "b\u00e9"
+    ],
+    [
+     "\t\u4e2d\u00e9\t"
+    ]
+   ]
+  },
+  {
+   "text": "bb\r\"q\"\"q\"",
+   "rows": [
+    [
+     "bb"
+    ],
+    [
+     "q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\"x\"\"end\"z\u0000\"a",
+   "rows": [
+    [
+     "\u00e9\"x\"\"end\"z\u0000\"a"
+    ]
+   ]
+  },
+  {
+   "text": "\u0000x\"yb ,\u00e9ba\"cr\rinside\" \n",
+   "rows": [
+    [
+     "\u0000x\"yb ",
+     "\u00e9ba\"cr"
+    ],
+    [
+     "inside\" "
+    ]
+   ]
+  },
+  {
+   "text": "\n\r\n\r\"\"\r \"multi\nline\"\"cr\rinside\" b\n",
+   "rows": [
+    [],
+    [],
+    [],
+    [
+     ""
+    ],
+    [
+     " \"multi"
+    ],
+    [
+     "line\"\"cr"
+    ],
+    [
+     "inside\" b"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\"\r\n\"\"\r12\u00e9 \r\r\n\"cr\rinside\"",
+   "rows": [
+    [
+     "x\"y\""
+    ],
+    [
+     ""
+    ],
+    [
+     "12\u00e9 "
+    ],
+    [],
+    [
+     "cr\rinside"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "b",
+   "rows": [
+    [
+     "b"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\u0000\n\"cr\rinside\"b\"end\"z\u0000\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y12x\"y\u4e2d\"cr\rinside\"\"x\"\u00e9\t\"a,b\"\"x\"\"q\"\"q\"\"cr\rinside\"",
+   "rows": [
+    [
+     "x\"y12x\"y\u4e2d\"cr"
+    ],
+    [
+     "inside\"\"x\"\u00e9\t\"a",
+     "b\"\"x\"\"q\"\"q\"\"cr"
+    ],
+    [
+     "inside\""
+    ]
+   ]
+  },
+  {
+   "text": ",\"q\"\"q\"\"cr\rinside\"\u00e9 12 ,12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\nb\"q\"\"q\"a\"a,b\"\"multi\nline\"",
+   "rows": [
+    [
+     ""
+    ],
+    [
+     "b\"q\"\"q\"a\"a",
+     "b\"\"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"multi\nline\" \r\"\"\"\"\"\"cr\rinside\"\r\n12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t12 \u00e9\"end\"zb\"a,b\"\t\u0000",
+   "rows": [
+    [
+     "\t12 \u00e9\"end\"zb\"a",
+     "b\"\t\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "a\u4e2d,a\u00e9\",,",
+   "rows": [
+    [
+     "a\u4e2d",
+     "a\u00e9\"",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"x\"\u0000\n\r\n\"cr\rinside\"\"q\"\"q\"\"\"\"q\"\"q\"\r\n\"multi\nline\"a\n\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\"end\"z\ta\"cr\rinside\"\"\"\u00e9\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\r\n\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2da\u00e9,\u00e9 \r\ta,\r\n",
+   "rows": [
+    [
+     "\u4e2da\u00e9",
+     "\u00e9 "
+    ],
+    [
+     "\ta",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\r, \r b\t\"multi\nline\"",
+   "rows": [
+    [],
+    [
+     "",
+     " "
+    ],
+    [
+     " b\t\"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\rb\u4e2dx\"y\" \n\"q\"\"q\"b\"end\"z\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u000012\t",
+   "rows": [
+    [
+     "\u000012\t"
+    ]
+   ]
+  },
+  {
+   "text": "\tbx\"y\"a,b\"\"\"x\"ya\"end\"z\"end\"z\"\"",
+   "rows": [
+    [
+     "\tbx\"y\"a",
+     "b\"\"\"x\"ya\"end\"z\"end\"z\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\"x\" ba\"x\"\"a,b\"\"end\"z\"end\"z\"q\"\"q\"a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\"multi\nline\"\"multi\nline\",,x\"y\"q\"\"q\"\"multi\nline\"a\u00e9\"multi\nline\"\"multi\nline\",\u4e2d",
+   "rows": [
+    [
+     "\"multi\nline\"multi\nline",
+     "",
+     "x\"y\"q\"\"q\"\"multi"
+    ],
+    [
+     "line\"a\u00e9\"multi"
+    ],
+    [
+     "line\"\"multi"
+    ],
+    [
+     "line\"",
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\t\u4e2d\"\"\"cr\rinside\"\"multi\nline\"\"x\"y\"\"cr\rinside\"x\"y",
+   "rows": [
+    [
+     "\t\u4e2d\"\"\"cr"
+    ],
+    [
+     "inside\"\"multi"
+    ],
+    [
+     "line\"\"x\"y\"\"cr"
+    ],
+    [
+     "inside\"x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\u4e2d\"\"",
+   "rows": [
+    [],
+    [
+     "\u4e2d\"\""
+    ]
+   ]
+  },
+  {
+   "text": "12\"x\"x\"y\u0000\"\n",
+   "rows": [
+    [
+     "12\"x\"x\"y\u0000\""
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"\t\"q\"\"q\"\"q\"\"q\"\u4e2d\"q\"\"q\"x\"y\"multi\nline\"b",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\"x\"\"\"\"multi\nline\"",
+   "rows": [
+    [],
+    [
+     "x\"\"multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\nx\"y\"cr\rinside\" ",
+   "rows": [
+    [
+     "x\"y"
+    ],
+    [
+     "x\"y\"cr"
+    ],
+    [
+     "inside\" "
+    ]
+   ]
+  },
+  {
+   "text": "\n\n\"cr\rinside\"\"\"",
+   "rows": [
+    [],
+    [],
+    [
+     "cr\rinside\""
+    ]
+   ]
+  },
+  {
+   "text": "\r",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"\"12\"multi\nline\"b\u00e9\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " \"multi\nline\" \u00e9x\"y\"end\"z\"a,b\"\rx\"y a\r",
+   "rows": [
+    [
+     " \"multi"
+    ],
+    [
+     "line\" \u00e9x\"y\"end\"z\"a",
+     "b\""
+    ],
+    [
+     "x\"y a"
+    ]
+   ]
+  },
+  {
+   "text": "12\"\"\r\n\"a,b\"\"a,b\"\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\"\"q\"\"q\",12\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\"multi\nline\" \u4e2d\u0000\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\"end\"z\t\"\"\"a,b\"a\r\n\n\"multi\nline\"\"q\"\"q\"\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "a",
+   "rows": [
+    [
+     "a"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\nb\"multi\nline\"\"multi\nline\"bx\"y\u00e9\r\n\u4e2d\r,\"x\"",
+   "rows": [
+    [],
+    [
+     "b\"multi"
+    ],
+    [
+     "line\"\"multi"
+    ],
+    [
+     "line\"bx\"y\u00e9"
+    ],
+    [
+     "\u4e2d"
+    ],
+    [
+     "",
+     "x"
+    ]
+   ]
+  },
+  {
+   "text": "\tx\"y\t\" \n\t\u00e9 ba",
+   "rows": [
+    [
+     "\tx\"y\t\" "
+    ],
+    [
+     "\t\u00e9 ba"
+    ]
+   ]
+  },
+  {
+   "text": "\"\u0000",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": ",\"multi\nline\"\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\u4e2d\"a,b\"\t\"\"\"cr\rinside\"\u4e2d\",",
+   "rows": [
+    [
+     "\u00e9\u4e2d\"a",
+     "b\"\t\"\"\"cr"
+    ],
+    [
+     "inside\"\u4e2d\"",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"x\"y\"end\"z\u00e9 \n\"multi\nline\"\r\u0000  \r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\"cr\rinside\"\tb\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\r\nx\"y\"x\"\"\"\"multi\nline\"\"multi\nline\"\n\"end\"z\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\",\"q\"\"q\",12\u0000a\"cr\rinside\"\"multi\nline\"\"cr\rinside\"12",
+   "rows": [
+    [
+     "q\"q",
+     "q\"q",
+     "12\u0000a\"cr"
+    ],
+    [
+     "inside\"\"multi"
+    ],
+    [
+     "line\"\"cr"
+    ],
+    [
+     "inside\"12"
+    ]
+   ]
+  },
+  {
+   "text": "\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\"a,b\"\r\n\u00e9",
+   "rows": [
+    [
+     "a,b"
+    ],
+    [
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": " \"x\"\r\n\r\"\",b \r\n\u0000\u0000\"multi\nline\"\"end\"z\u4e2d",
+   "rows": [
+    [
+     " \"x\""
+    ],
+    [],
+    [
+     "",
+     "b "
+    ],
+    [
+     "\u0000\u0000\"multi"
+    ],
+    [
+     "line\"\"end\"z\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"cr\rinside\"\"a,b\" \u00e9\"multi\nline\"x\"yab\n\"end\"z\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\"\"\"q\"\"q\"\"\u4e2d12\ra\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2d\"multi\nline\"\u0000\"cr\rinside\"b\"cr\rinside\"\"cr\rinside\"\u00e9\"multi\nline\"\"q\"\"q\"",
+   "rows": [
+    [
+     "\u4e2d\"multi"
+    ],
+    [
+     "line\"\u0000\"cr"
+    ],
+    [
+     "inside\"b\"cr"
+    ],
+    [
+     "inside\"\"cr"
+    ],
+    [
+     "inside\"\u00e9\"multi"
+    ],
+    [
+     "line\"\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\"a,b\"\u00e9\n\"a,b\"\r\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "  \"x\"x\"y\"cr\rinside\"\u4e2d\"\"",
+   "rows": [
+    [
+     "  \"x\"x\"y\"cr"
+    ],
+    [
+     "inside\"\u4e2d\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"q\"\"q\"\"q\"\"q\"x\"y\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\n\"q\"\"q\"\n\r\"\t\"multi\nline\"\u00e9\"end\"z\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\"multi\nline\"b\r\n\"multi\nline\",\u4e2d,",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\r\n a",
+   "rows": [
+    [
+     "cr\rinside"
+    ],
+    [
+     " a"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\"a,b\"\u0000\"multi\nline\"\"\"",
+   "rows": [
+    [
+     "a\"a",
+     "b\"\u0000\"multi"
+    ],
+    [
+     "line\"\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"b\"a,b\"\"cr\rinside\" \"bbb\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "  \t\"multi\nline\"12",
+   "rows": [
+    [
+     "  \t\"multi"
+    ],
+    [
+     "line\"12"
+    ]
+   ]
+  },
+  {
+   "text": ",\"\u0000\"a,b\",\"end\"z\r\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a,\"end\"z\"multi\nline\"\u0000b\u4e2d,\"a,b\"\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"\"\n\rx\"y\"a,b\"x\"y\u0000\"cr\rinside\"\"\"\"a,b\"\"\r",
+   "rows": [
+    [
+     "x\"y\"\""
+    ],
+    [],
+    [
+     "x\"y\"a",
+     "b\"x\"y\u0000\"cr"
+    ],
+    [
+     "inside\"\"\"\"a",
+     "b\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\n\"multi\nline\"\u4e2d\"x\"x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\"a,b\"x\"y12\"a,b\"\"a,b\"b12\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t",
+   "rows": [
+    [
+     "\t"
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\r\n\r\nb,x\"y\"multi\nline\"\"q\"\"q\" \"cr\rinside\"\"\"q\"\"q\" ",
+   "rows": [
+    [
+     "\u0000"
+    ],
+    [],
+    [
+     "b",
+     "x\"y\"multi"
+    ],
+    [
+     "line\"\"q\"\"q\" \"cr"
+    ],
+    [
+     "inside\"\"\"q\"\"q\" "
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"a\u0000\r\"q\"\"q\"\t\"q\"\"q\"a\"q\"\"q\"\"q\"\"q\"\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"a\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\"end\"z\"\"\"cr\rinside\"\"\"\u4e2d\"multi\nline\"",
+   "rows": [
+    [
+     "a\"end\"z\"\"\"cr"
+    ],
+    [
+     "inside\"\"\"\u4e2d\"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\"cr\rinside\"\"\u00e9 \"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000a\"multi\nline\"\u0000,x\"y\r\n",
+   "rows": [
+    [
+     "\u0000a\"multi"
+    ],
+    [
+     "line\"\u0000",
+     "x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "a\"a,b\"\r\"multi\nline\"\"\"12\t\"multi\nline\"\"a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"\"",
+   "rows": [
+    [
+     "x\"y\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\n\"a,b\"a\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\t",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\tx\"yb\r\n,\u4e2d\"\"12\"\"\u4e2d ",
+   "rows": [
+    [
+     "\tx\"yb"
+    ],
+    [
+     "",
+     "\u4e2d\"\"12\"\"\u4e2d "
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\"end\"z\r\nb\"a\"q\"\"q\"\u00e9\n\"\"x\"a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": " \u00e9",
+   "rows": [
+    [
+     " \u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "b12a\u4e2d",
+   "rows": [
+    [
+     "b12a\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"x\"\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": " \r\nb\n\u00e9\"end\"z\n\u00e9\r\"multi\nline\"x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "x\"y\u4e2d",
+   "rows": [
+    [
+     "x\"y\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\"multi\nline\" \rbaa\"x\"12\"a,b\"\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2d\"q\"\"q\"\"x\"\u4e2d\u4e2d\"a,b\"\"end\"z12",
+   "rows": [
+    [
+     "\u4e2d\"q\"\"q\"\"x\"\u4e2d\u4e2d\"a",
+     "b\"\"end\"z12"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"\"end\"z\"cr\rinside\"\u00e9\"multi\nline\"\u4e2d\"a,b\"\"end\"z\"cr\rinside\"\r\"cr\rinside\"\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\"multi\nline\"x\"yb\"x\" x\"y\u4e2d\"\u0000\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\n ax\"y",
+   "rows": [
+    [],
+    [],
+    [
+     " ax\"y"
+    ]
+   ]
+  },
+  {
+   "text": "a, 12\"cr\rinside\",",
+   "rows": [
+    [
+     "a",
+     " 12\"cr"
+    ],
+    [
+     "inside\"",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"x\" \"\"\"x\"\"cr\rinside\"b",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "aa\"\"\"\"\t\"\",",
+   "rows": [
+    [
+     "aa\"\"\"\"\t\"\"",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "12\"end\"z",
+   "rows": [
+    [
+     "12\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d\"multi\nline\",b\"b\u00e9x\"y\"x\"\"a,b\"12\"x\"",
+   "rows": [
+    [
+     "\u4e2d\"multi"
+    ],
+    [
+     "line\"",
+     "b\"b\u00e9x\"y\"x\"\"a",
+     "b\"12\"x\""
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\"\"\u00e9\r\n\r,\r\n\u4e2d\tx\"y12",
+   "rows": [
+    [
+     "x\"y\"\"\u00e9"
+    ],
+    [],
+    [
+     "",
+     ""
+    ],
+    [
+     "\u4e2d\tx\"y12"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": ",\"x\"\"end\"z12\u4e2d\r\nb\"x\"\"q\"\"q\"\"a,b\"\r12\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n\"\"",
+   "rows": [
+    [],
+    [
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\t\u00e9\r\n\r\t\r\n\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\u00e9\u0000",
+   "rows": [
+    [
+     "\u00e9\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\"multi\nline\"\"\"\u00e9\n\u0000\"\"\u4e2da ,,\"a,b\"\"x\"\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\",\"cr\rinside\"12b",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\u0000\r\n\"\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "x\"yaa\"x\"y\u4e2d\"end\"z\u0000\u00e9\r\n",
+   "rows": [
+    [
+     "x\"yaa\"x\"y\u4e2d\"end\"z\u0000\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\r\n\t\t\r\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b\u00e9\u0000a \"x\"\r",
+   "rows": [
+    [
+     "b\u00e9\u0000a \"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\"\"",
+   "rows": [
+    [
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\"multi\nline\"",
+   "rows": [
+    [
+     "multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\r\"multi\nline\"\"x\"\r\"\"ba,",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\"x\"",
+   "rows": [
+    [
+     "a,b\"x"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\r\r\"x\"b\"multi\nline\"\"end\"z\r\n\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\r\"cr\rinside\"\"a,b\",\u4e2d\"\"x\"y\u00e9a\u00e9",
+   "rows": [
+    [
+     "\u00e9"
+    ],
+    [
+     "cr\rinside\"a,b",
+     "\u4e2d\"\"x\"y\u00e9a\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\"\"q\"\"q\",\"x\"\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\"\"\"a,b\"\r12,\"q\"\"q\"\"end\"z\n\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\" ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\"cr\rinside\"x\"y\"q\"\"q\"\"\"\"a,b\"\"\"x\"y\"\" \"q\"\"q\"\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"12b\"a,b\"ax\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2d\"a,b\"\"\u4e2d12",
+   "rows": [
+    [
+     "\u4e2d\"a",
+     "b\"\"\u4e2d12"
+    ]
+   ]
+  },
+  {
+   "text": ",\r\n\r\n\r\nx\"y\r\"end\"z\"q\"\"q\"\u0000\u4e2d\u0000\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",\u0000x\"y\"end\"z,\"cr\rinside\"\"end\"z ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b,\"cr\rinside\"\u0000\"x\"a\u4e2d\u0000\r\n\u00e9\t\"cr\rinside\" ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",\r\n\u4e2d",
+   "rows": [
+    [
+     "",
+     ""
+    ],
+    [
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\tx\"y\"a,b\"a\"a,b\"12x\"y\r\u4e2d\r",
+   "rows": [
+    [
+     "\tx\"y\"a",
+     "b\"a\"a",
+     "b\"12x\"y"
+    ],
+    [
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "12\"cr\rinside\"\u4e2d\"q\"\"q\"",
+   "rows": [
+    [
+     "12\"cr"
+    ],
+    [
+     "inside\"\u4e2d\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"x\"y\r\n\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\u0000x\"y 12\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"",
+   "rows": [
+    [
+     "x"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\"x\"",
+   "rows": [
+    [
+     "a,b\"x"
+    ]
+   ]
+  },
+  {
+   "text": " ",
+   "rows": [
+    [
+     " "
+    ]
+   ]
+  },
+  {
+   "text": "\r\"\"\"cr\rinside\"\"\"\u0000\r\n\u0000,12\r\n\"\"\t\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2d\"x\"\"a,b\"\n\"\"x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " 12\"\"end\"z",
+   "rows": [
+    [
+     " 12\"\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "b\"x\"\"a,b\"\u4e2d",
+   "rows": [
+    [
+     "b\"x\"\"a",
+     "b\"\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": ",\u00e9\u4e2d\"q\"\"q\"\u0000\"a\u4e2d\"\"\"multi\nline\"\t\r \"multi\nline\"",
+   "rows": [
+    [
+     "",
+     "\u00e9\u4e2d\"q\"\"q\"\u0000\"a\u4e2d\"\"\"multi"
+    ],
+    [
+     "line\"\t"
+    ],
+    [
+     " \"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "\r\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\u00e9\t\"\"\r\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\"x\"\"x\"bba\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"a,b\"\r\"x\"\r\"multi\nline\"",
+   "rows": [
+    [
+     "a,b"
+    ],
+    [
+     "x"
+    ],
+    [
+     "multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": ",",
+   "rows": [
+    [
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\"\"end\"z\u00e9\"cr\rinside\"\"a,b\" \r12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"cr\rinside\" \"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " a\t\u4e2d\u4e2d\"x\"",
+   "rows": [
+    [
+     " a\t\u4e2d\u4e2d\"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"x\"y\r\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n\u0000\u4e2d\"multi\nline\",\"cr\rinside\"\"\t \"multi\nline\"\r\n\"q\"\"q\"\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "12\n\u4e2db\u00e9x\"y\u00e9",
+   "rows": [
+    [
+     "12"
+    ],
+    [
+     "\u4e2db\u00e9x\"y\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": " x\"yx\"y\"a,b\"a",
+   "rows": [
+    [
+     " x\"yx\"y\"a",
+     "b\"a"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"a,b\"x\"y\"cr\rinside\" \rb\n\u00e9\"x\"\"end\"z\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b",
+   "rows": [
+    [
+     "b"
+    ]
+   ]
+  },
+  {
+   "text": "\r\u00e9\"q\"\"q\",\"\"a,b\"\"a\"multi\nline\"\n\"multi\nline\" x\"y\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t\"cr\rinside\"12\"x\",\r\n12\"a,b\"\"a,b\"\"",
+   "rows": [
+    [
+     "\t\"cr"
+    ],
+    [
+     "inside\"12\"x\"",
+     ""
+    ],
+    [
+     "12\"a",
+     "b\"\"a",
+     "b\"\""
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"end\"z\"\"\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\u4e2dx\"y\"\"\u4e2d\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\u4e2d\"\"\t x\"y\nb\"x\"\t\"\"a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r,\t\"a,b\"",
+   "rows": [
+    [],
+    [
+     "",
+     "\t\"a",
+     "b\""
+    ]
+   ]
+  },
+  {
+   "text": "a\n\"multi\nline\"\"x\"y\"multi\nline\"x\"y\"x\"\"cr\rinside\"\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"q\"\"q\"x\"y\"\"\"q\"\"q\"",
+   "rows": [
+    [
+     "x\"y\"q\"\"q\"x\"y\"\"\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\n\"\"",
+   "rows": [
+    [
+     "\u00e9"
+    ],
+    [
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\t\u00e9",
+   "rows": [
+    [
+     "\t\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\"12\n\u00e9a\"cr\rinside\"\"q\"\"q\"\u00e9\n\"multi\nline\"\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b\"end\"z\r\"\"\"\"\"cr\rinside\"\"a,b\"\n\r,\"\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\"",
+   "rows": [
+    [
+     "\u00e9\""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\"end\"z12\t\"x\"",
+   "rows": [
+    [
+     "\u0000\"end\"z12\t\"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\"end\"z\"q\"\"q\"\"x\" \"x\"b12\"end\"za\"cr\rinside\"",
+   "rows": [
+    [
+     "\u0000\"end\"z\"q\"\"q\"\"x\" \"x\"b12\"end\"za\"cr"
+    ],
+    [
+     "inside\""
+    ]
+   ]
+  },
+  {
+   "text": "\"\r\"q\"\"q\"\"x\"\"x\"\u0000\"q\"\"q\"\u00e9\u4e2d\"\"x\"y ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",\u00e9\"cr\rinside\"\"end\"zx\"y",
+   "rows": [
+    [
+     "",
+     "\u00e9\"cr"
+    ],
+    [
+     "inside\"\"end\"zx\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\t\"\"\"\"cr\rinside\"\u0000\"multi\nline\"\"a,b\"\"q\"\"q\"\"end\"z",
+   "rows": [
+    [
+     "\u00e9\t\"\"\"\"cr"
+    ],
+    [
+     "inside\"\u0000\"multi"
+    ],
+    [
+     "line\"\"a",
+     "b\"\"q\"\"q\"\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": " \n \u00e9x\"y\nx\"y",
+   "rows": [
+    [
+     " "
+    ],
+    [
+     " \u00e9x\"y"
+    ],
+    [
+     "x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\n\"multi\nline\"\"cr\rinside\"\"multi\nline\"\" \u0000\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\"\n\u0000\t\r\n",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\r\n\"\"\"x\"\"q\"\"q\",\"x\"\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2d\"\"\u4e2d",
+   "rows": [
+    [
+     "\u4e2d\"\"\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d\"q\"\"q\"",
+   "rows": [
+    [
+     "\u4e2d\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\r\"q\"\"q\"\u00e9\"x\"\"end\"z\"\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9, \n12\"a,b\"\r\n\n\"multi\nline\"\u00e9\"\"x\"y\"end\"z\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\r\n\"q\"\"q\"\u00e9\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\r\"end\"z\"q\"\"q\"\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\r\t\",\u4e2d",
+   "rows": [
+    [
+     "\u0000"
+    ],
+    [
+     "\t\"",
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\u0000 ,\"multi\nline\"\r12\u00e912\r\"cr\rinside\"\u0000a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"q\"\"q\"x\"y\"",
+   "rows": [
+    [
+     "x\"y\"q\"\"q\"x\"y\""
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\"cr\rinside\"\r\n\r\"x\"\"q\"\"q\"\"q\"\"q\"\u0000\r\u0000\t\r\n1212",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\"cr\rinside\"\"\"\n\"x\"\n\t\"x\"",
+   "rows": [
+    [],
+    [
+     "cr\rinside\""
+    ],
+    [
+     "x"
+    ],
+    [
+     "\t\"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\"\u0000\"\" \"cr\rinside\"\r\na",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\r\nbx\"yb\r\n",
+   "rows": [
+    [
+     "x\"y"
+    ],
+    [
+     "bx\"yb"
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"\n\"multi\nline\"\"multi\nline\"a\"multi\nline\"\u0000b\r\n\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\"cr\rinside\"a\"end\"z,\"multi\nline\"\"a,b\"\u0000\r\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t\u00e9\"q\"\"q\"\"end\"zx\"y12\u00e9aa\u4e2d\"a,b\" \u0000",
+   "rows": [
+    [
+     "\t\u00e9\"q\"\"q\"\"end\"zx\"y12\u00e9aa\u4e2d\"a",
+     "b\" \u0000"
+    ]
+   ]
+  },
+  {
+   "text": "a\"multi\nline\"\"a,b\"",
+   "rows": [
+    [
+     "a\"multi"
+    ],
+    [
+     "line\"\"a",
+     "b\""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\"x\"\u0000\"end\"z\r\n\u00e9",
+   "rows": [
+    [
+     "\u0000\"x\"\u0000\"end\"z"
+    ],
+    [
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "a\"q\"\"q\"\u00e9\"end\"z",
+   "rows": [
+    [
+     "a\"q\"\"q\"\u00e9\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\u0000,\"a,b\"\r\n",
+   "rows": [
+    [
+     "\u0000",
+     "a,b"
+    ]
+   ]
+  },
+  {
+   "text": "\" \"\r\n\"x\" 12\r\n\n\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"12\"multi\nline\"\r\na\"a,b\"\"end\"z\"\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u4e2dx\"y",
+   "rows": [
+    [
+     "\u4e2dx\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"",
+   "rows": [
+    [
+     "a,b"
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"\"a,b\"\"a,b\"\"cr\rinside\"\"x\"\u4e2d\"multi\nline\"\n a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " \"q\"\"q\"\"end\"z\u4e2d\u00e9\r\n\"end\"za \n12\n\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t\u0000\n\"\u4e2d\"x\"\r\u4e2d\"q\"\"q\"x\"y\"\"b\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b",
+   "rows": [
+    [
+     "b"
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"12\t\u0000 ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\"q\"\"q\"\"\"\r12\u00e9\r\n\u4e2d",
+   "rows": [
+    [
+     "q\"q\"q\"q\""
+    ],
+    [
+     "12\u00e9"
+    ],
+    [
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\"\r\n\"cr\rinside\"\"x\"\"cr\rinside\"b\"cr\rinside\"x\"y\u4e2d,x\"y\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t\"cr\rinside\" b\n ,\"\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "ax\"y\"\"b\"cr\rinside\"\r\nab,\u4e2d\"\"\"\"",
+   "rows": [
+    [
+     "ax\"y\"\"b\"cr"
+    ],
+    [
+     "inside\""
+    ],
+    [
+     "ab",
+     "\u4e2d\"\"\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\"\"\na\u0000\"q\"\"q\"\"a,b\"\u4e2d\n\r\n\"a,b\"\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\r\n\r\"a,b\"\"q\"\"q\"x\"yb\"multi\nline\"\r\nb\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t\t,\u00e9\"a,b\"\r\n\"\"\tx\"y\"x\"\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\"\"\u00e9a\"\"x\"\"\"a,b\"\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"x\"\r\n\n",
+   "rows": [
+    [
+     "x"
+    ],
+    []
+   ]
+  },
+  {
+   "text": "\u4e2d",
+   "rows": [
+    [
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\n\"a,b\"",
+   "rows": [
+    [],
+    [
+     "a,b"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\t\r\"x\"\u4e2d\"a,b\"\"x\"\"a,b\"\"x\"\t ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"multi\nline\"\n\"q\"\"q\"\"a,b\"\"end\"z\"x\"\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"12b\u000012\u0000\"x\"\nx\"ya\r\n12\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y",
+   "rows": [
+    [
+     "x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"\t\"x\"\u00e9\"cr\rinside\"\"a,b\"\u00e9\r\nx\"yb",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\"q\"\"q\"\"a,b\"\"a,b\"\"a,b\"x\"yx\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\naa\r",
+   "rows": [
+    [],
+    [
+     "aa"
+    ]
+   ]
+  },
+  {
+   "text": ",\u0000\"cr\rinside\"b\r",
+   "rows": [
+    [
+     "",
+     "\u0000\"cr"
+    ],
+    [
+     "inside\"b"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"",
+   "rows": [
+    [
+     "cr\rinside"
+    ]
+   ]
+  },
+  {
+   "text": " \u4e2db\"\"\"a,b\"\"cr\rinside\"\n\"x\"\"\t,ba",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "a\r12\u0000\"q\"\"q\"\"\"\u00e9\u0000 \r\n",
+   "rows": [
+    [
+     "a"
+    ],
+    [
+     "12\u0000\"q\"\"q\"\"\"\u00e9\u0000 "
+    ]
+   ]
+  },
+  {
+   "text": " \"x\"y\u00e9\n\r\t\r\n\"cr\rinside\"\u4e2d\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " \"\r\n\u4e2d\u000012,\"x\"",
+   "rows": [
+    [
+     " \""
+    ],
+    [
+     "\u4e2d\u000012",
+     "x"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d\t\n\"multi\nline\"\"multi\nline\"",
+   "rows": [
+    [
+     "\u4e2d\t"
+    ],
+    [
+     "multi\nline\"multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\r\n",
+   "rows": [
+    [],
+    []
+   ]
+  },
+  {
+   "text": "\"x\"\"cr\rinside\"\"\tb\"\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\"q\"\"q\"  \r\"a,b\"\u000012 ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\"multi\nline\"x\"y\r\n",
+   "rows": [
+    [
+     "\u0000\"multi"
+    ],
+    [
+     "line\"x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d\n\"\"\"end\"zx\"y\n\u00e9\"a,b\"\r\n\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\"q\"\"q\"\"a,b\"\u00e9\n\"multi\nline\"",
+   "rows": [
+    [
+     "a\"q\"\"q\"\"a",
+     "b\"\u00e9"
+    ],
+    [
+     "multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"\"cr\rinside\"x\"y\u4e2d\"q\"\"q\"\"end\"z\"a,b\"\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " \u00e9\"\"\"q\"\"q\"\"cr\rinside\"\u00e9\"q\"\"q\"\"cr\rinside\"\t\"\"x\"y",
+   "rows": [
+    [
+     " \u00e9\"\"\"q\"\"q\"\"cr"
+    ],
+    [
+     "inside\"\u00e9\"q\"\"q\"\"cr"
+    ],
+    [
+     "inside\"\t\"\"x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"a,b\"\u0000\u0000\"\u4e2d\u00e912\r\u4e2d\u0000\"cr\rinside\"\"\"a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\"cr\rinside\"\u0000\n\"x\"y\"\"\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": " bx\"ya\u4e2d\r\n\"\"\"end\"za\"\"\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\"multi\nline\"12\"cr\rinside\"\"end\"z \"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000x\"y",
+   "rows": [
+    [
+     "\u0000x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\n\u4e2d",
+   "rows": [
+    [],
+    [
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\"q\"\"q\"\"a,b\"\t\"cr\rinside\"\"multi\nline\"\u00e9\r\na\"multi\nline\"\u0000x\"y",
+   "rows": [
+    [
+     "x\"y\"q\"\"q\"\"a",
+     "b\"\t\"cr"
+    ],
+    [
+     "inside\"\"multi"
+    ],
+    [
+     "line\"\u00e9"
+    ],
+    [
+     "a\"multi"
+    ],
+    [
+     "line\"\u0000x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\r\r\n\"cr\rinside\"\"\u00e9\"\"",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\"x\"\r\n\"end\"zb\"q\"\"q\"\"\" \n\u0000\u4e2d\"a,b\"\u0000\"q\"\"q\" ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\r\"end\"zb\tx\"y\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "bx\"y\"end\"zb\"multi\nline\"\"\"\"\"\u4e2db",
+   "rows": [
+    [
+     "bx\"y\"end\"zb\"multi"
+    ],
+    [
+     "line\"\"\"\"\"\u4e2db"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\"\"a\u0000\u4e2d\"q\"\"q\"\"end\"z12a",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\u00e9\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\"\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\u0000\n\"\"\"q\"\"q\"\"multi\nline\"12\r \u000012\"\"\u0000\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\u4e2d\u4e2d\u4e2d\"end\"z\"multi\nline\"",
+   "rows": [
+    [
+     "x\"y\u4e2d\u4e2d\u4e2d\"end\"z\"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "\r",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\u00e9\n\u00e9a",
+   "rows": [
+    [
+     "\u00e9"
+    ],
+    [
+     "\u00e9a"
+    ]
+   ]
+  },
+  {
+   "text": " \n12\"x\"",
+   "rows": [
+    [
+     " "
+    ],
+    [
+     "12\"x\""
+    ]
+   ]
+  },
+  {
+   "text": ",,",
+   "rows": [
+    [
+     "",
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\"multi\nline\"\"\"q\"\"q\",a\u00e9\"a,b\"\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\ta\"q\"\"q\"\"q\"\"q\"\r\n\"x\" b\u00e9x\"y\"x\",",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",b\r\n\"multi\nline\"\"\"q\"\"q\" \n\r\n\"multi\nline\"\n\r\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"\"a\"cr\rinside\" x\"y\u00e9\"cr\rinside\"x\"y\u0000\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"q\"\"q\"\"\"b\"end\"z\"a,b\"12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\"cr\rinside\"\rb\"\u4e2d\"\"\"x\"x\"y12\"q\"\"q\"",
+   "rows": [
+    [
+     "a\"cr"
+    ],
+    [
+     "inside\""
+    ],
+    [
+     "b\"\u4e2d\"\"\"x\"x\"y12\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "\n\u00e9",
+   "rows": [
+    [],
+    [
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"b\"multi\nline\"\"\"\"\" \"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\"cr\rinside\",\u00e9,",
+   "rows": [
+    [
+     "x\"cr\rinside",
+     "\u00e9",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\t\"\r\n\u4e2d\u4e2d\"\"\"end\"z\"multi\nline\"12\r12 x\"y",
+   "rows": [
+    [
+     "\t\""
+    ],
+    [
+     "\u4e2d\u4e2d\"\"\"end\"z\"multi"
+    ],
+    [
+     "line\"12"
+    ],
+    [
+     "12 x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"zx\"y\u4e2d\r\"multi\nline\"\u00e912\"q\"\"q\"12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",\"cr\rinside\"\t\"x\"\n\u4e2d\r\tx\"y\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"cr\rinside\"\"a,b\"b",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\"multi\nline\"a\"end\"z\tx\"y\u4e2d\"multi\nline\"\u00e9\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"\"\u4e2d\"x\"\"\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\"\u4e2d",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\t\"end\"z\"x\"\r\"\" \"multi\nline\"12\"end\"z\u4e2d,\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9\"end\"z\"multi\nline\"ax\"y\"cr\rinside\"\nb\"multi\nline\"\u4e2d\"q\"\"q\"x\"yx\"y",
+   "rows": [
+    [
+     "\u00e9\"end\"z\"multi"
+    ],
+    [
+     "line\"ax\"y\"cr"
+    ],
+    [
+     "inside\""
+    ],
+    [
+     "b\"multi"
+    ],
+    [
+     "line\"\u4e2d\"q\"\"q\"x\"yx\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\r\n\u00e9",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\"\" \"multi\nline\" \"x\"\r\"cr\rinside\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\n\u0000\"\",12\"q\"\"q\"\"multi\nline\"x\"y\"q\"\"q\"\u0000\"\"",
+   "rows": [
+    [
+     ""
+    ],
+    [
+     "\u0000\"\"",
+     "12\"q\"\"q\"\"multi"
+    ],
+    [
+     "line\"x\"y\"q\"\"q\"\u0000\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\" x\"y \"a,b\"\"multi\nline\"\"x\"\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"b\"multi\nline\"\"multi\nline\"\"a,b\"\u000012\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"multi\nline\"\"end\"z\"x\"a\u4e2d\tbx\"y\t\u00e9\"x\"y",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"zx\"y\"end\"z12\"\"end\"z\u4e2d\"multi\nline\"\t\u0000\"\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\r12",
+   "rows": [
+    [],
+    [],
+    [
+     "12"
+    ]
+   ]
+  },
+  {
+   "text": "x\"y\"a,b\"\"cr\rinside\"\"multi\nline\" b",
+   "rows": [
+    [
+     "x\"y\"a",
+     "b\"\"cr"
+    ],
+    [
+     "inside\"\"multi"
+    ],
+    [
+     "line\" b"
+    ]
+   ]
+  },
+  {
+   "text": "\u00e9\"end\"z\"\"\"\"\"\u0000\n\"end\"zx\"y\u0000\"cr\rinside\"\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "bb\u0000\"q\"\"q\"\"end\"z\u00e9\r\n\u4e2d",
+   "rows": [
+    [
+     "bb\u0000\"q\"\"q\"\"end\"z\u00e9"
+    ],
+    [
+     "\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"\"\"\"\"ax\"y\t\"\n\"cr\rinside\"\n\n,\u00e9\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\"x\"a\"\"\u0000\"cr\rinside\"a\"\"\"end\"z,",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y",
+   "rows": [
+    [
+     "x\"y"
+    ]
+   ]
+  },
+  {
+   "text": " ,\"q\"\"q\"\"\"x\"a\"end\"z\"end\"z\u4e2d\"cr\rinside\"\t\n\"cr\rinside\"\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"a,b\"12x\"y ,\u00e9\"cr\rinside\"\n\r\n\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"a,b\"\n\"multi\nline\"\"end\"z\"a\"cr\rinside\"\r\n\"x\" ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000",
+   "rows": [
+    [
+     "\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d,,,\"x\"\ra",
+   "rows": [
+    [
+     "\u4e2d",
+     "",
+     "",
+     "x"
+    ],
+    [
+     "a"
+    ]
+   ]
+  },
+  {
+   "text": "\t\"q\"\"q\"\"multi\nline\"\"x\"\"x\"\"multi\nline\"12",
+   "rows": [
+    [
+     "\t\"q\"\"q\"\"multi"
+    ],
+    [
+     "line\"\"x\"\"x\"\"multi"
+    ],
+    [
+     "line\"12"
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"b12,a\r\"a,b\"\"a,b\"\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"multi\nline\"\u0000\u4e2d\u4e2d",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n\u00e9b\t,\"end\"z\"q\"\"q\"\u4e2d\"a,b\"\t\"x\"\"end\"z\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u00e9  b\"end\"z\r a",
+   "rows": [
+    [
+     "\u00e9  b\"end\"z"
+    ],
+    [
+     " a"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\"multi\nline\"\"q\"\"q\"",
+   "rows": [
+    [
+     "a,b\"multi\nline\"q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\"multi\nline\"\n\"x\"12\"\",x\"y\t\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "12\"q\"\"q\"\u00e9",
+   "rows": [
+    [
+     "12\"q\"\"q\"\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"\u4e2da",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n \"end\"z",
+   "rows": [
+    [],
+    [
+     " \"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"a,b\"\"end\"z\"a,b\"12\r\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "x\"y\"end\"z12\"end\"z\"\"\"multi\nline\"\r\"q\"\"q\"\u000012",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"za\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\r\n\"x\"\"a,b\" \"\"\u00e9\t",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\"x\",\"x\"\"q\"\"q\"",
+   "rows": [
+    [
+     "\u0000\"x\"",
+     "x\"q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\"x\"\"\"",
+   "rows": [
+    [
+     "x\""
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "a\t\u0000\t\"cr\rinside\"\t\"x\"12\u0000\"q\"\"q\"",
+   "rows": [
+    [
+     "a\t\u0000\t\"cr"
+    ],
+    [
+     "inside\"\t\"x\"12\u0000\"q\"\"q\""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\"multi\nline\",\u0000",
+   "rows": [
+    [
+     "\u0000\"multi"
+    ],
+    [
+     "line\"",
+     "\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d\"x\"\ra\r\n12x\"y",
+   "rows": [
+    [
+     "\u4e2d\"x\""
+    ],
+    [
+     "a"
+    ],
+    [
+     "12x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\tb\"end\"z\"a,b\"\"cr\rinside\"\rb\"\"\"end\"z",
+   "rows": [
+    [
+     "\tb\"end\"z\"a",
+     "b\"\"cr"
+    ],
+    [
+     "inside\""
+    ],
+    [
+     "b\"\"\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\u0000",
+   "rows": [
+    [
+     "\u0000"
+    ]
+   ]
+  },
+  {
+   "text": "b\"a,b\"",
+   "rows": [
+    [
+     "b\"a",
+     "b\""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000,",
+   "rows": [
+    [
+     "\u0000",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": " \"a,b\",\"a,b\"\"q\"\"q\"12\"q\"\"q\"\"a,b\"\n\"multi\nline\"\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"multi\nline\"\"\"\t\"\"a\"multi\nline\"\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "1212",
+   "rows": [
+    [
+     "1212"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\"b\r\n,b\r\n\n",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "b\"12x\"y\"q\"\"q\"\n\",,\t\u00e9",
+   "error": "unexpected end of data"
+  },
+  {
+   "text": "\u0000b\"x\"\"cr\rinside\"\"multi\nline\"a\r\n",
+   "rows": [
+    [
+     "\u0000b\"x\"\"cr"
+    ],
+    [
+     "inside\"\"multi"
+    ],
+    [
+     "line\"a"
+    ]
+   ]
+  },
+  {
+   "text": ",x\"y",
+   "rows": [
+    [
+     "",
+     "x\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"\"\"\tx\"y\u00e9\u00e9\r\nx\"y \u4e2d12",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "b\"multi\nline\" \u0000\"x\"\t\"a,b\"\u00e9\t,\"a,b\",\u4e2d\"\"",
+   "rows": [
+    [
+     "b\"multi"
+    ],
+    [
+     "line\" \u0000\"x\"\t\"a",
+     "b\"\u00e9\t",
+     "a,b",
+     "\u4e2d\"\""
+    ]
+   ]
+  },
+  {
+   "text": "b\"x\"\"multi\nline\"\"q\"\"q\"\u0000\"multi\nline\"12ab\u00e9\"x\"\n\r\u00e9",
+   "rows": [
+    [
+     "b\"x\"\"multi"
+    ],
+    [
+     "line\"\"q\"\"q\"\u0000\"multi"
+    ],
+    [
+     "line\"12ab\u00e9\"x\""
+    ],
+    [],
+    [
+     "\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\u4e2d12\"multi\nline\"\"a,b\"\u4e2dab\"end\"z",
+   "rows": [
+    [
+     "\u4e2d12\"multi"
+    ],
+    [
+     "line\"\"a",
+     "b\"\u4e2dab\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\"end\"z\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\u00e9\u00e9\"\"",
+   "rows": [
+    [],
+    [
+     "\u00e9\u00e9\"\""
+    ]
+   ]
+  },
+  {
+   "text": "b 12\n\r",
+   "rows": [
+    [
+     "b 12"
+    ],
+    []
+   ]
+  },
+  {
+   "text": "b\"a,b\"\n\"x\"\r\"\"\"end\"zba",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",,\"end\"z\"multi\nline\"\"q\"\"q\"\t\u4e2d,,\u0000\u0000",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\" \n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t\u00e9",
+   "rows": [
+    [
+     "\t\u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\u0000\n\"x\"12\"a,b\"a\r\n\r\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"\"q\"\"q\"",
+   "rows": [
+    [
+     "cr\rinside\"q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\r\u00e9\"x\"",
+   "rows": [
+    [],
+    [
+     "\u00e9\"x\""
+    ]
+   ]
+  },
+  {
+   "text": "\r\n\u00e912\"cr\rinside\"",
+   "rows": [
+    [],
+    [
+     "\u00e912\"cr"
+    ],
+    [
+     "inside\""
+    ]
+   ]
+  },
+  {
+   "text": "\"\"\"end\"z\"end\"z",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "x\"yx\"y",
+   "rows": [
+    [
+     "x\"yx\"y"
+    ]
+   ]
+  },
+  {
+   "text": ",",
+   "rows": [
+    [
+     "",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\u0000\"a,b\"\r\n",
+   "rows": [
+    [
+     "\u0000\"a",
+     "b\""
+    ]
+   ]
+  },
+  {
+   "text": "\n \u00e9",
+   "rows": [
+    [],
+    [
+     " \u00e9"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"cr\rinside\"\u00e9\"end\"z\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\u4e2dx\"yx\"y\u0000\r\nb\"x\"b\"a,b\"\"a,b\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": ",a",
+   "rows": [
+    [
+     "",
+     "a"
+    ]
+   ]
+  },
+  {
+   "text": "\"multi\nline\"\u00e9\"x\"a\"\"\"end\"z\tb,\u00e9\"\" ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\",\t  \"multi\nline\"",
+   "rows": [
+    [
+     "cr\rinside",
+     "\t  \"multi"
+    ],
+    [
+     "line\""
+    ]
+   ]
+  },
+  {
+   "text": "a\"",
+   "rows": [
+    [
+     "a\""
+    ]
+   ]
+  },
+  {
+   "text": "\"multi\nline\"\"q\"\"q\"",
+   "rows": [
+    [
+     "multi\nline\"q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\t\n,\r\u00e9\u4e2d\r",
+   "rows": [
+    [
+     "\t"
+    ],
+    [
+     "",
+     ""
+    ],
+    [
+     "\u00e9\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\u4e2d\"a,b\"\n12\t\r\"x\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"cr\rinside\"12\"multi\nline\"b\"multi\nline\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\",\"q\"\"q\"\"multi\nline\"a\"end\"zb\"cr\rinside\"\tx\"y\"\",",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000a",
+   "rows": [
+    [
+     "\u0000a"
+    ]
+   ]
+  },
+  {
+   "text": "\"cr\rinside\"\"q\"\"q\"\r",
+   "rows": [
+    [
+     "cr\rinside\"q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\r\u0000\"q\"\"q\"\u00e9\"a,b\"\"\"x\",",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\u4e2d12ax\"y\"a,b\"\"q\"\"q\"\"a,b\"\t\"cr\rinside\"\t \"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\u4e2d\"cr\rinside\"x\"y\u0000\"\"\"cr\rinside\"",
+   "rows": [
+    [
+     "\u0000\u4e2d\"cr"
+    ],
+    [
+     "inside\"x\"y\u0000\"\"\"cr"
+    ],
+    [
+     "inside\""
+    ]
+   ]
+  },
+  {
+   "text": "12\"q\"\"q\"\tb\"\"\"end\"z\r\n",
+   "rows": [
+    [
+     "12\"q\"\"q\"\tb\"\"\"end\"z"
+    ]
+   ]
+  },
+  {
+   "text": "\nx\"y\"end\"z\r\"a,b\"\"\"\"\"x\"y\"q\"\"q\"\"multi\nline\"\"multi\nline\"\"\"\u00e9 ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"zbx\"y\"cr\rinside\"\"x\"\"a,b\"\"\",\"q\"\"q\"\"cr\rinside\"x\"y\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"x\"\r\n\"\"\"end\"z\n\"\"\r\n ",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\" \u00e9\u00e9\u4e2d\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"end\"z\r\n\"q\"\"q\" x\"y\r\n\t\"\"\"\"multi\nline\"\r",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\u0000\u0000\"q\"\"q\"\u0000\n\u4e2db\u4e2d\n",
+   "rows": [
+    [
+     "\u0000\u0000\"q\"\"q\"\u0000"
+    ],
+    [
+     "\u4e2db\u4e2d"
+    ]
+   ]
+  },
+  {
+   "text": "\"q\"\"q\"",
+   "rows": [
+    [
+     "q\"q"
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z\"\"q\"\"q\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\t ",
+   "rows": [
+    [
+     "\t "
+    ]
+   ]
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\"cr\rinside\" \u000012",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\"multi\nline\"\r\n\u4e2d\"x\"\"\"\"\"end\"z\"x\"\"q\"\"q\",b",
+   "rows": [
+    [],
+    [
+     "multi\nline"
+    ],
+    [
+     "\u4e2d\"x\"\"\"\"\"end\"z\"x\"\"q\"\"q\"",
+     "b"
+    ]
+   ]
+  },
+  {
+   "text": "\"a,b\"\"a,b\"\"a,b\" \"\"",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\r\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": "\"bx\"y\u4e2d\"x\"b",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "",
+   "rows": []
+  },
+  {
+   "text": "\u4e2d\r  12\"cr\rinside\"b\r\n\u00e9x\"y\t\"q\"\"q\"\"",
+   "rows": [
+    [
+     "\u4e2d"
+    ],
+    [
+     "  12\"cr"
+    ],
+    [
+     "inside\"b"
+    ],
+    [
+     "\u00e9x\"y\t\"q\"\"q\"\""
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"zx\"y\t\"cr\rinside\"\"x\"12\u4e2d b",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\"\"\r\n\"multi\nline\"\"\"\"cr\rinside\"",
+   "rows": [
+    [
+     ""
+    ],
+    [
+     "multi\nline\"\"cr\rinside"
+    ]
+   ]
+  },
+  {
+   "text": "\"\"x\"y\n",
+   "error": "',' expected after '\"'"
+  },
+  {
+   "text": "\n\"a,b\"\"multi\nline\",\t,\"multi\nline\"\r",
+   "rows": [
+    [],
+    [
+     "a,b\"multi\nline",
+     "\t",
+     "multi\nline"
+    ]
+   ]
+  },
+  {
+   "text": "x\"yx\"y",
+   "rows": [
+    [
+     "x\"yx\"y"
+    ]
+   ]
+  },
+  {
+   "text": "\r\n",
+   "rows": [
+    []
+   ]
+  },
+  {
+   "text": " \"cr\rinside\",",
+   "rows": [
+    [
+     " \"cr"
+    ],
+    [
+     "inside\"",
+     ""
+    ]
+   ]
+  },
+  {
+   "text": "\"end\"z",
+   "error": "',' expected after '\"'"
+  }
+ ]
+}

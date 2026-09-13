@@ -1,4 +1,4 @@
-package io.github.okexodus.openknights.patcher.input
+package io.github.okexodus.openknights.gamedata
 
 /**
  * The game's table cipher: RC4 with the client's fixed key, restarted for every file. Because every file starts a
