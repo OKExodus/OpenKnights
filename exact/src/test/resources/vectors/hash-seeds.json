@@ -1,0 +1,1123 @@
+{
+ "profile": "openknights_vectors_v1",
+ "primitive": "hash_seeds",
+ "generator": "reference implementation, CPython 3.13",
+ "description": "seeds from the first 8 bytes (little-endian) of a SHA-256",
+ "count": 120,
+ "vectors": [
+  {
+   "kind": "seed_for",
+   "request_hex": "cae6668969e0f192a3fe4c5b8ca92d",
+   "revision": 512007,
+   "salt": "gift_code",
+   "seed": "17215475815511754332"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "5ece35cf09a9ab94cb0b",
+   "revision": 311414,
+   "salt": "",
+   "seed": "16710367101503229761"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "7d18433b164ba61fe179",
+   "revision": 214478,
+   "salt": "gift_code",
+   "seed": "3097991224784121650"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "fa5bf2d8e5b6e48a0c44caee",
+   "revision": 709185,
+   "salt": "fuse",
+   "seed": "13645259763628558571"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "6b997974715582d0",
+   "revision": 296829,
+   "salt": "",
+   "seed": "8485476426766652503"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "",
+   "revision": 390056,
+   "salt": "summon:1655051007",
+   "seed": "82932089928016800"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "8dcc5cd191309dec77",
+   "revision": 563418,
+   "salt": "\u00e9",
+   "seed": "10011044408014249638"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "dc2608870275070a362070103de57679d530f657",
+   "revision": 169221,
+   "salt": "box",
+   "seed": "9444187322232632857"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "a460a275597ab7f588",
+   "revision": 34120,
+   "salt": "summon:1454799948",
+   "seed": "13588542697439963318"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "3f12ef765b5439f2dd843465993aad94f0",
+   "revision": 602563,
+   "salt": "box",
+   "seed": "17273380541647248487"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "ee5da80c9fd994e36fea401c96c75007dc0a18ba",
+   "revision": 699904,
+   "salt": "\u00e9",
+   "seed": "2921754674688735927"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "21fa72600fa0f1d237785b6e92dec453f2af72",
+   "revision": 185681,
+   "salt": "\u00e9",
+   "seed": "14576985154122925910"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "fcb983fccd8d2d13c4",
+   "revision": 547189,
+   "salt": "gift_code",
+   "seed": "10588383181573710414"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "2fa41452",
+   "revision": 280787,
+   "salt": "",
+   "seed": "5812897988676143489"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "ce",
+   "revision": 278739,
+   "salt": "\u00e9",
+   "seed": "15284055922347134801"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "15274276b1659e",
+   "revision": 346890,
+   "salt": "box",
+   "seed": "10378062664335000657"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "688885d7531137a53361d2a5",
+   "revision": 294980,
+   "salt": "gift_code",
+   "seed": "4011574858097687546"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "",
+   "revision": 409025,
+   "salt": "",
+   "seed": "18253293593036707259"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "0bcf55be7b5b74c4a3a99f50",
+   "revision": 710492,
+   "salt": "\u00e9",
+   "seed": "698531117191836160"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "1a4eb0ad1e16d57efe",
+   "revision": 72723,
+   "salt": "summon:1623684481",
+   "seed": "4513977286177194444"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "eb97e191eed3f1275f93",
+   "revision": 291180,
+   "salt": "gift_code",
+   "seed": "10905678052992428751"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "2c642c89e654",
+   "revision": 487163,
+   "salt": "summon:1907257329",
+   "seed": "15570405130544121018"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "ff3bed066ba9e3bd65d3",
+   "revision": 359932,
+   "salt": "\u00e9",
+   "seed": "3845324518705680083"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "be13b5f2",
+   "revision": 465312,
+   "salt": "summon:1229757293",
+   "seed": "12168023317014281088"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "b175678dfadc98db28303f05bb859f952d",
+   "revision": 711638,
+   "salt": "summon:1402047831",
+   "seed": "994941249143851323"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "dd685632aebefc034d396e7cfb",
+   "revision": 105536,
+   "salt": "",
+   "seed": "7345232908958748545"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "942f",
+   "revision": 726927,
+   "salt": "gift_code",
+   "seed": "9785505561954253236"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "8aeaf20f02248a",
+   "revision": 197498,
+   "salt": "summon:1306801608",
+   "seed": "7664336272691667649"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "3eb3587eb2de01b6091e253cb4a6a2",
+   "revision": 12390,
+   "salt": "",
+   "seed": "2771786788039371197"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "ee",
+   "revision": 554146,
+   "salt": "box",
+   "seed": "12710759844140738125"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "7cd0dace97b8fc29d61ff0",
+   "revision": 55265,
+   "salt": "gift_code",
+   "seed": "15236855935809693460"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "85bcdc426fe1e06f73fe7bbb4b762f843d",
+   "revision": 605712,
+   "salt": "fuse",
+   "seed": "12297754079797786913"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "c3dc0652e90c7b14",
+   "revision": 681226,
+   "salt": "summon:1706683962",
+   "seed": "13560070007832527757"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "9cf3438978f76d1563bb8f",
+   "revision": 217269,
+   "salt": "summon:1072651219",
+   "seed": "3876847570662679730"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "b8518f81b4cd4aef9d9f9850d96dcca453",
+   "revision": 260348,
+   "salt": "summon:1439912192",
+   "seed": "3170259525515566739"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "aaaad0acfd131f373f",
+   "revision": 385146,
+   "salt": "",
+   "seed": "4298075676640108938"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "36333fc0b32fef11",
+   "revision": 449426,
+   "salt": "summon:1536236999",
+   "seed": "14600076402571118779"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "a0f76a57d9fb30",
+   "revision": 699582,
+   "salt": "",
+   "seed": "10199784429998519541"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "ed",
+   "revision": 348107,
+   "salt": "",
+   "seed": "6651171743124328205"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "291c26026e",
+   "revision": 969057,
+   "salt": "fuse",
+   "seed": "15895645654268926149"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "102f989737d0423a7167206667fe5c2b11",
+   "revision": 134393,
+   "salt": "gift_code",
+   "seed": "10010615633041654956"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "d29c9a315d4b1ff138979c1e7bef",
+   "revision": 549346,
+   "salt": "box",
+   "seed": "8324545465313359147"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "91a74dbb6b1059645bc445a07c7f659f",
+   "revision": 408152,
+   "salt": "\u00e9",
+   "seed": "2129799734233511665"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "6ba9",
+   "revision": 994150,
+   "salt": "box",
+   "seed": "3586569773295299675"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "34d5",
+   "revision": 456679,
+   "salt": "\u00e9",
+   "seed": "4768909835930286230"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "c223388242b967124904f065b4",
+   "revision": 878201,
+   "salt": "",
+   "seed": "18084982774665997827"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "8b3a9e2076ad4304b2501f661d6256fa8af26a",
+   "revision": 25745,
+   "salt": "fuse",
+   "seed": "1111629884509294125"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "87d643f2d8e0e7051130a4e2f40fce",
+   "revision": 533406,
+   "salt": "gift_code",
+   "seed": "4988788123731269843"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "f9db719dfa",
+   "revision": 556716,
+   "salt": "fuse",
+   "seed": "4110671264129845148"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "10dd85d6ffa6f6dc0463f503",
+   "revision": 596717,
+   "salt": "fuse",
+   "seed": "15737669242572674201"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "8963e098b323e7c229e098580c884f0a",
+   "revision": 26181,
+   "salt": "\u00e9",
+   "seed": "6548052427702538013"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "7912b3",
+   "revision": 291716,
+   "salt": "",
+   "seed": "16106911772354755650"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "b44d9df2b8d7096a398a805272fbf9db",
+   "revision": 830019,
+   "salt": "fuse",
+   "seed": "2909399269009890358"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "ad9379f3c9948d81c2476b3129fc91f3c6",
+   "revision": 400011,
+   "salt": "",
+   "seed": "7109925555230994642"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "42cd4195a412cce6763f87751069",
+   "revision": 702589,
+   "salt": "\u00e9",
+   "seed": "1638014427800932195"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "3c1726185f90ea48328c",
+   "revision": 240538,
+   "salt": "fuse",
+   "seed": "7349006325989330052"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "615fe09a68c5cd8f95703d69e0db1c",
+   "revision": 324363,
+   "salt": "",
+   "seed": "3485204314727023160"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "34b0",
+   "revision": 713578,
+   "salt": "gift_code",
+   "seed": "14936381924242561930"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "f1b4136f7bdbaa189e7934c9e08ec0be22698a",
+   "revision": 503741,
+   "salt": "box",
+   "seed": "2247879886436783433"
+  },
+  {
+   "kind": "seed_for",
+   "request_hex": "bf21c3ee7a1eda4f9b",
+   "revision": 469063,
+   "salt": "summon:1127990525",
+   "seed": "16911738635809572832"
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    898122430632,
+    "grove"
+   ],
+   "text": "898122430632|grove",
+   "seed": "8791958271509236139",
+   "first_randrange_10000": 8186
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    549282582316,
+    "pebble",
+    934347980525,
+    25231141907
+   ],
+   "text": "549282582316|pebble|934347980525|25231141907",
+   "seed": "9786095435615425197",
+   "first_randrange_10000": 2869
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    214560216976,
+    337116907627,
+    16728283157,
+    "willow",
+    "yarrow"
+   ],
+   "text": "214560216976|337116907627|16728283157|willow|yarrow",
+   "seed": "15645889442786007435",
+   "first_randrange_10000": 5126
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    561435446048,
+    "brook"
+   ],
+   "text": "561435446048|brook",
+   "seed": "18435525907527237520",
+   "first_randrange_10000": 2080
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    947098786757,
+    711866523536
+   ],
+   "text": "947098786757|711866523536",
+   "seed": "5410334963525318666",
+   "first_randrange_10000": 5347
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    606501983383,
+    787219648303,
+    "yarrow",
+    "cedar",
+    753453674105,
+    988018828972
+   ],
+   "text": "606501983383|787219648303|yarrow|cedar|753453674105|988018828972",
+   "seed": "13612699436435712689",
+   "first_randrange_10000": 8342
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "juniper",
+    "willow"
+   ],
+   "text": "juniper|willow",
+   "seed": "4331440226991142354",
+   "first_randrange_10000": 1836
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "spruce",
+    401464179766,
+    768694636910,
+    "amber",
+    765062931243,
+    "lumen"
+   ],
+   "text": "spruce|401464179766|768694636910|amber|765062931243|lumen",
+   "seed": "4852414143909668516",
+   "first_randrange_10000": 5204
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    506477763187,
+    "quartz",
+    "zephyr",
+    "iris",
+    562760000365,
+    "spruce"
+   ],
+   "text": "506477763187|quartz|zephyr|iris|562760000365|spruce",
+   "seed": "2759075417953808134",
+   "first_randrange_10000": 2780
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    1459309475,
+    "kettle",
+    403834519712
+   ],
+   "text": "1459309475|kettle|403834519712",
+   "seed": "11168988701263876256",
+   "first_randrange_10000": 3484
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "amber",
+    733370988035,
+    "amber"
+   ],
+   "text": "amber|733370988035|amber",
+   "seed": "8582841889652034923",
+   "first_randrange_10000": 113
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    324227748448,
+    "lumen",
+    "thistle",
+    "nectar",
+    "ridge",
+    "kettle"
+   ],
+   "text": "324227748448|lumen|thistle|nectar|ridge|kettle",
+   "seed": "6509883269552538133",
+   "first_randrange_10000": 5520
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    949316189142,
+    "cedar",
+    973124237499,
+    "yarrow"
+   ],
+   "text": "949316189142|cedar|973124237499|yarrow",
+   "seed": "4419682903835128925",
+   "first_randrange_10000": 9362
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    221700451606,
+    675457447183
+   ],
+   "text": "221700451606|675457447183",
+   "seed": "16515578068193390676",
+   "first_randrange_10000": 2199
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "spruce",
+    437266065866,
+    "spruce",
+    216934026247,
+    808791255499
+   ],
+   "text": "spruce|437266065866|spruce|216934026247|808791255499",
+   "seed": "18066237306415539293",
+   "first_randrange_10000": 6348
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "amber",
+    "amber",
+    "spruce",
+    28313115098
+   ],
+   "text": "amber|amber|spruce|28313115098",
+   "seed": "4050160648108690566",
+   "first_randrange_10000": 5256
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    142105984603
+   ],
+   "text": "142105984603",
+   "seed": "17953644821953144913",
+   "first_randrange_10000": 2900
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    148728854806,
+    787320840707,
+    "ridge",
+    "onyx",
+    "iris",
+    "lumen"
+   ],
+   "text": "148728854806|787320840707|ridge|onyx|iris|lumen",
+   "seed": "12959956603717635351",
+   "first_randrange_10000": 7223
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "spruce"
+   ],
+   "text": "spruce",
+   "seed": "11200648061418146851",
+   "first_randrange_10000": 5344
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "amber",
+    524011173414
+   ],
+   "text": "amber|524011173414",
+   "seed": "957873190903121358",
+   "first_randrange_10000": 9535
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "nectar",
+    "iris",
+    "kettle",
+    "spruce",
+    "quartz",
+    516809480703
+   ],
+   "text": "nectar|iris|kettle|spruce|quartz|516809480703",
+   "seed": "11453244820946079784",
+   "first_randrange_10000": 7570
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    716217073909,
+    832838582415,
+    453172242113,
+    "delta",
+    "zephyr",
+    632920165473
+   ],
+   "text": "716217073909|832838582415|453172242113|delta|zephyr|632920165473",
+   "seed": "4155450333433858150",
+   "first_randrange_10000": 1253
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "ember",
+    "cedar"
+   ],
+   "text": "ember|cedar",
+   "seed": "10225618810370461265",
+   "first_randrange_10000": 410
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "grove"
+   ],
+   "text": "grove",
+   "seed": "6142431855741177482",
+   "first_randrange_10000": 6240
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "delta",
+    872792927448,
+    "pebble",
+    542572172805
+   ],
+   "text": "delta|872792927448|pebble|542572172805",
+   "seed": "12289755974795589455",
+   "first_randrange_10000": 6740
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    319891003607,
+    462617291672,
+    722879105056
+   ],
+   "text": "319891003607|462617291672|722879105056",
+   "seed": "12539582516639413784",
+   "first_randrange_10000": 9549
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    790408827412
+   ],
+   "text": "790408827412",
+   "seed": "13493531095420000772",
+   "first_randrange_10000": 5849
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "meadow"
+   ],
+   "text": "meadow",
+   "seed": "8128999658882531949",
+   "first_randrange_10000": 3679
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    958418650028,
+    65900490733,
+    "ember",
+    998000913190,
+    "juniper",
+    "lumen"
+   ],
+   "text": "958418650028|65900490733|ember|998000913190|juniper|lumen",
+   "seed": "17375715572117694233",
+   "first_randrange_10000": 3175
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    649361415062,
+    90715840988,
+    956795287718,
+    391231295995
+   ],
+   "text": "649361415062|90715840988|956795287718|391231295995",
+   "seed": "10691498820689018167",
+   "first_randrange_10000": 8017
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    11619229908,
+    "yarrow",
+    "pebble"
+   ],
+   "text": "11619229908|yarrow|pebble",
+   "seed": "2106727390578486043",
+   "first_randrange_10000": 9605
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    852084895023,
+    295666810517,
+    "zephyr",
+    951610284880,
+    958822569912
+   ],
+   "text": "852084895023|295666810517|zephyr|951610284880|958822569912",
+   "seed": "8708266278962672144",
+   "first_randrange_10000": 5354
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    129574151279,
+    "ridge"
+   ],
+   "text": "129574151279|ridge",
+   "seed": "381724511601937602",
+   "first_randrange_10000": 3356
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    870063715621,
+    "yarrow",
+    "quartz",
+    "zephyr",
+    629635313936,
+    24999874424
+   ],
+   "text": "870063715621|yarrow|quartz|zephyr|629635313936|24999874424",
+   "seed": "10127911000647747472",
+   "first_randrange_10000": 9979
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    260987021847,
+    "harbor",
+    395928873629,
+    63951244645,
+    "yarrow",
+    "spruce"
+   ],
+   "text": "260987021847|harbor|395928873629|63951244645|yarrow|spruce",
+   "seed": "15765714884286255253",
+   "first_randrange_10000": 6515
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "juniper",
+    "ridge",
+    "lumen",
+    637455211901,
+    274950403095
+   ],
+   "text": "juniper|ridge|lumen|637455211901|274950403095",
+   "seed": "9378997644824452880",
+   "first_randrange_10000": 9147
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    617581009350,
+    "onyx"
+   ],
+   "text": "617581009350|onyx",
+   "seed": "13262711860237144442",
+   "first_randrange_10000": 4789
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "juniper",
+    "delta",
+    "nectar",
+    "kettle",
+    67548948622,
+    "meadow"
+   ],
+   "text": "juniper|delta|nectar|kettle|67548948622|meadow",
+   "seed": "3714143407881630192",
+   "first_randrange_10000": 7184
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    593536993718
+   ],
+   "text": "593536993718",
+   "seed": "2894670247248515855",
+   "first_randrange_10000": 4611
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    542372832455,
+    "vale",
+    823067249483
+   ],
+   "text": "542372832455|vale|823067249483",
+   "seed": "15442541614093993550",
+   "first_randrange_10000": 2271
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    105665068643,
+    "ridge"
+   ],
+   "text": "105665068643|ridge",
+   "seed": "5639040848544682338",
+   "first_randrange_10000": 3264
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "juniper",
+    408004655638,
+    832906934531,
+    595298207167
+   ],
+   "text": "juniper|408004655638|832906934531|595298207167",
+   "seed": "13332479970936940853",
+   "first_randrange_10000": 6626
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    192561149258,
+    881282397982,
+    "thistle"
+   ],
+   "text": "192561149258|881282397982|thistle",
+   "seed": "12409477599969480554",
+   "first_randrange_10000": 6114
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "iris"
+   ],
+   "text": "iris",
+   "seed": "562666782757445959",
+   "first_randrange_10000": 7191
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "iris",
+    "delta",
+    602259984418
+   ],
+   "text": "iris|delta|602259984418",
+   "seed": "1784874723995802249",
+   "first_randrange_10000": 9169
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    344428494987,
+    "iris",
+    "delta",
+    "quartz",
+    "spruce"
+   ],
+   "text": "344428494987|iris|delta|quartz|spruce",
+   "seed": "16771090292066545644",
+   "first_randrange_10000": 8172
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    948591542658
+   ],
+   "text": "948591542658",
+   "seed": "5261397715742814905",
+   "first_randrange_10000": 9932
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    171157384798,
+    "ridge"
+   ],
+   "text": "171157384798|ridge",
+   "seed": "11911391740091605714",
+   "first_randrange_10000": 6758
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "yarrow",
+    "umber",
+    "fjord"
+   ],
+   "text": "yarrow|umber|fjord",
+   "seed": "8259007901957629316",
+   "first_randrange_10000": 2064
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "umber",
+    798481877570,
+    "juniper",
+    532716220308,
+    "cedar"
+   ],
+   "text": "umber|798481877570|juniper|532716220308|cedar",
+   "seed": "15312012410283529086",
+   "first_randrange_10000": 4474
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "juniper",
+    725782443634,
+    "ridge",
+    "ridge",
+    868803354982
+   ],
+   "text": "juniper|725782443634|ridge|ridge|868803354982",
+   "seed": "12279309827231711521",
+   "first_randrange_10000": 8639
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    175367832146,
+    849997007563
+   ],
+   "text": "175367832146|849997007563",
+   "seed": "14173035914468063196",
+   "first_randrange_10000": 3686
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    578089582918,
+    "lumen",
+    "fjord"
+   ],
+   "text": "578089582918|lumen|fjord",
+   "seed": "17666914947927142428",
+   "first_randrange_10000": 5497
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "lumen",
+    126194877005,
+    628351253959,
+    346709741004
+   ],
+   "text": "lumen|126194877005|628351253959|346709741004",
+   "seed": "13635066769692162609",
+   "first_randrange_10000": 9708
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    221805441627,
+    104521902556,
+    663100687642,
+    622105927633,
+    "pebble",
+    "fjord"
+   ],
+   "text": "221805441627|104521902556|663100687642|622105927633|pebble|fjord",
+   "seed": "1729947334250421867",
+   "first_randrange_10000": 3445
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "amber",
+    804682483198,
+    272145642625,
+    639545360992,
+    "willow"
+   ],
+   "text": "amber|804682483198|272145642625|639545360992|willow",
+   "seed": "7912793901430024744",
+   "first_randrange_10000": 7971
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "cedar",
+    "iris",
+    "quartz",
+    701669474747,
+    "fjord"
+   ],
+   "text": "cedar|iris|quartz|701669474747|fjord",
+   "seed": "14666153553718776921",
+   "first_randrange_10000": 3899
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    747213003835,
+    "spruce",
+    236239833163,
+    "ridge"
+   ],
+   "text": "747213003835|spruce|236239833163|ridge",
+   "seed": "6846781085485493975",
+   "first_randrange_10000": 2351
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    103918436687,
+    318429270834,
+    608072458708
+   ],
+   "text": "103918436687|318429270834|608072458708",
+   "seed": "9084657994610988147",
+   "first_randrange_10000": 2813
+  },
+  {
+   "kind": "joined",
+   "parts": [
+    "pebble",
+    40360439350,
+    453527314709
+   ],
+   "text": "pebble|40360439350|453527314709",
+   "seed": "13255741544407192409",
+   "first_randrange_10000": 283
+  }
+ ]
+}

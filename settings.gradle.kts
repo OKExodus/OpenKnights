@@ -20,5 +20,7 @@ dependencyResolutionManagement {
 
 rootProject.name = "OpenKnights"
 
+include("exact")
+include("protocol")
 include("patcher-core")
 include("patcher-cli")
