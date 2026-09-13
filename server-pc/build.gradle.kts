@@ -27,6 +27,7 @@ tasks.test {
     maxHeapSize = "2g"
     inputs.property("openknightsOriginals", providers.environmentVariable("OPENKNIGHTS_ORIGINALS").orElse(""))
     inputs.property("openknightsDevDir", providers.environmentVariable("OPENKNIGHTS_DEV_DIR").orElse(""))
+    inputs.property("openknightsBundles", providers.environmentVariable("OPENKNIGHTS_BUNDLES").orElse(""))
 }
 
 /**
@@ -42,4 +43,16 @@ tasks.register<JavaExec>("runServer") {
     mainClass.set(application.mainClass)
     standardInput = System.`in`
     workingDir = rootProject.projectDir
+}
+
+/**
+ * The differential harness on a maintainer's private fixture bundles (never in CI): replays every bundle under
+ * OPENKNIGHTS_BUNDLES and writes build/bundle-reports/report.json.
+ */
+tasks.register<JavaExec>("runBundles") {
+    group = "verification"
+    description = "Replays the private fixture bundles in OPENKNIGHTS_BUNDLES against this server."
+    classpath = sourceSets.main.get().runtimeClasspath
+    mainClass.set("io.github.okexodus.openknights.server.pc.harness.BundleRunnerKt")
+    args(providers.environmentVariable("OPENKNIGHTS_BUNDLES").orElse("").get(), layout.buildDirectory.dir("bundle-reports").get().asFile.absolutePath)
 }

@@ -183,7 +183,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         val rows = ArrayList<CharacterSelect.Row>()
         val targets = LinkedHashMap<Int, io.github.okexodus.openknights.exact.JObj?>()
         // The client's "All" tab shows the wire order reversed, so the create row goes first to appear last on screen.
-        if (characterId == null) {
+        if (characterId == null && service.creationEnabled) {
             rows.add(CharacterSelect.Row(select.createRowId, select.createRowLabel, CharacterSelect.BADGE_NEW))
             targets[select.createRowId] = null
         }

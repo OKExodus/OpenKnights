@@ -69,6 +69,9 @@ class Service(
      */
     val settleHooks = ArrayList<(reason: String, now: Long) -> Unit>()
 
+    /** Whether the in-game list offers "Create a character" (always in release mode). */
+    var creationEnabled = true
+
     /** Character creation (world birth on the first); null until the character-creation system is ported. */
     var characterFactory: ((accountId: String, name: String, gender: Int, starter: Long) -> String)? = null
 
