@@ -77,7 +77,13 @@ class Service(
     /** The catalog inputs of every game system (`snapshot.acquisition_inputs`: the daily inputs over the APK tables). */
     val inputs: io.github.okexodus.openknights.server.game.DailyInputs by lazy { io.github.okexodus.openknights.server.game.DailyInputs(tables) }
 
-    /** The universal Power of a character save (`snapshot.power_of`), bound into the world's participant lists. */
+    /** The release data's day-zero seed frames of the fresh systems (`snapshot.fresh_systems`). */
+    val freshSystems: Map<Int, List<ByteArray>>? by lazy { releaseData?.let { io.github.okexodus.openknights.server.game.SystemSeeds.freshSystems(it) } }
+
+    /** The evolution rows (`snapshot.evolution_inputs` / `leader_inputs`). */
+    val evolutionInputs: io.github.okexodus.openknights.server.game.EvolutionInputs by lazy { io.github.okexodus.openknights.server.game.EvolutionInputs(tables) }
+
+    /** The universal Power of a character save (`snapshot.power_of` = `battle_stats.participant_power(snapshot)`). */
     var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
 
     fun settle(reason: String) {
@@ -159,6 +165,8 @@ class Service(
                 io.github.okexodus.openknights.server.game.FreshProfile.freshStartup(current, owned.characterId, clock.s14())
             }
             val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
+            service.powerOf = io.github.okexodus.openknights.server.game.BattleStats.participantPower(service.freshSystems, service.evolutionInputs, service.inputs)
+            world?.powerOf = service.powerOf
             val factory = ReleaseFactory(service, root, generation, data.freshTemplate())
             service.characterFactory = { accountId, name, gender, starter, actor -> factory.create(accountId, name, gender, starter, actor) }
             return service

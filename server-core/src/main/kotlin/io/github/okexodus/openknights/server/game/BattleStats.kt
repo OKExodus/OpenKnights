@@ -725,7 +725,7 @@ object BattleStats {
      * cannot be evaluated shows no Power (null → the lists send 0) instead of failing the list.
      */
     fun participantPower(freshSystems: Map<Int, List<ByteArray>>?, leaderInputs: EvolutionInputs, inputs: AcquisitionInputs?): (StateStore.Current) -> BigInteger? =
-        { current -> try { powerOf(freshSystems, leaderInputs, current, inputs) } catch (e: Exception) { null } }
+        { current -> try { powerOf(freshSystems, leaderInputs, current, inputs) } catch (e: Exception) { if (e is NotPorted) throw e; null } }
 
     // --- builders of other modules the stat frames come from -------------------------------------------------------------
     // The reference calls daily_routes.quest_document, quests.quests_payload, alt_team.info_payload,

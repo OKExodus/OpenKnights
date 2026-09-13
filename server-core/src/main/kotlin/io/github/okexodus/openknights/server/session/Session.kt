@@ -13,6 +13,13 @@ import io.github.okexodus.openknights.server.game.Friends
 import io.github.okexodus.openknights.server.game.Guild
 import io.github.okexodus.openknights.server.game.Mail
 import io.github.okexodus.openknights.server.game.SocialRoutes
+import io.github.okexodus.openknights.server.game.HeroEvolution
+import io.github.okexodus.openknights.server.game.LeaderRepair
+import io.github.okexodus.openknights.server.game.Owned
+import io.github.okexodus.openknights.server.game.SecondaryTeam
+import io.github.okexodus.openknights.server.game.SweepFeatures
+import io.github.okexodus.openknights.server.game.SystemSeeds
+import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.server.game.NotPorted
 import io.github.okexodus.openknights.server.store.AuthenticationRejected
 import io.github.okexodus.openknights.server.store.StateStore
@@ -274,17 +281,53 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         throw NotPorted("daily_routes login refresh")
     }
 
-    /** Before the S18: bag capacities below the Warehouse limit are raised. */
+    private fun seeds(current: StateStore.Current) = SystemSeeds.seedsFor(service.freshSystems, current)
+
+    /** Before the S18: bag capacities below the Warehouse limit are raised (one audited revision, only when needed). */
     private fun warehouseCapacityRepair(current: StateStore.Current): StateStore.Current {
-        deploymentPolicy() ?: return current
-        throw NotPorted("sweep_features warehouse capacity repair")
+        val inputs = service.inputs
+        val policy = deploymentPolicy() ?: return current
+        return try {
+            if (!SweepFeatures.capacityRepairNeeded(current.state, inputs)) return current
+            val (result, plan) = stateStore!!.acquisitionTransaction("warehouse_capacity", characterId!!, policy, inputs, "local-service",
+                "Bag capacities up to the Warehouse limit before the login S18",
+                detailExtra = jobj("contract" to "docs/SWEEP_FEATURES_CONTRACT.md")) { owned, _ -> SweepFeatures.planCapacityRepair(owned, inputs) }
+            log("transaction_committed", "action" to "warehouse_capacity", "character_id" to characterId, "revision" to result["revision"],
+                "item_capacity_after" to plan["item_capacity_after"], "login" to true)
+            stateStore!!.read()
+        } catch (e: Exception) {      // a login must not fail on this side system
+            guard(e)
+            log("warehouse_capacity_repair_error", "character_id" to characterId, "error" to described(e))
+            current
+        }
     }
 
-    /** Before the S18, in-game-created characters only: the leader's super-class digit repair. */
+    /**
+     * Before the S18, in-game-created characters only: a leader whose super-class digit disagrees with its evolve row
+     * gets the row's digit and stats (one audited revision, only when needed).
+     */
     private fun leaderDigitRepair(current: StateStore.Current): StateStore.Current {
         if (current.characterProfile == null) return current
-        deploymentPolicy() ?: return current
-        throw NotPorted("leader_repair login repair")
+        val loader = service.evolutionInputs
+        val inputs = service.inputs
+        val policy = deploymentPolicy() ?: return current
+        return try {
+            val store = stateStore!!
+            val pairs = store.historyValues("evolve_leader_hero", "$.old_template").map { (it as? Number)?.toLong() }
+                .zip(store.historyValues("evolve_leader_hero", "$.new_template").map { (it as? Number)?.toLong() })
+            val reached = LeaderRepair.superReachedTemplates(pairs)
+            if (LeaderRepair.repairTarget(Owned(current, inputs), loader, reached) == null) return current
+            val (result, plan) = store.acquisitionTransaction("leader_digit_repair", characterId!!, policy, inputs, "local-service",
+                "Leader super-class digit to its evolve row before the login S18",
+                detailExtra = jobj("contract" to "server/leader_repair.py")) { owned, _ -> LeaderRepair.planRepair(owned, loader, reached) }
+            log("transaction_committed", "action" to "leader_digit_repair", "character_id" to characterId, "revision" to result["revision"],
+                "template_before" to plan["template_before"], "template_after" to plan["template_after"], "login" to true)
+            store.read()
+        } catch (e: Exception) {      // a login must not fail on this repair
+            guard(e)
+            log("leader_digit_repair_error", "character_id" to characterId, "error" to described(e))
+            current
+        }
     }
 
     /** The Goals' login revision; returns (current, [S3108] or []). */
@@ -293,10 +336,22 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         throw NotPorted("goals login")
     }
 
-    /** S2880 (totems) and S548 (album) in the startup burst. */
+    /** S2880 (totems) and S548 (album) in the startup burst where live has them; never fails a login. */
     private fun sweepStartup(packets: List<Frame>, current: StateStore.Current): List<Frame> {
         if (!sweepEnabled()) return packets
-        throw NotPorted("sweep_features startup frames")
+        val frames: SweepFeatures.StartupFrames
+        val placed: List<Frame>
+        try {
+            frames = SweepFeatures.startupFrames(current, seeds(current))
+            placed = SweepFeatures.placeStartupFrames(packets, frames.totems, frames.album)
+        } catch (e: Exception) {
+            guard(e)
+            log("sweep_startup_frames_error", "character_id" to characterId, "error" to described(e))
+            return packets
+        }
+        log("sweep_startup_frames", "character_id" to characterId, "provenance" to frames.provenance,
+            "totems_bytes" to frames.totems.size, "album_bytes" to frames.album.size)
+        return placed
     }
 
     /** S3745 right after the S18 for an in-game-created character: its alternate team. */
@@ -305,10 +360,25 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         throw NotPorted("alt_team startup")
     }
 
-    /** S2240 for the owned leader hero. */
+    /** S2240 for the owned leader hero, generated from the character's current heroes. */
     private fun leaderInfoReply(): List<Frame> {
-        stateStore ?: return emptyList()
-        throw NotPorted("leader info (S2240)")
+        val store = stateStore ?: return emptyList()
+        val info: JObj?
+        try {
+            val heroes = SecondaryTeam.ownedHeroes(store.read().state)
+            info = service.evolutionInputs.leaderInfo(heroes)
+        } catch (e: Exception) {      // a catalog defect must not drop the login
+            guard(e)
+            log("leader_info_error", "character_id" to characterId, "error" to described(e))
+            return emptyList()
+        }
+        if (info == null) {
+            log("leader_info_absent", "character_id" to characterId)
+            return emptyList()
+        }
+        log("leader_info_served", "character_id" to characterId, "leader_uid" to info["uid"], "template" to info["template"],
+            "progress_key" to info["progress_key"])
+        return listOf(2240 to HeroEvolution.leaderInfoPayload(info.long("uid"), info.long("progress_key")))
     }
 
     private fun acquisitionLoginFrames(): List<Frame> {
@@ -316,9 +386,17 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         throw NotPorted("acquisition login frames")
     }
 
+    /** After-query login frames of the sweep features (S1824 temporary VIP, S3904); never fails a login. */
     private fun sweepLoginFrames(): List<Frame> {
         if (!sweepEnabled()) return emptyList()
-        throw NotPorted("sweep_features after-query frames")
+        return try {
+            val current = stateStore?.read()
+            SweepFeatures.afterQueryFrames(service.inputs, current, service.clock.now())
+        } catch (e: Exception) {
+            guard(e)
+            log("sweep_login_frames_error", "character_id" to characterId, "error" to described(e))
+            emptyList()
+        }
     }
 
     private fun dailyQueryFrames(): List<Frame> {
