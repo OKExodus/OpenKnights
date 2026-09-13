@@ -23,6 +23,10 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
         const val SCHEMA_VERSION = 4
         val READABLE_VERSIONS = listOf(3, SCHEMA_VERSION)
         const val WIRE_ID_MAX = 0x7FFFFFFF
+        const val WIRE_ID_FIRST = 90_000_001L
+        /** The wire-id range reserved for bots (plan §5b; `world_participants.BOT_ID_*`). */
+        const val BOT_ID_FIRST = 95_000_000L
+        const val BOT_ID_LAST = 95_999_999L
 
         /** The world-level documents born with the world (`WORLD_DOCUMENTS`), in the reference's order. */
         val WORLD_DOCUMENTS: List<Pair<String, JObj>> get() = listOf(
@@ -168,6 +172,85 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
             }
             expectedRevision + 1
         }
+
+    /**
+     * Read-modify-write of one world document with optimistic retries (`update_document`): `change(document)` edits a
+     * copy in place and returns (result, detail) — a null detail means nothing to write.
+     */
+    fun <T> updateDocument(name: String, actor: String, action: String, attempts: Int = 8, change: (JObj) -> Pair<T, JObj?>): T {
+        repeat(attempts) {
+            val (revision, document) = document(name) ?: throw IllegalArgumentException("World document $name is missing")
+            val (result, detail) = change(document)
+            if (detail == null) return result
+            try {
+                putDocument(name, document, revision, actor, action, detail)
+                return result
+            } catch (e: IllegalArgumentException) {
+                // changed meanwhile: read again
+            }
+        }
+        throw IllegalArgumentException("World document $name kept changing")
+    }
+
+    fun stored(path: Path): String = DataPaths.toStored(path, base, strict = strictPaths)
+
+    /** Bot roster names {name_key: bot id} (none in release until bots exist). */
+    val botNames: MutableMap<String, Long> = LinkedHashMap()
+
+    /** The world's participant Power (`bind_power`): a character save's universal Power, bound by the service. */
+    var powerOf: ((StateStore.Current) -> java.math.BigInteger?)? = null
+
+    /**
+     * Reserve a unique name and the next free local wire id for a fresh character (`reserve`): ids run from
+     * 90,000,001 upward and skip the bot range 95,000,000–95,999,999.
+     */
+    fun reserve(name: String, accountId: String, starter: Long, gender: Int, actor: String): JObj {
+        val normalized = io.github.okexodus.openknights.server.game.FreshProfile.normalizeName(name)
+        val key = io.github.okexodus.openknights.server.game.FreshProfile.nameKey(normalized)
+        val entryId = "wc_" + io.github.okexodus.openknights.server.Entropy.current.uuid4Hex()
+        return connect().use { db ->
+            db.immediate {
+                if (db.queryOne("SELECT 1 FROM world_characters WHERE name_key=?", key) != null || key in botNames) {
+                    throw io.github.okexodus.openknights.server.game.FreshProfile.CreationRejected("That name is already taken in this world")
+                }
+                val top = db.queryOne("SELECT MAX(wire_account_id) AS m FROM world_characters WHERE wire_account_id>=?", WIRE_ID_FIRST)?.longOrNull("m")
+                var wire = if (top == null) WIRE_ID_FIRST else top + 1
+                if (wire in BOT_ID_FIRST..BOT_ID_LAST) wire = BOT_ID_LAST + 1
+                if (wire > WIRE_ID_MAX) throw io.github.okexodus.openknights.server.game.FreshProfile.CreationRejected("The world has no free character identities left")
+                val timestamp = PyTime.nowIsoMillis()
+                db.execute("INSERT INTO world_characters VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)", entryId, null, accountId, normalized, key, wire,
+                    "fresh", starter, gender.toLong(), "reserved", null, timestamp, timestamp)
+                audit(db, actor, "reserve", entryId, detail = jobj("name" to normalized, "wire_account_id" to wire, "starter" to starter, "gender" to gender))
+                jobj("entry_id" to entryId, "name" to normalized, "wire_account_id" to wire)
+            }
+        }
+    }
+
+    fun activate(entryId: String, characterId: String, statePath: Path, actor: String) {
+        connect().use { db ->
+            db.immediate {
+                val storedPath = stored(statePath)
+                val updated = db.execute("UPDATE world_characters SET character_id=?,state_path=?,status='active',updated_at_utc=? " +
+                    "WHERE entry_id=? AND status='reserved' AND character_id IS NULL", characterId, storedPath, PyTime.nowIsoMillis(), entryId)
+                if (updated != 1) throw IllegalArgumentException("World reservation is missing or no longer reserved")
+                audit(db, actor, "activate", entryId, characterId, jobj("state_path" to storedPath))
+            }
+        }
+    }
+
+    /** Keep the name / id reserved forever (never reused silently); mark why. */
+    fun abandon(entryId: String, actor: String, reason: String) {
+        connect().use { db ->
+            db.immediate {
+                val updated = db.execute("UPDATE world_characters SET status='abandoned',updated_at_utc=? WHERE entry_id=? AND status='reserved'", PyTime.nowIsoMillis(), entryId)
+                audit(db, actor, "abandon", entryId, detail = jobj("reason" to reason, "updated" to updated))
+            }
+        }
+    }
+
+    fun allEntries(): List<JObj> = connect(readOnly = true).use { db ->
+        db.query("SELECT * FROM world_characters ORDER BY created_at_utc,entry_id").map { row(it) }
+    }
 
     fun birthMissingDocuments(actor: String): List<String> = connect().use { db -> db.immediate { birthDocuments(it, actor) } }
 

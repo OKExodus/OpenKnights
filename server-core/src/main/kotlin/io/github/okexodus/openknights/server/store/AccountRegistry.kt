@@ -133,6 +133,86 @@ class AccountRegistry(path: Path, private val driver: SqlDriver, val strictPaths
         return jobj("account_id" to accountId, "username" to username, "created_at_utc" to timestamp)
     }
 
+    /**
+     * Verify a local password (`authenticate`); the public account or null. Every attempt is audited
+     * (`login_verified` / `login_rejected`), and an unknown username still performs the same PBKDF2 derivation.
+     */
+    fun authenticate(username: Any?, password: Any?, actor: String = "local-cli"): JObj? {
+        label(actor, "Actor")
+        val validUsername = username is String && USERNAME.matches(username)
+        val passwordBytes = (password as? String)?.toByteArray(Charsets.UTF_8)
+        if (passwordBytes == null || passwordBytes.size !in 12..1024) {
+            connect().use { db -> db.immediate { audit(db, actor, "login_rejected") } }
+            return null
+        }
+        return connect().use { db ->
+            val row = db.queryOne("SELECT * FROM accounts WHERE username_key=?", if (validUsername) (username as String).lowercase() else "")
+            if (row != null && (row.string("password_algorithm") != "pbkdf2-sha256" || row.long("password_iterations") != PASSWORD_ITERATIONS.toLong()
+                    || row.bytes("password_salt").size != 32 || row.bytes("password_hash").size != 32)) {
+                throw IllegalArgumentException("Unsupported local password verifier format")
+            }
+            val salt = row?.bytes("password_salt") ?: ByteArray(32)
+            val actual = pbkdf2(password as String, salt)
+            val valid = MessageDigest.isEqual(actual, row?.bytes("password_hash") ?: ByteArray(32)) && row != null
+            db.immediate { audit(db, actor, if (valid) "login_verified" else "login_rejected", if (valid) row!!.string("account_id") else null) }
+            if (valid) jobj("account_id" to row!!.string("account_id"), "username" to row.string("username"), "created_at_utc" to row.string("created_at_utc")) else null
+        }
+    }
+
+    fun getAccount(accountId: String): JObj = connect(readOnly = true).use { db ->
+        val row = db.queryOne("SELECT account_id,username,created_at_utc FROM accounts WHERE account_id=?", accountId)
+            ?: throw IllegalArgumentException("Local account does not exist")
+        jobj("account_id" to row.string("account_id"), "username" to row.string("username"), "created_at_utc" to row.string("created_at_utc"))
+    }
+
+    /**
+     * Register an existing save for an account (`register_character`): the save and its checkpoint must hold the same
+     * complete state at the expected revision and hashes; the registry keeps the stored (root-relative) paths.
+     */
+    fun registerCharacter(accountId: String, name: String, statePath: Path, expectedRevision: Long, expectedSourceSha256: String,
+                          expectedPayloadSha256: String, checkpointPath: Path, actor: String = "local-cli", characterId: String? = null): Character {
+        label(name, "Character name", 80)
+        label(actor, "Actor")
+        require(characterId == null || Regex("char_[0-9a-f]{32}").matches(characterId)) { "A pre-generated character ID must be char_ plus 32 lowercase hex digits" }
+        require(expectedRevision >= 1) { "Expected revision must be a positive integer" }
+        for (checksum in listOf(expectedSourceSha256, expectedPayloadSha256)) require(Regex("[0-9a-f]{64}").matches(checksum)) { "Expected hashes must be lowercase SHA-256 hex" }
+        val state = statePath.toRealPath()
+        val checkpoint = checkpointPath.toRealPath()
+        require(!Files.isSameFile(state, checkpoint)) { "Registration requires a separate checkpoint file" }
+        val storedState = storedPath(state)
+        val storedCheckpoint = storedPath(checkpoint)
+        val id = characterId ?: ("char_" + io.github.okexodus.openknights.server.Entropy.current.uuid4Hex())
+        val timestamp = PyTime.nowIsoMillis()
+        connect().use { db ->
+            db.immediate {
+                if (db.queryOne("SELECT 1 FROM accounts WHERE account_id=?", accountId) == null) throw IllegalArgumentException("Local account does not exist")
+                if (db.queryOne("SELECT 1 FROM characters WHERE character_id=?", id) != null) throw IllegalArgumentException("Character ID already registered")
+                for (row in db.query("SELECT state_path,state_path_key FROM characters")) {
+                    val existing = DataPaths.fromStored(row.string("state_path"), base)
+                    if (row.string("state_path_key") in setOf(DataPaths.keyOf(storedState), state.toString().lowercase())
+                        || (Files.exists(existing) && Files.isSameFile(state, existing))) {
+                        throw IllegalArgumentException("State database is already owned by a local character")
+                    }
+                }
+                val current = StateStore(state, driver).read()
+                val saved = StateStore(checkpoint, driver).read()
+                if (current.revision != expectedRevision || current.sourceSha256 != expectedSourceSha256 || current.payloadSha256 != expectedPayloadSha256) {
+                    throw IllegalArgumentException("State revision or hash changed; inspect and checkpoint again")
+                }
+                fun identity(c: StateStore.Current) = jobj("revision" to c.revision, "source_sha256" to c.sourceSha256, "payload_sha256" to c.payloadSha256,
+                    "inventory_schema_version" to c.inventorySchemaVersion, "inventory_sha256" to c.inventorySha256)
+                if (identity(current) != identity(saved)) throw IllegalArgumentException("Checkpoint does not match the complete current saved state")
+                val ident = identity(current)
+                db.execute("INSERT INTO characters VALUES(?,?,?,?,?,?,?,?,?)", id, accountId, name, storedState, DataPaths.keyOf(storedState),
+                    current.sourceSha256, Json.compact(ident), storedCheckpoint, timestamp)
+                val detail = jobj("name" to name, "state_path" to storedState, "checkpoint_path" to storedCheckpoint)
+                ident.forEach { (k, v) -> detail[k] = v }
+                audit(db, actor, "character_registered", accountId, id, detail)
+            }
+        }
+        return getCharacter(id)
+    }
+
     fun accountByUsername(username: String): SqlRow? =
         connect(readOnly = true).use { it.queryOne("SELECT account_id,username FROM accounts WHERE username_key=?", username.lowercase()) }
 
@@ -298,6 +378,14 @@ class LocalAuth(val registry: AccountRegistry, private val clock: () -> Long = {
                 }
             }
         }
+    }
+
+    /** A session for local credentials (`login`); rejected credentials raise [AuthenticationRejected]. */
+    fun login(username: Any?, password: Any?, ttlSeconds: Int = DEFAULT_SESSION_TTL, actor: String = "local-client"): Issued {
+        require(ttlSeconds in 1..MAX_SESSION_TTL) { "Session lifetime must be an integer from 1 to $MAX_SESSION_TTL seconds" }
+        AccountRegistry.label(actor, "Actor")
+        val account = registry.authenticate(username, password, actor) ?: throw AuthenticationRejected("Local credentials rejected")
+        return issue(account.str("account_id"), ttlSeconds, actor, JObj())
     }
 
     /** Password-free session for the device owner (a single-owner install; the gateway is loopback-only). */
