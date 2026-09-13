@@ -35,6 +35,14 @@ tasks.processResources {
     }
 }
 
+/** Maintainer tool: compares two patched APKs (see tools/ApkComparison.kt in the tests). Not part of the patcher. */
+tasks.register<JavaExec>("compareApks") {
+    classpath = sourceSets.test.get().runtimeClasspath
+    mainClass.set("io.github.okexodus.openknights.patcher.tools.ApkComparisonKt")
+    maxHeapSize = "3g"
+    args(listOf("ours", "earlier", "original", "out").map { providers.gradleProperty(it).orElse("").get() })
+}
+
 tasks.test {
     useJUnitPlatform()
     maxHeapSize = "2g"
