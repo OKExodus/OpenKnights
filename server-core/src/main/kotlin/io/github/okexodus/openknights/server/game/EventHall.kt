@@ -10,7 +10,6 @@ import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jobj
-import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
@@ -87,7 +86,7 @@ object EventHall {
 
     /** Claimed piece ids of the served day (a UTC day of the served clock). */
     fun pieView(document: JValue?, servedTime: Long): List<JValue> {
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
         val day = Math.floorDiv(servedTime, 86400L)
         if (PyDocs.get(doc, "served_day") != JInt(day)) return emptyList()
         return ((doc["claimed"] ?: JArr()) as JArr).toList()
@@ -133,14 +132,14 @@ object EventHall {
     }
 
     fun exchangeUsed(document: JValue?, eventId: JValue, index: Int): BigInteger {
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
         val used = (doc["used"] ?: JObj()) as JObj
         return PyDocs.int(used["${PyDocs.str(eventId)}:$index"] ?: JInt(0))
     }
 
     /** Restart the used counts of every exchange whose limit period changed (a v1 document restarts everything). */
     fun exchangeRoll(document: JValue?, exchanges: List<JValue>, now: Long): JObj {
-        val base = if (!PyDocs.truthy(document) || PyDocs.get(document as JObj, "profile") != JStr(EXCHANGE_PROFILE))
+        val base = if (!Py.truthy(document) || PyDocs.get(document as JObj, "profile") != JStr(EXCHANGE_PROFILE))
             jobj("profile" to EXCHANGE_PROFILE, "periods" to JObj(), "used" to JObj()) else document
         val doc = copy(base)
         for (e in exchanges) {
@@ -160,7 +159,7 @@ object EventHall {
     /** S1760 type 9 body: `u8 n, n × (u32 id, u32 cd, name, desc, u8 f, f × (u8 m, m × (u8 kind, u32 id, u32 count),
      * u8 kind, u32 id, u32 count, u32 remaining))`. */
     fun exchangeBody(exchanges: List<JValue>, document: JValue?, servedTime: Long, now: Long? = null): ByteArray {
-        val events = exchanges.map { it.asObj }.filter { PyDocs.truthy(it["materials_kind_ok"] ?: JBool(true)) }
+        val events = exchanges.map { it.asObj }.filter { Py.truthy(it["materials_kind_ok"] ?: JBool(true)) }
         val w = WireWriter().raw(PyDocs.bytes(listOf(events.size.toLong())))
         for (event in events) {
             val scope = PyDocs.get(event, "limit_scope")
@@ -221,7 +220,7 @@ object EventHall {
 
     fun greatOfferRoll(document: JValue?, window: String): JObj {
         val doc = document as? JObj
-        if (!PyDocs.truthy(document) || PyDocs.get(doc, "profile") != JStr(GREAT_OFFER_PROFILE) || PyDocs.get(doc, "window") != JStr(window)) {
+        if (!Py.truthy(document) || PyDocs.get(doc, "profile") != JStr(GREAT_OFFER_PROFILE) || PyDocs.get(doc, "window") != JStr(window)) {
             return jobj("profile" to GREAT_OFFER_PROFILE, "window" to window, "spins" to 0, "draws" to JArr())
         }
         return copy(doc!!)
@@ -261,7 +260,7 @@ object EventHall {
         }
         val levelGift = seedType[T_LEVEL_GIFT] ?: byteArrayOf(T_LEVEL_GIFT.toByte(), 0, 0, 0, 0)
         val stored = PyDocs.get(current, "palace_state")
-        val palace = palaceRoll(if (PyDocs.truthy(stored)) stored!! else seedPalace(seedType[T_PALACE], null), today, inputs)
+        val palace = palaceRoll(if (Py.truthy(stored)) stored!! else seedPalace(seedType[T_PALACE], null), today, inputs)
         // The reference reads `current["blacksmith_body"]`, a key no code writes: always eight zero bytes.
         return listOf(S_EVENT_UPDATE to levelGift,
             s1760(T_PALACE, palaceBody(palace, today)),
@@ -271,73 +270,8 @@ object EventHall {
             s1760(T_GREAT_OFFER, greatOfferBody(PyDocs.get(current, "sgxj_state"), inputs, now)),
             s1760(T_REBATE, byteArrayOf(0)),
             s1760(T_EXCHANGE, exchangeBody(exchanges(), exchangeRoll(PyDocs.get(current, "exchange_state"), exchanges(), now), servedTime, now)),
-            TmpVip.frame(current, seeds, now))
+            SweepFeatures.tmpVipFrame(current, seeds, now))
     }
 
     fun exchanges(): List<JValue> = (Events.ACTIVE["exchanges"] as? JArr) ?: emptyList()
-
-    /**
-     * The Temp VIP S1824 of the login set — the reference's `sweep_features.tmp_vip_frame` (owned by the sweep-features
-     * port; kept here so the login set is complete): claimed and running → `01 <seconds left>`, unclaimed `00`, ended
-     * (or a real VIP of 4 and more) `02`.
-     */
-    object TmpVip {
-        const val S_TMP_VIP = 1824
-        const val UNCLAIMED = 0L
-        const val ACTIVE = 1L
-        const val EXPIRED = 2L
-        const val LEVEL = 4L
-        const val SECONDS = 4L * 86400
-        const val PROFILE = "tmp_vip_v1"
-
-        fun payload(state: Long, seconds: BigInteger): ByteArray =
-            WireWriter().number('B', state).number('I', seconds.min(BigInteger.valueOf(0x7fffffff)).max(BigInteger.ZERO)).bytes()
-
-        fun decode(payload: ByteArray): Pair<Long, Long> {
-            if (payload.size != 5) throw PyValues.ValueError("S1824 is u8 state, u32 seconds")
-            val r = WireReader(payload)
-            return r.u8().toLong() to r.u32()
-        }
-
-        fun document(current: StateStore.Current, seeds: SystemSeeds.SeedFrames?): JObj {
-            PyDocs.get(current, "tmp_vip")?.let { return it.deepCopy() as JObj }
-            val payload = seeds?.first(S_TMP_VIP)
-            val doc = jobj("profile" to PROFILE, "claimed" to false, "claimed_at" to null, "expires_at" to null)
-            if (payload == null) return doc.also { it["seed"] = jobj("source" to "unclaimed_default_policy") }
-            val (state, _) = decode(payload)
-            if (state == ACTIVE || state == EXPIRED) {
-                doc["claimed"] = JBool(true)
-                doc["expires_at"] = JInt(0)
-            }
-            val seed = seeds.provenance(S_TMP_VIP)
-            seed["state"] = JInt(state)
-            doc["seed"] = seed
-            return doc
-        }
-
-        fun realVipLevel(current: StateStore.Current): JValue {
-            for (f in current.state.arr("role_properties")) {
-                val field = f.asObj
-                if (field["id"] == JInt(27)) {
-                    val bits = field.obj("value")["bits"] ?: JInt(0)
-                    return if (PyDocs.truthy(bits)) bits else JInt(0)
-                }
-            }
-            return JInt(0)
-        }
-
-        fun view(document: JObj, now: Long, vipLevel: JValue): Pair<Long, BigInteger> {
-            if (PyDocs.compare(vipLevel, JInt(LEVEL)) >= 0) return EXPIRED to BigInteger.ZERO
-            if (!PyDocs.truthy(document["claimed"])) return UNCLAIMED to BigInteger.ZERO
-            val expires = PyDocs.get(document, "expires_at")
-            val left = (if (PyDocs.truthy(expires)) PyDocs.int(expires) else BigInteger.ZERO) - BigInteger.valueOf(now)
-            if (left.signum() > 0) return ACTIVE to left.min(PyDocs.int(document["duration_seconds"] ?: JInt(SECONDS)))
-            return EXPIRED to BigInteger.ZERO
-        }
-
-        fun frame(current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, now: Long): Frame {
-            val (state, seconds) = view(document(current, seeds), now, realVipLevel(current))
-            return S_TMP_VIP to payload(state, seconds)
-        }
-    }
 }

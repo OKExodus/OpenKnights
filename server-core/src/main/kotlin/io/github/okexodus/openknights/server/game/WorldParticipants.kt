@@ -66,6 +66,7 @@ object WorldParticipants {
         val heroes = LinkedHashMap<Long?, Map<Long, Long?>>()
         for (fields in state.arr("heroes")) {
             val values = heroValues(fields as io.github.okexodus.openknights.exact.JArr)
+            if (HERO_UID.toLong() !in values) throw PyDocs.KeyError(HERO_UID)
             heroes[values[HERO_UID.toLong()]] = values
         }
         val entries = ArrayList<LineupEntry>()

@@ -175,16 +175,16 @@ object Quests {
             val wire = r.asObj.arr("wire_values")
             gear[PyDocs.long(wire[0])] = wire
         }
-        val heroLevels = heroes.map { h -> h[2L]?.takeIf { PyDocs.truthy(it) }?.let { PyDocs.long(it) } ?: 0L }
+        val heroLevels = heroes.map { h -> h[2L]?.takeIf { Py.truthy(it) }?.let { PyDocs.long(it) } ?: 0L }
         val heroStars = heroes.map { h ->
-            val template = h[1L]?.takeIf { PyDocs.truthy(it) }?.let { PyDocs.long(it) } ?: 0L
+            val template = h[1L]?.takeIf { Py.truthy(it) }?.let { PyDocs.long(it) } ?: 0L
             inputs.heroStar(template)?.takeIf { it != 0L } ?: 0L
         }
         val gearLevels = gear.values.map { PyDocs.long(it[2]) }
         val worn = ArrayList<List<Long>>()
         for (s in (state["formation"] as? JArr) ?: JArr()) {
             val slot = s.asObj
-            if (PyDocs.truthy(slot["hero_uid"])) {
+            if (Py.truthy(slot["hero_uid"])) {
                 val stars = ArrayList<Long>()
                 for (a in (slot["assignments"] as? JArr) ?: JArr()) {
                     val uid = PyDocs.long(a.asArr[1])
@@ -331,7 +331,7 @@ object Quests {
 
     private fun tail(document: JObj, now: Long): List<JValue> {
         val autoId = PyDocs.at(document, "auto_id")
-        val left: JValue = if (PyDocs.truthy(autoId)) JInt(maxOf(BigInteger.ZERO, PyDocs.int(PyDocs.at(document, "auto_until")) - BigInteger.valueOf(now))) else JInt(0)
+        val left: JValue = if (Py.truthy(autoId)) JInt(maxOf(BigInteger.ZERO, PyDocs.int(PyDocs.at(document, "auto_until")) - BigInteger.valueOf(now))) else JInt(0)
         return listOf(PyDocs.at(document, "used"), PyDocs.at(document, "limit"), autoId, left, PyDocs.at(document, "free"))
     }
 

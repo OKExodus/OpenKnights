@@ -15,8 +15,9 @@ import java.math.BigInteger
 
 /**
  * Dictionary-document idioms of the reference's daily systems, kept in one place so the ported functions read like
- * the originals: `current.get(key)`, `d.get(key)` (an explicit JSON null reads as absent), truthiness, `str()`,
- * the reference's list ordering and negative indexing, and its `json.dumps(sort_keys=True)` comparisons.
+ * the originals: `current.get(key)`, `d.get(key)` (an explicit JSON null reads as absent), `str()`,
+ * the reference's list ordering and negative indexing, and its `json.dumps(sort_keys=True)` comparisons. Truthiness is
+ * [Py.truthy], the text-to-number rules are [PyValues].
  */
 object PyDocs {
     /** `current.get(key)`: a field of the save read or a per-character document; null when absent or JSON null. */
@@ -37,17 +38,6 @@ object PyDocs {
 
     /** `d.get(key)` (null for absent or JSON null). */
     fun get(d: JObj?, key: String): JValue? = d?.get(key)?.takeIf { it != JNull }
-
-    /** The reference's truthiness of a document value (0, empty text, list or object, null and false are false). */
-    fun truthy(v: JValue?): Boolean = when (v) {
-        null, JNull -> false
-        is JBool -> v.value
-        is JInt -> v.value.signum() != 0
-        is JFloat -> v.value != 0.0
-        is JStr -> v.value.isNotEmpty()
-        is JArr -> v.isNotEmpty()
-        is JObj -> v.isNotEmpty()
-    }
 
     /** `str(v)` / an f-string field of a document value. */
     fun str(v: JValue?): String = when (v) {

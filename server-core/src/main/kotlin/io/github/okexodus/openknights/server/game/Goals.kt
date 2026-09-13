@@ -99,7 +99,7 @@ object Goals {
             val field = f.asObj
             if (field["id"] == JInt(ROLE_LEVEL)) {
                 val bits = field.obj("value")["bits"]
-                return if (PyDocs.truthy(bits)) bits!! else JInt(0)
+                return if (Py.truthy(bits)) bits!! else JInt(0)
             }
         }
         return JInt(0)
@@ -108,7 +108,7 @@ object Goals {
     private fun createdEpoch(current: StateStore.Current): Long? {
         val profile = PyDocs.get(current.characterProfile, "document") as? JObj ?: JObj()
         val stamp = PyDocs.get(profile, "created_at_utc")
-        if (!PyDocs.truthy(stamp)) return null
+        if (!Py.truthy(stamp)) return null
         return try { Summon.isoTimestamp(PyDocs.str(stamp).replace("Z", "+00:00")) } catch (e: PyValues.ValueError) { null }
     }
 

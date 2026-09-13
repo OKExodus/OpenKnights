@@ -75,7 +75,7 @@ object RebirthShop {
             val field = f.asObj
             if (field["id"] == JInt(ROLE_VIP)) {
                 val bits = field.obj("value")["bits"] ?: JInt(0)
-                return if (PyDocs.truthy(bits)) bits else JInt(0)
+                return if (Py.truthy(bits)) bits else JInt(0)
             }
         }
         return JInt(0)
@@ -134,7 +134,7 @@ object RebirthShop {
     private fun validSeed(shops: JObj, inputs: DailyInputs): Boolean =
         shops.keys == SHOPS.map { it.toString() }.toSet() && shops.values.all { v ->
             val entries = (v as JObj).arr("entries")
-            entries.size == POSITIONS && entries.all { e -> PyDocs.truthy(good(inputs, PyDocs.long(e.asArr[0]))) }
+            entries.size == POSITIONS && entries.all { e -> Py.truthy(good(inputs, PyDocs.long(e.asArr[0]))) }
         }
 
     /**

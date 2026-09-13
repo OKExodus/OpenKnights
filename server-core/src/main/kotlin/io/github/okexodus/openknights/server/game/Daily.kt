@@ -127,14 +127,14 @@ object Daily {
 
     /** S18 `title_reward_flag`: 1 = today's salary claimed, else 0. */
     fun salaryFlag(document: JValue?, now: Long): Long {
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
         return if (PyDocs.get(doc, "claim_day") == JStr(Shops.dayOf(now))) 1 else 0
     }
 
     // --- Daily Mission -------------------------------------------------------------------------------------------------------
 
     fun missionView(document: JValue?, now: Long): JObj {
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
+        val doc = if (Py.truthy(document)) document as JObj else JObj()
         if (PyDocs.get(doc, "day") != JStr(Shops.dayOf(now))) {
             return jobj("profile" to MISSION_PROFILE, "day" to Shops.dayOf(now), "counts" to JObj(), "claimed" to JArr())
         }
@@ -165,7 +165,7 @@ object Daily {
 
     /** The character's Royal Door day (a new day clears the daily claim and donations and picks new tasks). */
     fun doorView(document: JValue?, now: Long, worldBirth: JValue?): JObj {
-        val doc = if (PyDocs.truthy(document)) copy(document!!) else jobj("profile" to DOOR_PROFILE, "day" to null,
+        val doc = if (Py.truthy(document)) copy(document!!) else jobj("profile" to DOOR_PROFILE, "day" to null,
             "daily_claimed" to false, "level_up_claimed" to 0, "tasks" to JArr(), "donated" to JObj(), "gold_donated" to 0)
         val today = Shops.dayOf(now)
         if (PyDocs.get(doc, "day") != JStr(today)) {
@@ -182,7 +182,7 @@ object Daily {
     fun doorPayload(document: JObj, worldDoor: JObj): ByteArray {
         val level = PyDocs.at(worldDoor, "level")
         val w = WireWriter().number('Q', PyDocs.at(worldDoor, "exp")).number('I', level)
-            .number('B', if (PyDocs.truthy(PyDocs.at(document, "daily_claimed"))) 0L else 1L)
+            .number('B', if (Py.truthy(PyDocs.at(document, "daily_claimed"))) 0L else 1L)
             .number('B', if (PyDocs.compare(PyDocs.at(document, "level_up_claimed"), level) < 0) 1L else 0L)
         val tasks = document.arr("tasks")
         w.raw(PyDocs.bytes(listOf(tasks.size.toLong()) + tasks.map { PyDocs.long(it) }))

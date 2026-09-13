@@ -6,8 +6,10 @@ import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.Json
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.sha256Hex
+import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.SqlConnection
 
@@ -24,6 +26,22 @@ object GodSkills {
     private fun uint(value: Long, width: Int, label: String): Long {
         require(value >= 0 && (width == 64 || value < (1L shl width))) { "$label must fit uint$width" }
         return value
+    }
+
+    /** S2848 → [{"uid", "skills": [[skill, progress], ...]}] in wire order. */
+    fun decodeGodSkillList(payload: ByteArray): List<JObj> {
+        val r = WireReader(payload)
+        val heroes = ArrayList<JObj>()
+        val count = r.u32()
+        for (h in 0L until count) {
+            val uid = r.u32()
+            val skills = JArr()
+            val n = r.u32()
+            for (s in 0L until n) skills.add(jarr(r.u32(), r.u32()))
+            heroes.add(jobj("uid" to uid, "skills" to skills))
+        }
+        if (r.offset != payload.size) throw PyValues.ValueError("God-skill list has trailing bytes")
+        return heroes
     }
 
     /** S2848: u32 n heroes; per hero u32 UID, u32 n, n × (u32 skill, u32 progress). */

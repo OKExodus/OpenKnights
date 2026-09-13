@@ -6,8 +6,6 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
-import io.github.okexodus.openknights.exact.asArr
-import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireWriter
@@ -116,32 +114,8 @@ object DailyRoutes {
         }
         if (worldCtx == null || worldCtx.world == null || inputs == null) return document
         val (_, guilds) = worldCtx.document("guilds")
-        val guild = guildOf(if (PyDocs.truthy(guilds)) guilds else jobj("guilds" to JObj()), ownId(current)).second
-        return personalTechView(document, guild, inputs)
-    }
-
-    /** (guild id, guild) the participant belongs to, else (0, null) — the reference's `guild.guild_of`. */
-    private fun guildOf(document: JObj, role: JValue): Pair<Long, JObj?> {
-        for ((gid, g) in document.obj("guilds")) {
-            val guild = g.asObj
-            if (guild.arr("members").any { PyDocs.at(it.asObj, "role") == role }) return PyValues.parseLong(gid) to guild
-        }
-        return 0L to null
-    }
-
-    /** The S2330 document of a member — the reference's `guild.personal_tech_view`. */
-    private fun personalTechView(personal: JObj?, guild: JObj?, inputs: DailyInputs): JObj {
-        if (!PyDocs.truthy(guild)) return jobj("profile" to "guild_tech_state_v1", "in_guild" to false, "techs" to JArr())
-        val levels = LinkedHashMap<JValue, JValue>()
-        for (t in ((if (PyDocs.truthy(personal)) personal!! else JObj())["techs"] ?: JArr()) as JArr) levels[t.asArr[0]] = t.asArr[1]
-        val techs = JArr()
-        val guildTechs = guild!!.obj("techs")
-        for (ident in guildTechs.keys.map { PyValues.parseLong(it) }.sorted()) {
-            val row = inputs.guildTech(ident)
-            if (row == null || row.bool("guild_only")) continue
-            techs.add(jarr(ident, levels[JInt(ident)] ?: JInt(1), PyDocs.at(guildTechs, ident.toString())))
-        }
-        return jobj("profile" to "guild_tech_state_v1", "in_guild" to true, "techs" to techs)
+        val guild = Guild.guildOf(if (Py.truthy(guilds)) guilds else jobj("guilds" to JObj()), PyDocs.long(ownId(current))).second
+        return Guild.personalTechView(document, guild, inputs)
     }
 
     /** Hero Set Out slots: stored, else seeded once from the S2274 seed frame. */
@@ -170,7 +144,7 @@ object DailyRoutes {
 
     fun palaceDocument(current: StateStore.Current, seeds: SystemSeeds.SeedFrames?): JObj {
         val stored = PyDocs.get(current, "palace_state")
-        if (PyDocs.truthy(stored)) return stored as JObj
+        if (Py.truthy(stored)) return stored as JObj
         val (payload, provenance) = seed(seeds, EventHall.S_EVENT_UPDATE, EventHall.T_PALACE)
         return EventHall.seedPalace(payload, provenance)
     }
@@ -306,11 +280,11 @@ object DailyRoutes {
         val definitions = Events.ACTIVE
         if (servedTime == null || PyDocs.get(state.obj("subsystems"), "game_activities") == null) return null
         val activities = state.obj("subsystems").obj("game_activities")
-        fun eventState(): JObj = PyDocs.shallow(PyDocs.get(current, "event_state")?.takeIf { PyDocs.truthy(it) }?.let { it as JObj }
+        fun eventState(): JObj = PyDocs.shallow(PyDocs.get(current, "event_state")?.takeIf { Py.truthy(it) }?.let { it as JObj }
             ?: jobj("profile" to "event_state_v1"))
-        if (!PyDocs.truthy(definitions["activities"])) {
+        if (!Py.truthy(definitions["activities"])) {
             val rolled = Events.rollRouletteWindow(activities, definitions, servedTime)
-            if (PyDocs.truthy(definitions["retain_captured"]) || !PyDocs.truthy(activities.obj("first_list")["entries"])) {
+            if (Py.truthy(definitions["retain_captured"]) || !Py.truthy(activities.obj("first_list")["entries"])) {
                 return if (rolled) eventState() else null
             }
             Events.reconcile(state, definitions, servedTime)
@@ -349,12 +323,12 @@ object DailyRoutes {
 
     private fun rouletteRefresh(state: JObj, current: StateStore.Current, now: Long, servedTime: Long?): JObj? {
         val activities = PyDocs.get(state.obj("subsystems"), "game_activities")
-        val roulette = if (PyDocs.truthy(activities)) PyDocs.get(activities as JObj, "roulette") else null
+        val roulette = if (Py.truthy(activities)) PyDocs.get(activities as JObj, "roulette") else null
         if (roulette == null || servedTime == null) return null
         val values = (roulette as JObj).arr("wire_values")
         val today = Shops.dayOf(now)
         val stored = PyDocs.get(current, "roulette_day")
-        var document = PyDocs.shallow(if (PyDocs.truthy(stored)) stored as JObj else JObj())
+        var document = PyDocs.shallow(if (Py.truthy(stored)) stored as JObj else JObj())
         var changed = false
         if (document.isEmpty()) {
             document = jobj("profile" to "roulette_day_v1", "day" to today)
@@ -400,7 +374,7 @@ object DailyRoutes {
     private fun rebirthShopRefresh(state: JObj, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, inputs: DailyInputs, now: Long, ownerKey: String): JObj? {
         val seedPayload = seeds?.first(RebirthShop.S_LIST)
         val stored = PyDocs.get(current, "rebirth_shop")
-        val (document, changed) = RebirthShop.view(if (PyDocs.truthy(stored)) stored!!.deepCopy() as JObj else null, inputs, state, now, ownerKey,
+        val (document, changed) = RebirthShop.view(if (Py.truthy(stored)) stored!!.deepCopy() as JObj else null, inputs, state, now, ownerKey,
             seedPayload, if (seedPayload != null) seeds.provenance(RebirthShop.S_LIST) else null)
         return if (changed) document else null
     }
@@ -423,20 +397,6 @@ object DailyRoutes {
             changed = true
         }
         return if (changed) document else null
-    }
-
-    /** [(buff, seconds left)] of the running buffs, ascending by buff id — the reference's `acquisition.buff_view`. */
-    private fun buffView(document: JValue?, now: Long): List<Pair<BigInteger, BigInteger>> {
-        val doc = if (PyDocs.truthy(document)) document as JObj else JObj()
-        val ends = (doc["ends"] ?: JObj()) as JObj
-        return ends.entries.map { PyValues.parseInt(it.key) to it.value }.sortedBy { it.first }
-            .filter { PyDocs.compare(it.second, JInt(now)) > 0 }.map { it.first to (PyDocs.int(it.second) - BigInteger.valueOf(now)) }
-    }
-
-    /** The S18 `buffs` section — the reference's `acquisition.buffs_section`. */
-    private fun buffsSection(document: JValue?, now: Long): JObj {
-        val entries = buffView(document, now).map { (b, left) -> jobj("wire_values" to listOf(b, left)) }
-        return jobj("count" to entries.size, "entries" to entries)
     }
 
     private fun refresh(owned: Owned?, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, inputs: DailyInputs, now: Long, ownerKey: String,
@@ -473,7 +433,7 @@ object DailyRoutes {
         if (owned != null && Prestige.promote(owned, inputs).isNotEmpty()) changes["title_promoted"] = owned.role(Prestige.ROLE_TITLE)["bits"] ?: JNull
         val buffs = PyDocs.get(current, "buff_state")
         if (buffs != null) {
-            val section = buffsSection(buffs, now)
+            val section = Acquisition.buffsSection(buffs, now)
             val subsystems = state.obj("subsystems")
             if (PyDocs.sortedDump(PyDocs.get(subsystems, "buffs")) != PyDocs.sortedDump(section)) {
                 subsystems["buffs"] = section

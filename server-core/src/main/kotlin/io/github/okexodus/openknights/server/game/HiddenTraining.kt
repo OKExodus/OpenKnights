@@ -6,7 +6,6 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
-import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
@@ -69,41 +68,17 @@ object HiddenTraining {
         return raw.copyOfRange(offset, end) to end + 1
     }
 
-    // --- the lineup (the reference's world_participants.lineup_of, used for the seat avatar) ------------------------------
-
-    private class LineupEntry(val position: JValue, val template: Long)
-
-    /** Formation slots with a hero, in slot order, joined with the owned hero fields (field 1 = template). */
-    private fun lineupOf(state: JObj): List<LineupEntry> {
-        val heroes = LinkedHashMap<JValue?, Map<Long, JValue?>>()
-        for (fields in state.arr("heroes")) {
-            val values = Acquisition.heroValues(fields.asArr)
-            if (0L !in values) throw PyDocs.KeyError(0)
-            heroes[values[0L]] = values
-        }
-        val out = ArrayList<LineupEntry>()
-        val formation = ((state["formation"] as? JArr) ?: JArr()).sortedWith { a, b -> PyDocs.compare(PyDocs.at(a.asObj, "slot_id"), PyDocs.at(b.asObj, "slot_id")) }
-        for (s in formation) {
-            val slot = s.asObj
-            val values = heroes[slot["hero_uid"]]
-            if (!PyDocs.truthy(slot["hero_uid"]) || values == null) continue
-            val template = values[1L]?.takeIf { PyDocs.truthy(it) }?.let { PyDocs.long(it) } ?: 0L
-            out.add(LineupEntry(PyDocs.at(slot, "slot_id"), template))
-        }
-        return out
-    }
-
     /** The seat avatar: the captain's hero template (else the first lineup hero, else 0). */
     fun seatTemplate(state: JObj): Long {
-        val lineup = lineupOf(state)
-        val captain = state["captain_slot"] ?: JNull
+        val lineup = WorldParticipants.lineupOf(state)
+        val captain = state.longOrNull("captain_slot")
         return lineup.firstOrNull { it.position == captain }?.template ?: (lineup.firstOrNull()?.template ?: 0L)
     }
 
     // --- training rooms -----------------------------------------------------------------------------------------------------
 
     fun trainingDocument(document: JValue?): JObj {
-        val doc = if (PyDocs.truthy(document)) copy(document!!) else jobj("profile" to TRAINING_PROFILE)
+        val doc = if (Py.truthy(document)) copy(document!!) else jobj("profile" to TRAINING_PROFILE)
         if (!doc.containsKey("next_room")) doc["next_room"] = JInt(2)
         if (!doc.containsKey("rooms")) doc["rooms"] = JArr()
         if (!doc.containsKey("seat")) doc["seat"] = JNull
@@ -139,12 +114,12 @@ object HiddenTraining {
             val room = r.asObj
             val expires = PyDocs.at(room, "expires_at")
             if (expires is JNull) throw PyDocs.TypeError("'>' not supported between instances of 'NoneType' and 'int'")
-            if (PyDocs.compare(expires, JInt(now)) > 0 || (PyDocs.truthy(seat) && PyDocs.at(seat!!, "room") == PyDocs.at(room, "uid"))) {
+            if (PyDocs.compare(expires, JInt(now)) > 0 || (Py.truthy(seat) && PyDocs.at(seat!!, "room") == PyDocs.at(room, "uid"))) {
                 val password = ((room["password_hex"] ?: JStr("")) as JStr).value.hexBytes()
                 rooms.add(Room(PyDocs.at(room, "uid"), PyDocs.at(room, "row"), me.nameRaw, expires, password, true, ArrayList()))
             }
         }
-        if (PyDocs.truthy(seat)) {
+        if (Py.truthy(seat)) {
             for (room in rooms) {
                 if (room.uid == PyDocs.at(seat!!, "room")) {
                     val players = room.players.filter { it.playerId != me.playerId }.toMutableList()
@@ -164,7 +139,7 @@ object HiddenTraining {
      * u8 mine), u32 room_self_in, u8 can_get_reward`; the room the player trains in is listed first.
      */
     fun roomListPayload(rooms: List<Room>, seat: JObj?, now: Long, inputs: DailyInputs, page: Long = 1): ByteArray {
-        val inRoom: JValue = if (PyDocs.truthy(seat)) PyDocs.at(seat!!, "room") else JInt(0)
+        val inRoom: JValue = if (Py.truthy(seat)) PyDocs.at(seat!!, "room") else JInt(0)
         val ordered = rooms.sortedWith { a, b ->
             val x = (if (a.uid != inRoom) 1 else 0).compareTo(if (b.uid != inRoom) 1 else 0)
             if (x != 0) x else PyDocs.compare(a.uid, b.uid)
@@ -176,7 +151,7 @@ object HiddenTraining {
                 .number('B', if (room.password.isNotEmpty()) 1L else 0L).number('B', if (room.mine) 1L else 0L)
         }
         val byUid = LinkedHashMap<JValue, Room>().also { m -> rooms.forEach { m[it.uid] = it } }
-        val done = PyDocs.truthy(seat) && BigInteger.valueOf(now) >= seatEnd(seat!!, byUid, inputs)
+        val done = Py.truthy(seat) && BigInteger.valueOf(now) >= seatEnd(seat!!, byUid, inputs)
         return w.number('I', inRoom).number('B', if (done) 1L else 0L).bytes()
     }
 
@@ -189,7 +164,7 @@ object HiddenTraining {
     // --- Blacksmith / Crafting ---------------------------------------------------------------------------------------------
 
     fun forgeDocument(document: JValue?): JObj {
-        val doc = if (PyDocs.truthy(document)) copy(document!!) else jobj("profile" to FORGE_PROFILE)
+        val doc = if (Py.truthy(document)) copy(document!!) else jobj("profile" to FORGE_PROFILE)
         if (!doc.containsKey("smith")) doc["smith"] = jarr(0, 0)
         if (!doc.containsKey("craft")) doc["craft"] = jarr(0, 0)
         return doc
@@ -257,7 +232,7 @@ object HiddenTraining {
 
     /** The stored document, else seeded once from the seed S2274 (a state-2 slot returns `remaining` after `now`). */
     fun exploreDocument(document: JValue?, seedPayload: ByteArray? = null, now: Long = 0, provenance: JValue? = null): JObj {
-        if (PyDocs.truthy(document)) return copy(document!!)
+        if (Py.truthy(document)) return copy(document!!)
         val slots = JArr()
         for (slot in decodeSlots(if (seedPayload != null && seedPayload.isNotEmpty()) seedPayload else byteArrayOf(0))) {
             val entry = jobj("pos" to slot["pos"], "hero" to slot["hero"], "state" to slot["state"], "choices" to slot["choices"],
@@ -270,7 +245,7 @@ object HiddenTraining {
 
     fun slotPayload(slot: JObj, now: Long): ByteArray {
         val w = WireWriter().number('B', PyDocs.at(slot, "pos")).number('I', PyDocs.at(slot, "hero"))
-        if (!PyDocs.truthy(slot["hero"])) return w.bytes()
+        if (!Py.truthy(slot["hero"])) return w.bytes()
         val state = PyDocs.at(slot, "state")
         w.raw(PyDocs.bytes(listOf(PyDocs.long(state))))
         when (state) {

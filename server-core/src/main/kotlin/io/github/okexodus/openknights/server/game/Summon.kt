@@ -48,7 +48,7 @@ object Summon {
         val profile = current.characterProfile
         val freeNext = if (profile != null) {
             val stamp = PyDocs.get(profile.obj("document"), "created_at_utc")
-            val created = if (PyDocs.truthy(stamp)) isoTimestamp(PyDocs.str(stamp)) else now
+            val created = if (Py.truthy(stamp)) isoTimestamp(PyDocs.str(stamp)) else now
             jobj("2" to created + 86400, "3" to created + 259200)
         } else jobj("2" to 0, "3" to 0)
         val firstUsed = JObj()
