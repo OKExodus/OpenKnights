@@ -1,7 +1,7 @@
 package io.github.okexodus.openknights.patcher
 
-import io.github.okexodus.openknights.patcher.input.AssetCipher
-import io.github.okexodus.openknights.patcher.input.SupportedInput
+import io.github.okexodus.openknights.gamedata.AssetCipher
+import io.github.okexodus.openknights.gamedata.SupportedInput
 import io.github.okexodus.openknights.patcher.res.BinaryXml
 import io.github.okexodus.openknights.patcher.res.ResValue
 import io.github.okexodus.openknights.patcher.res.XmlElement

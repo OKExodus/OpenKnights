@@ -1,0 +1,229 @@
+package io.github.okexodus.openknights.server.pc
+
+import io.github.okexodus.openknights.exact.Json
+import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.protocol.FrameDecoder
+import io.github.okexodus.openknights.protocol.Frames
+import io.github.okexodus.openknights.server.session.Service
+import io.github.okexodus.openknights.server.session.Session
+import io.github.okexodus.openknights.server.store.AuthenticationRejected
+import java.io.ByteArrayOutputStream
+import java.io.IOException
+import java.io.InputStream
+import java.io.OutputStream
+import java.net.InetAddress
+import java.net.ServerSocket
+import java.net.Socket
+import java.util.concurrent.Callable
+import java.util.concurrent.ExecutorService
+import java.util.concurrent.Executors
+
+/**
+ * The service's listeners on the loopback address: login (17777) and game (19121) speak the game's framing, the
+ * sign-in page and API (17778) speak HTTP/1.1. Every request is handled on ONE dispatcher thread, in arrival order —
+ * the reference runs everything on one event loop, and the saves rely on that ordering.
+ */
+class Listeners(
+    private val service: Service,
+    private val bind: InetAddress = InetAddress.getLoopbackAddress(),
+    private val loginPort: Int = 17777,
+    private val gamePort: Int = 19121,
+    private val authPort: Int = 17778,
+    /** The game port the client is told to connect to (S7714). */
+    private val deviceGamePort: Int = gamePort,
+) : AutoCloseable {
+    private val dispatcher: ExecutorService = Executors.newSingleThreadExecutor { r -> Thread(r, "openknights-dispatcher").apply { isDaemon = true } }
+    private val sockets = ArrayList<ServerSocket>()
+    @Volatile private var running = true
+    private val log = service.log
+
+    init {
+        require(bind.isLoopbackAddress) { "The server binds to the loopback address only" }
+    }
+
+    /** The ports actually bound (port 0 asks the system for a free one, as tests do). */
+    var boundAuthPort = authPort
+        private set
+    var boundLoginPort = loginPort
+        private set
+    var boundGamePort = gamePort
+        private set
+
+    fun start(): Listeners {
+        sockets.add(listen(authPort) { socket -> http(socket) }.also { boundAuthPort = it.localPort })
+        sockets.add(listen(loginPort) { socket -> connection(socket, "login") }.also { boundLoginPort = it.localPort })
+        sockets.add(listen(gamePort) { socket -> connection(socket, "game") }.also { boundGamePort = it.localPort })
+        return this
+    }
+
+    private fun listen(port: Int, handler: (Socket) -> Unit): ServerSocket {
+        val server = ServerSocket(port, 50, bind)
+        Thread.ofVirtual().name("listen-$port").start {
+            while (running) {
+                val socket = try { server.accept() } catch (e: IOException) { break }
+                Thread.ofVirtual().start { socket.use { handler(it) } }
+            }
+        }
+        return server
+    }
+
+    /** Run on the dispatcher thread; its exception is rethrown here as itself. */
+    private fun <T> onDispatcher(block: () -> T): T = try {
+        dispatcher.submit(Callable { block() }).get()
+    } catch (e: java.util.concurrent.ExecutionException) {
+        throw e.cause ?: e
+    }
+
+    private fun write(out: OutputStream, frames: List<Pair<Int, ByteArray>>) {
+        val buffer = ByteArrayOutputStream()
+        for ((opcode, payload) in frames) buffer.write(Frames.encode(opcode, payload))
+        synchronized(out) { out.write(buffer.toByteArray()); out.flush() }
+    }
+
+    private fun connection(socket: Socket, kind: String) {
+        val session = Session(service, kind, deviceGamePort)
+        val decoder = FrameDecoder()
+        val input: InputStream = socket.getInputStream()
+        val output: OutputStream = socket.getOutputStream()
+        log.log("connected", "service" to kind)
+        if (kind == "game") onDispatcher { service.liveGameSessions[session] = { frames -> write(output, frames) } }
+        try {
+            val buffer = ByteArray(65536)
+            while (true) {
+                val read = input.read(buffer)
+                if (read < 0) break
+                for (frame in decoder.feed(buffer.copyOf(read))) {
+                    log.log("request", "service" to kind, "opcode" to frame.opcode, "payload_bytes" to frame.payload.size)
+                    val replies = onDispatcher { session.handle(frame.opcode, frame.payload) }
+                    if (replies.isNotEmpty()) {
+                        write(output, replies)
+                        log.log("response_batch", "service" to kind, "opcodes" to replies.map { it.first }, "bytes" to replies.sumOf { it.second.size + 4 })
+                    }
+                    if (session.closed) return
+                }
+            }
+            decoder.finish()
+        } catch (e: Exception) {
+            if (e !is IOException || running) log.log("session_error", "service" to kind, "error" to (e.message ?: e.javaClass.simpleName))
+        } finally {
+            onDispatcher {
+                service.liveGameSessions.remove(session)
+                session.disconnected()
+            }
+            log.log("disconnected", "service" to kind)
+        }
+    }
+
+    // --- the sign-in page and API (auth_gateway.py) ------------------------------------------------------------------
+
+    private val page: ByteArray by lazy {
+        Listeners::class.java.getResourceAsStream("/io/github/okexodus/openknights/server/pc/signin.html")!!.use { it.readBytes() }
+    }
+
+    private class HttpError(val status: Int, val body: ByteArray) : Exception()
+
+    private fun readHeader(input: InputStream): String {
+        val out = ByteArrayOutputStream()
+        var matched = 0
+        val end = byteArrayOf('\r'.code.toByte(), '\n'.code.toByte(), '\r'.code.toByte(), '\n'.code.toByte())
+        while (matched < 4) {
+            val b = input.read()
+            if (b < 0) throw IOException("closed")
+            out.write(b)
+            matched = if (b.toByte() == end[matched]) matched + 1 else if (b.toByte() == end[0]) 1 else 0
+            if (out.size() > 8192) throw IllegalArgumentException("Header too large")
+        }
+        return out.toString(Charsets.US_ASCII)
+    }
+
+    private fun http(socket: Socket) {
+        socket.soTimeout = 10_000
+        var status = 400
+        var contentType = "application/json"
+        var content = """{"error":"Invalid request"}""".toByteArray()
+        try {
+            val input = socket.getInputStream()
+            val lines = readHeader(input).split("\r\n")
+            val (method, path, version) = lines[0].split(" ").let { if (it.size == 3) Triple(it[0], it[1], it[2]) else throw IllegalArgumentException("request line") }
+            val headers = HashMap<String, String>()
+            for (line in lines.drop(1)) {
+                if (line.isEmpty()) continue
+                val colon = line.indexOf(':')
+                require(colon > 0) { "header" }
+                val name = line.substring(0, colon).lowercase()
+                require(name !in headers) { "Duplicate header" }
+                headers[name] = line.substring(colon + 1).trim()
+            }
+            val origin = "http://127.0.0.1:$boundAuthPort"
+            require(headers["host"] == "127.0.0.1:$boundAuthPort" && (headers["origin"] ?: origin) == origin &&
+                (headers["sec-fetch-site"] ?: "same-origin") in setOf("same-origin", "none") &&
+                "transfer-encoding" !in headers && version == "HTTP/1.1") { "Only the local origin is accepted" }
+            if (method == "GET" && path == "/" && (headers["content-length"] ?: "0").toInt() == 0) {
+                status = 200; contentType = "text/html; charset=utf-8"; content = page
+            } else if (method == "POST" && path in setOf("/api/login", "/api/device", "/api/recharge")) {
+                require(headers["content-type"] == "application/json") { "JSON required" }
+                val size = (headers["content-length"] ?: "-1").toInt()
+                require(size in 1..8192) { "Body size invalid" }
+                val data = input.readNBytes(size)
+                require(data.size == size) { "Body truncated" }
+                val body = Json.loads(data)
+                val result = onDispatcher { api(path, body) }
+                status = 200
+                content = Json.dumps(result).toByteArray()
+                log.log("local_auth_http", "action" to path.substringAfterLast('/'), "accepted" to true)
+            } else {
+                status = 404; content = """{"error":"Not found"}""".toByteArray()
+            }
+        } catch (e: HttpError) {
+            status = e.status; content = e.body
+            log.log("local_auth_http", "accepted" to false)
+        } catch (e: AuthenticationRejected) {
+            status = 401; content = """{"error":"Credentials, session or character selection rejected"}""".toByteArray()
+            log.log("local_auth_http", "accepted" to false)
+        } catch (e: IllegalArgumentException) {
+            log.log("local_auth_http", "accepted" to false, "malformed" to true)
+        } catch (e: IOException) {
+            log.log("local_auth_http", "accepted" to false, "malformed" to true)
+        } catch (e: Exception) {
+            status = 500; content = """{"error":"Local authentication is unavailable"}""".toByteArray()
+            log.log("local_auth_http", "accepted" to false, "internal_error" to true)
+        }
+        try {
+            val label = mapOf(200 to "OK", 400 to "Bad Request", 401 to "Unauthorized", 404 to "Not Found", 409 to "Conflict",
+                500 to "Internal Server Error").getValue(status)
+            val policy = "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; connect-src 'self'; base-uri 'none'; form-action 'none'; frame-ancestors 'none'"
+            val head = "HTTP/1.1 $status $label\r\nContent-Type: $contentType\r\nContent-Length: ${content.size}\r\nCache-Control: no-store\r\n" +
+                "Content-Security-Policy: $policy\r\nX-Content-Type-Options: nosniff\r\nReferrer-Policy: no-referrer\r\nConnection: close\r\n\r\n"
+            socket.getOutputStream().apply { write(head.toByteArray(Charsets.US_ASCII) + content); flush() }
+        } catch (_: IOException) {}
+    }
+
+    /** The sign-in API: the device owner's password-free sign-in. Free top-ups need an entered game session (P4). */
+    private fun api(path: String, body: io.github.okexodus.openknights.exact.JValue): io.github.okexodus.openknights.exact.JObj {
+        val request = body as? io.github.okexodus.openknights.exact.JObj ?: throw IllegalArgumentException("JSON object required")
+        return when (path) {
+            "/api/device" -> {
+                require(request.isEmpty()) { "Unsupported authentication request" }
+                val issued = service.auth.deviceLogin()
+                jobj("token" to issued.token, "ingame_select" to true, "expires_at_utc" to issued.session.expiresAtUtc, "device" to true)
+            }
+            "/api/login" -> {
+                require(request.keys == setOf("username", "password")) { "Unsupported authentication request" }
+                throw AuthenticationRejected("Local credentials rejected")     // release mode: the device owner only
+            }
+            else -> {
+                val token = request.asObj.strOrNull("token") ?: throw IllegalArgumentException("Recharge requires the session token")
+                service.auth.authenticate(token)
+                // No game session can be entered before the game systems are ported: the reference's own answer.
+                throw HttpError(409, Json.dumps(jobj("error" to "No active game session for this login")).toByteArray())
+            }
+        }
+    }
+
+    override fun close() {
+        running = false
+        sockets.forEach { try { it.close() } catch (_: IOException) {} }
+        dispatcher.shutdown()
+    }
+}

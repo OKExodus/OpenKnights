@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OpenKnights - Sign in</title>
+<style>
+*{box-sizing:border-box}body{margin:0;background:#151c2a;color:#ecf0f5;font:16px system-ui,sans-serif;min-height:100vh;display:grid;place-items:center;padding:14px}
+main{width:min(560px,100%);background:#202c40;padding:18px 20px;border:1px solid #52617b;border-radius:14px}
+h1{font-size:24px;margin:0 0 4px}p{color:#c2cbdb;line-height:1.35;margin:4px 0}#message{min-height:22px;color:#ffe1a6;margin-top:10px}
+.small{font-size:13px;color:#aab5c8}
+</style>
+<main>
+<h1>OpenKnights</h1>
+<p>Your local world. Characters are chosen and created in the game's character list.</p>
+<div id="message" role="status" aria-live="polite">Signing in...</div>
+<p class="small">This page is served by the OpenKnights server on this device.</p>
+</main>
+<script>
+// Sign-in of the device owner: the session is handed to the game, whose own character list selects and creates.
+const say=t=>{document.getElementById('message').textContent=t||'';};
+(async()=>{
+  try{
+    const r=await fetch('/api/device',{method:'POST',headers:{'Content-Type':'application/json'},body:'{}',cache:'no-store',credentials:'omit'});
+    let v={};try{v=await r.json();}catch(e){}
+    if(!r.ok)throw new Error(v.error||'The local server refused the sign-in');
+    const app=window.OpenKnights;
+    if(!app||typeof app.login!=='function'){say('Open this page from the OpenKnights app.');return;}
+    say('Opening the game...');app.login(v.token);
+  }catch(error){say(error.message||'Cannot reach the local server.');}
+})();
+</script></html>

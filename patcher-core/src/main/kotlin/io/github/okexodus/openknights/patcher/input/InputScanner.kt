@@ -1,5 +1,7 @@
 package io.github.okexodus.openknights.patcher.input
 
+import io.github.okexodus.openknights.gamedata.AssetCipher
+import io.github.okexodus.openknights.gamedata.SupportedInput
 import io.github.okexodus.openknights.patcher.FailureCode
 import io.github.okexodus.openknights.patcher.PatchFailure
 import io.github.okexodus.openknights.patcher.util.Hashing

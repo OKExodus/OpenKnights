@@ -1,4 +1,4 @@
-package io.github.okexodus.openknights.patcher.input
+package io.github.okexodus.openknights.gamedata
 
 import kotlinx.serialization.json.Json
 import kotlinx.serialization.json.JsonObject
@@ -26,12 +26,12 @@ data class SupportedInput(
 ) {
     companion object {
         const val PROFILE = "openknights_supported_input_v1"
-        private const val RESOURCE = "/io/github/okexodus/openknights/patcher/supported-input.json"
+        private const val RESOURCE = "/io/github/okexodus/openknights/gamedata/supported-input.json"
 
         /** The definition shipped with this patcher. */
         val bundled: SupportedInput by lazy {
             val text = SupportedInput::class.java.getResourceAsStream(RESOURCE)?.use { it.readBytes().decodeToString() }
-                ?: error("supported-input.json is missing from the patcher")
+                ?: error("supported-input.json is missing")
             parse(text)
         }
 

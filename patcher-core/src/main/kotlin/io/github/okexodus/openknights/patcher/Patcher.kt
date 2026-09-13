@@ -2,7 +2,7 @@ package io.github.okexodus.openknights.patcher
 
 import io.github.okexodus.openknights.patcher.input.IdentifiedInput
 import io.github.okexodus.openknights.patcher.input.InputScanner
-import io.github.okexodus.openknights.patcher.input.SupportedInput
+import io.github.okexodus.openknights.gamedata.SupportedInput
 import io.github.okexodus.openknights.patcher.report.Report
 import io.github.okexodus.openknights.patcher.signing.ApkSigning
 import io.github.okexodus.openknights.patcher.signing.KeyStorage

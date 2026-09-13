@@ -8,6 +8,7 @@ kotlin {
 }
 
 dependencies {
+    api(project(":game-data"))
     implementation(libs.apksig)
     implementation(libs.smali)
     implementation(libs.smali.baksmali)
@@ -17,6 +18,7 @@ dependencies {
     // Made-up games and APKs for tests (no game data), shared with the command line's tests.
     testFixturesImplementation(libs.kotlinx.serialization.json)
     testFixturesImplementation(libs.smali.dexlib2)
+    testFixturesImplementation(project(":game-data"))
 
     testImplementation(platform(libs.junit.bom))
     testImplementation(libs.junit.jupiter)
