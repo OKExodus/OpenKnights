@@ -8,6 +8,13 @@ dependencyResolutionManagement {
     repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
     repositories {
         mavenCentral()
+        // Google's Maven repository, used only for the Android tool libraries (apksig, smali).
+        google {
+            content {
+                includeGroup("com.android.tools.build")
+                includeGroup("com.android.tools.smali")
+            }
+        }
     }
 }
 

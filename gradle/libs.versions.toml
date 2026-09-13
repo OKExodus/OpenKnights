@@ -1,11 +1,21 @@
 [versions]
 kotlin = "2.4.20"
 junit = "6.1.3"
+# Android's APK signer (Apache-2.0), from Google's Maven repository.
+apksig = "9.4.0"
+# smali / baksmali / dexlib2 (BSD-3-Clause), from Google's Maven repository.
+smali = "3.0.10"
+kotlinx-serialization = "1.11.0"
 
 [libraries]
 junit-bom = { module = "org.junit:junit-bom", version.ref = "junit" }
 junit-jupiter = { module = "org.junit.jupiter:junit-jupiter" }
 junit-platform-launcher = { module = "org.junit.platform:junit-platform-launcher" }
+apksig = { module = "com.android.tools.build:apksig", version.ref = "apksig" }
+smali = { module = "com.android.tools.smali:smali", version.ref = "smali" }
+smali-baksmali = { module = "com.android.tools.smali:smali-baksmali", version.ref = "smali" }
+smali-dexlib2 = { module = "com.android.tools.smali:smali-dexlib2", version.ref = "smali" }
+kotlinx-serialization-json = { module = "org.jetbrains.kotlinx:kotlinx-serialization-json", version.ref = "kotlinx-serialization" }
 
 [plugins]
 kotlin-jvm = { id = "org.jetbrains.kotlin.jvm", version.ref = "kotlin" }
