@@ -1,0 +1,12 @@
+#!/bin/sh
+# Runs tools/guard.py with whichever Python 3 this machine has.
+if command -v py >/dev/null 2>&1; then
+    exec py -3 tools/guard.py "$@"
+fi
+for python in python3 python; do
+    if command -v "$python" >/dev/null 2>&1 && "$python" -c "import sys; sys.exit(sys.version_info < (3, 10))" 2>/dev/null; then
+        exec "$python" tools/guard.py "$@"
+    fi
+done
+echo "guard: Python 3.10 or newer is needed to run tools/guard.py" >&2
+exit 1

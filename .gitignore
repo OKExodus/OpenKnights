@@ -1,0 +1,41 @@
+# Build output
+.gradle/
+.kotlin/
+build/
+out/
+*.class
+
+# IDE and OS files
+.idea/
+*.iml
+.vscode/
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Local configuration
+local.properties
+
+# Patcher working folders: they hold game files
+original/
+patched/
+
+# Game files, saves, captures and keys: never committed
+*.apk
+*.xapk
+*.apkm
+*.apks
+*.aab
+*.so
+*.dex
+*.pcap
+*.pcapng
+*.sqlite
+*.sqlite3
+*.db
+*.okbackup
+*.keystore
+*.jks
+*.p12
+private/
+captures/
