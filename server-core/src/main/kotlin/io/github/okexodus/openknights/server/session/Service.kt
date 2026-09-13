@@ -110,6 +110,7 @@ class Service(
             root.lock.acquire()
             if (root.recovered.isNotEmpty()) log.log("data_root_recovered", "moved" to root.recovered)
             val clock = DeviceClock(root.clockPath)
+            DeviceClock.active = clock
             val copies = io.github.okexodus.openknights.server.store.SaveManagement.startupCopies(root, driver, clock, log)
             val generation: Path
             val registry: AccountRegistry
@@ -146,6 +147,7 @@ class Service(
 
     fun close() {
         clock.checkpoint()
+        if (DeviceClock.active === clock) DeviceClock.active = null
         dataRoot?.lock?.release()
     }
 }

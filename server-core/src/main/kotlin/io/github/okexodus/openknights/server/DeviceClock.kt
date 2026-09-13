@@ -32,6 +32,10 @@ class DeviceClock(
         const val PERSIST_SECONDS = 60
         const val MAX_EPOCH = 0x7FFFFFFFL
         private val DAY = DateTimeFormatter.ofPattern("yyyy-MM-dd")
+
+        /** The service's device clock (`device_clock.ACTIVE`, installed by the release service; read by `day_of` and friends). */
+        @Volatile
+        var active: DeviceClock? = null
     }
 
     var hwmEpoch = 0L
