@@ -52,7 +52,8 @@ import java.nio.file.StandardCopyOption
  *   has diverged), and so
  *   does every database or root file the reference changed in that step: the world or the registry diverging makes
  *   every later game step (resp. every later step) wait. A step on a login connection that lists characters waits
- *   while anything has diverged.
+ *   while anything has diverged. A waiting step also diverges `clock.json` (the device clock's high-water mark moved in
+ *   the reference's memory during that step).
  * - **A failure diverges what it touched** (the character, the differing databases), so one defect is reported once
  *   and not as a cascade.
  * - **Exclusions.** Every frame is compared; a difference only in an excluded opcode (heartbeat S8, clock S14,
@@ -284,6 +285,8 @@ class RecordingRunner(
                     waitingByReason[label] = (waitingByReason[label] ?: 0) + 1
                     diverge(touchedDbs)
                     divergedFiles.addAll(touchedFiles)
+                    // the reference's device clock moved its in-memory high-water mark in this step; this server's did not
+                    divergedFiles.add("clock.json")
                     if (character != null && unported.isNotEmpty()) divergedCharacters.add(character)
                     if (connId != null) divergedConns.add(connId)
                     continue
