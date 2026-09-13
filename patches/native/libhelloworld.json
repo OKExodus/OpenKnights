@@ -1,0 +1,72 @@
+{
+  "about": "Byte patches to the game's arm64 program library. Each site is checked before it is changed; if the library or any site differs, nothing is patched. Text sites include the text's end byte, and a shorter replacement is padded with zero bytes so every string keeps its place.",
+  "file": "lib/arm64-v8a/libhelloworld.so",
+  "source_sha256": "54c85cffe3819a29c046d00bd94f8a6dfb561d729385734c3a8d8aa424602699",
+  "result_sha256": "36d47a419ea2dc0ab16c0dc8d74c3704088207eaf1f83a639e93a28c3618303f",
+  "patches": [
+    {
+      "id": "login-server-login",
+      "why": "The built-in login server addresses (five region entries) point at the local server.",
+      "offset": "0x5d2406",
+      "before": { "text": "login.imobile-ent.com:7777" },
+      "after": { "text": "127.0.0.1:17777" }
+    },
+    {
+      "id": "login-server-ftlogin1",
+      "offset": "0x5da35f",
+      "before": { "text": "ftlogin1.imobile-ent.com:7777" },
+      "after": { "text": "127.0.0.1:17777" }
+    },
+    {
+      "id": "login-server-englogin1",
+      "offset": "0x5e85da",
+      "before": { "text": "englogin1.imobile-ent.com:7777" },
+      "after": { "text": "127.0.0.1:17777" }
+    },
+    {
+      "id": "login-server-herologin",
+      "offset": "0x5f8cbe",
+      "before": { "text": "herologin.imobile-ent.com:7777" },
+      "after": { "text": "127.0.0.1:17777" }
+    },
+    {
+      "id": "login-server-pk1login",
+      "offset": "0x60522d",
+      "before": { "text": "pk1login.imobile-ent.com:7777" },
+      "after": { "text": "127.0.0.1:17777" }
+    },
+    {
+      "id": "game-login-session-token",
+      "why": "The game login (opcode 3) sends the local session token in the field that held the device id: the call to the device-id getter becomes a call to the platform-token getter at 0x02a2c050 with the login system as its argument (x19 into x0; two no-ops; the result pointer x8 and x19 stay as they were).",
+      "offset": "0x29277bc",
+      "address": "0x2a277bc",
+      "before": { "hex": "c11e4d94080040f9090940f9e8030091f303009120013fd6" },
+      "after": { "hex": "e00313aa1f2003d51f2003d5e8030091f303009120120094" }
+    },
+    {
+      "id": "log-redaction-platform-login",
+      "why": "Four log lines that would print the session token print a fixed text instead.",
+      "offset": "0x607163",
+      "before": { "text": "send platform login msg: %s" },
+      "after": { "text": "send local login [private]" }
+    },
+    {
+      "id": "log-redaction-startup-login",
+      "offset": "0x5eeba2",
+      "before": { "text": "GameStateStartUp::Login uid:[%s]" },
+      "after": { "text": "local login credential hidden" }
+    },
+    {
+      "id": "log-redaction-native-call",
+      "offset": "0x60ab1d",
+      "before": { "text": "NativeModule::onCall queued action:%s, params:%s" },
+      "after": { "text": "NativeModule local callback [private]" }
+    },
+    {
+      "id": "log-redaction-logout",
+      "offset": "0x60cd6f",
+      "before": { "text": "Native logout. Do logout online player. Now uid:[%s]" },
+      "after": { "text": "Native logout local credential hidden" }
+    }
+  ]
+}
