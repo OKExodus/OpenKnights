@@ -9,6 +9,10 @@ import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.game.Acquisition
 import io.github.okexodus.openknights.server.game.Frame
 import io.github.okexodus.openknights.server.game.FreshProfile
+import io.github.okexodus.openknights.server.game.Friends
+import io.github.okexodus.openknights.server.game.Guild
+import io.github.okexodus.openknights.server.game.Mail
+import io.github.okexodus.openknights.server.game.SocialRoutes
 import io.github.okexodus.openknights.server.game.NotPorted
 import io.github.okexodus.openknights.server.store.AuthenticationRejected
 import io.github.okexodus.openknights.server.store.StateStore
@@ -322,9 +326,41 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         throw NotPorted("daily_routes login query frames")
     }
 
+    private fun socialContext(clockOffset: Long? = null): SocialRoutes.SocialContext =
+        SocialRoutes.SocialContext(service.world, service.auth.registry, service.inputs,
+            pushFn = { role, frames -> service.pushToRole(role, this, frames) }, clockOffset = clockOffset ?: this.clockOffset)
+
+    /** S14 epoch the client runs on minus service time (release: the served S14 is the device clock itself). */
+    private fun clockOffsetOf(current: StateStore.Current): Long {
+        val now = service.clock.now()
+        return servedTime(current, now) - now
+    }
+
+    /** The server time the client was given (release: the device clock). */
+    private fun servedTime(current: StateStore.Current, now: Long): Long = now
+
+    /** Replies to the social initialization queries and the presence update (online + S398 to the friends watching). */
     private fun socialLoginFrames(): List<Frame> {
         if (stateStore == null || service.world == null || deploymentPolicy() == null) return emptyList()
-        throw NotPorted("social login frames")
+        return try {
+            val current = stateStore!!.read()
+            val ctx = socialContext()
+            val now = service.clock.now()
+            val role = SocialRoutes.roleOf(current)
+            socialRole = role
+            SocialRoutes.setPresence(ctx, role, true, now)
+            for (watcher in SocialRoutes.friendWatchers(ctx, role)) {
+                service.pushToRole(watcher, listOf(Friends.S_ONLINE to WireWriter().u32(role).bytes()), origin = this)
+            }
+            val frames = SocialRoutes.loginFrames(current, ctx, now)
+            log("social_login", "character_id" to characterId, "role" to role, "now_epoch" to now,
+                "reply_opcodes" to frames.map { it.first }, "clock_offset" to ctx.clockOffset)
+            frames
+        } catch (e: Exception) {      // a login must not fail on this side system
+            guard(e)
+            log("social_login_frames_error", "character_id" to characterId, "error" to described(e))
+            emptyList()
+        }
     }
 
     // --- creation ------------------------------------------------------------------------------------------------
@@ -525,18 +561,34 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         group(opcode, "daily system")
     }
 
-    /** Social requests (guild, friends, chat, mail). */
+    /** Social requests (guild, friends, chat, mail); only the three initialization queries are ported yet. */
     private fun socialRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        var now: Long? = null
+        val packets: List<Frame>
+        val ctx: SocialRoutes.SocialContext
+        val served: Long
         try {
             if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
             deploymentPolicy() ?: throw Acquisition.Rejected("The social layer needs a store-backed character with a deployment policy")
+            if (opcode !in setOf(Guild.C_MY_GUILD, Friends.C_PENDING, Mail.C_LIST)) group(opcode, "social system")
+            now = service.clock.now()
+            val current = stateStore!!.read()
+            ctx = socialContext()
+            served = servedTime(current, now)
+            packets = SocialRoutes.dispatch(opcode, payload, current, ctx, now)
         } catch (e: IllegalArgumentException) {
             val code = (e as? Acquisition.Rejected)?.code ?: 102
             log("rejected_social", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code,
-                "now_epoch" to null)
+                "now_epoch" to now)
             return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("social_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
         }
-        group(opcode, "social system")
+        log("social_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first },
+            "now_epoch" to now, "served_time" to served, "online" to service.onlineRoles(), "clock_offset" to ctx.clockOffset)
+        return packets
     }
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */
@@ -570,11 +622,24 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return emptyList()
     }
 
-    /** The connection ended: presence offline and S400 to the friends watching this player. */
+    /** The connection ended: presence offline with the time, S400 to the friends watching this player. */
     fun socialLogout() {
-        socialRole ?: return
+        val role = socialRole ?: return
         service.world ?: return
-        throw NotPorted("presence offline at the connection close (social_logout)")
+        try {
+            val others = service.liveGameSessions.keys.filter { it !== this && it.socialRole == role && !it.closed }
+            if (others.isNotEmpty()) return
+            val ctx = socialContext()
+            val now = service.clock.now()
+            SocialRoutes.setPresence(ctx, role, false, now)
+            log("social_logout", "character_id" to characterId, "role" to role, "now_epoch" to now)
+            for (watcher in SocialRoutes.friendWatchers(ctx, role)) {
+                service.pushToRole(watcher, listOf(Friends.S_OFFLINE to WireWriter().u32(role).bytes()), origin = this)
+            }
+        } catch (e: Exception) {
+            guard(e)
+            log("social_logout_error", "character_id" to characterId, "error" to described(e))
+        }
     }
 
     /** The connection ended (the reference logs the presence change of a game session here). */

@@ -44,3 +44,18 @@ class Plan(val data: JObj = JObj(), var packets: List<Frame> = emptyList()) {
     operator fun get(key: String): JValue? = data[key]
     operator fun set(key: String, value: Any?) { data[key] = io.github.okexodus.openknights.exact.jvalue(value) }
 }
+
+/** Python semantics the ported code needs beyond the value helpers. */
+object Py {
+    /** Python truthiness of a JSON value: None, False, 0, 0.0, "", [] and {} are false. */
+    fun truthy(v: JValue?): Boolean = when (v) {
+        null, io.github.okexodus.openknights.exact.JNull -> false
+        is io.github.okexodus.openknights.exact.JBool -> v.value
+        is JInt -> v.value.signum() != 0
+        is io.github.okexodus.openknights.exact.JFloat -> v.value != 0.0
+        is io.github.okexodus.openknights.exact.JStr -> v.value.isNotEmpty()
+        is JArr -> v.isNotEmpty()
+        is JObj -> v.isNotEmpty()
+        else -> true
+    }
+}

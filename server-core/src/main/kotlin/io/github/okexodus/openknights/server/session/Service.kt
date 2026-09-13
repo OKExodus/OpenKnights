@@ -74,6 +74,9 @@ class Service(
     /** Character creation (world birth on the first): returns the created character (`character_id`, …). */
     var characterFactory: ((accountId: String, name: String, gender: Int, starter: Long, actor: String) -> JObj)? = null
 
+    /** The catalog inputs of every game system (`snapshot.acquisition_inputs`: the daily inputs over the APK tables). */
+    val inputs: io.github.okexodus.openknights.server.game.DailyInputs by lazy { io.github.okexodus.openknights.server.game.DailyInputs(tables) }
+
     /** The universal Power of a character save (`snapshot.power_of`), bound into the world's participant lists. */
     var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
 
