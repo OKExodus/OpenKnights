@@ -248,6 +248,32 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
         }
     }
 
+    /**
+     * Owner deletion (`mark_deleted`): the entry leaves the world; its name is freed, its wire id never reissued. Then
+     * its relations leave the world documents (separate audited writes after the directory commit; a failure there
+     * leaves the deletion standing and is reported). Returns {"wire_account_id", "departed": {document: detail}}.
+     */
+    fun markDeleted(characterId: String, actor: String, archivePath: String, reason: String): JObj {
+        val row = connect().use { db ->
+            db.immediate {
+                val row = db.queryOne("SELECT entry_id,name,kind,wire_account_id FROM world_characters WHERE character_id=? AND status='active'", characterId)
+                if (row == null || row.string("kind") != "fresh") throw IllegalArgumentException("Only an active fresh world character can be deleted")
+                db.execute("UPDATE world_characters SET status='deleted',name_key=?,updated_at_utc=? WHERE entry_id=?",
+                    "deleted:" + row.string("entry_id"), PyTime.nowIsoMillis(), row.string("entry_id"))
+                val archive = if (!DataPaths.isAbsoluteText(archivePath)) archivePath else stored(Path.of(archivePath))
+                audit(db, actor, "delete_character", row.string("entry_id"), characterId,
+                    jobj("name" to row.string("name"), "archive_path" to archive, "reason" to reason))
+                row
+            }
+        }
+        val departed: JObj = try {
+            io.github.okexodus.openknights.server.game.Departure.participantDeparted(this, row.long("wire_account_id"), actor, "character deleted: $reason")
+        } catch (e: IllegalArgumentException) {       // e.g. a world document kept changing: rerunnable later
+            jobj("error" to (e.message ?: ""))
+        }
+        return jobj("wire_account_id" to row.long("wire_account_id"), "departed" to departed)
+    }
+
     fun allEntries(): List<JObj> = connect(readOnly = true).use { db ->
         db.query("SELECT * FROM world_characters ORDER BY created_at_utc,entry_id").map { row(it) }
     }

@@ -15,7 +15,9 @@ import io.github.okexodus.openknights.exact.asInt
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.asStr
 import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.exact.jvalue
 import io.github.okexodus.openknights.exact.sha256Hex
 import io.github.okexodus.openknights.exact.toHexString
 import io.github.okexodus.openknights.gamedata.GameTables
@@ -26,9 +28,11 @@ import io.github.okexodus.openknights.server.session.AuthGateway
 import io.github.okexodus.openknights.server.session.Service
 import io.github.okexodus.openknights.server.session.ServiceLog
 import io.github.okexodus.openknights.server.session.Session
+import io.github.okexodus.openknights.server.store.BackupError
 import io.github.okexodus.openknights.server.store.DataRoot
 import io.github.okexodus.openknights.server.store.Fingerprint
 import io.github.okexodus.openknights.server.store.JdbcSqlDriver
+import io.github.okexodus.openknights.server.store.SaveManagement
 import io.github.okexodus.openknights.server.store.SqlDriver
 import java.nio.file.Files
 import java.nio.file.Path
@@ -199,6 +203,7 @@ class RecordingRunner(
                 // --- run the step on this server ---
                 var generated: List<Pair<Int, String>> = emptyList()
                 var httpResponse: AuthGateway.Response? = null
+                var adminOutcome: JObj? = null
                 var error: String? = null
                 var tapeError: String? = null
                 try {
@@ -227,7 +232,7 @@ class RecordingRunner(
                             if (conn.session.closed && conn.open) closeConn(conn)
                         }
                         "http" -> httpResponse = AuthGateway.respond(service!!, step.str("path"), step["body"] ?: JNull)
-                        "admin" -> log.log("not_implemented", "service" to "admin", "feature" to "save management: ${step.str("operation")}")
+                        "admin" -> adminOutcome = admin(root, step.str("operation"), step.obj("args"), log)
                         else -> error("unknown step kind $kind")
                     }
                 } catch (e: TapeMismatch) {
@@ -320,6 +325,12 @@ class RecordingRunner(
                         }
                         val closed = (step["closed"] as? JBool)?.value ?: false
                         if (closed != conn!!.session.closed) fail("connection closed", "recorded" to closed, "closed" to conn.session.closed)
+                    }
+                    "admin" -> {
+                        val recorded = step.obj("outcome")
+                        if (adminOutcome == null || Json.canonical(recorded) != Json.canonical(adminOutcome)) {
+                            fail("admin outcome", "recorded" to Json.canonical(recorded).take(600), "outcome" to adminOutcome?.let { Json.canonical(it).take(600) })
+                        }
                     }
                     "http" -> {
                         val status = step.long("status").toInt()
@@ -438,6 +449,55 @@ class RecordingRunner(
      * The root's files as the recorder keeps them: `manifest.json` / `clock.json` parsed; `trash/`, `auto-backups/` and
      * `exports/` as {name: logical content} ([contentOf]).
      */
+    /**
+     * One save-management operation on the stopped service's data root, called as the recorder calls the reference
+     * (backup targets and restore sources under `<root>/exports/`); the outcome with the root path written `<root>`.
+     */
+    private fun admin(root: Path, operation: String, args: JObj, log: ServiceLog): JObj {
+        val dataRoot = DataRoot(root, driver).open()
+        dataRoot.lock.acquire()
+        try {
+            val exports = root.resolve("exports")
+            val result: JValue = try {
+                when (operation) {
+                    "backup_full" -> {
+                        Files.createDirectories(exports)
+                        val (path, manifest) = SaveManagement.backupFull(dataRoot, exports.resolve(args.str("file")), driver, null)
+                        jarr(path.toString(), manifest)
+                    }
+                    "backup_character" -> {
+                        Files.createDirectories(exports)
+                        val (path, manifest) = SaveManagement.backupCharacter(dataRoot, args.str("character_id"), exports.resolve(args.str("file")), driver, null)
+                        jarr(path.toString(), manifest)
+                    }
+                    "restore_full" -> SaveManagement.restoreFull(dataRoot, exports.resolve(args.str("file")), driver, null)
+                    "restore_character" -> SaveManagement.restoreCharacter(dataRoot, exports.resolve(args.str("file")), driver, null, newName = args.strOrNull("new_name"))
+                    "delete_character" -> SaveManagement.deleteCharacter(dataRoot, args.str("character_id"), driver, null,
+                        reason = args.strOrNull("reason") ?: "Deleted by its owner")
+                    "list_trash" -> jvalue(SaveManagement.listTrash(dataRoot))
+                    "empty_trash" -> jvalue(SaveManagement.emptyTrash(dataRoot, args.strOrNull("confirm")))
+                    "reset" -> SaveManagement.reset(dataRoot, args.strOrNull("confirm"), driver, null)
+                    else -> {
+                        log.log("not_implemented", "service" to "admin", "feature" to "save management: $operation")
+                        return jobj("ok" to false, "error" to "NotImplemented", "message" to operation)
+                    }
+                }
+            } catch (e: IllegalArgumentException) {
+                val type = when (e) {
+                    is BackupError, is io.github.okexodus.openknights.server.store.DataRootError -> e.javaClass.simpleName
+                    is io.github.okexodus.openknights.server.game.FreshProfile.CreationRejected -> "CreationRejected"
+                    else -> "ValueError"
+                }
+                return jobj("ok" to false, "error" to type, "message" to (e.message ?: ""))
+            }
+            val quotedRoot = Json.dumps(JStr(root.toString()))
+            val text = Json.dumps(result).replace(quotedRoot.substring(1, quotedRoot.length - 1), "<root>")
+            return jobj("ok" to true, "result" to Json.loads(text))
+        } finally {
+            dataRoot.lock.release()
+        }
+    }
+
     private fun rootFiles(root: Path): Map<String, JValue> {
         val out = LinkedHashMap<String, JValue>()
         for (name in listOf("manifest.json", "clock.json")) {

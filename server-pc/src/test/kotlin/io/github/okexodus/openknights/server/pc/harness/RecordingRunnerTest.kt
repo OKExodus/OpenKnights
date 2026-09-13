@@ -85,7 +85,7 @@ class RecordingRunnerTest {
             step(0, "start"),
             step(1, "http", "path" to "/api/recharge", "body" to jobj("token" to badToken), "status" to 401,
                 "response" to """{"error":"Credentials, session or character selection rejected"}"""),
-            step(2, "admin", "operation" to "backup_character", "outcome" to jobj("ok" to true)),
+            step(2, "admin", "operation" to "future_operation", "args" to JObj(), "outcome" to jobj("ok" to true)),
             step(3, "open", "conn" to 1, "service" to "login"),
             step(4, "frame", "conn" to 1, "op" to 7683, "payload" to signIn.toHexString(), "replies" to jarr(jarr(7680, loginReply)), "closed" to true),
             step(5, "open", "conn" to 2, "service" to "login"),
@@ -108,7 +108,7 @@ class RecordingRunnerTest {
         val report = RecordingRunner(tmp.resolve("no.apk"), releaseData, driver, starter).run(bundle(base, releaseData, "01"), tmp.resolve("work"))
         assertTrue(report.bool("passed")) { Json.dumps(report) }
         assertEquals(0L, report.obj("step_checks").long("failed"))
-        // the save management step is not ported yet: it waits (group 1); everything else is compared
+        // a save-management operation this server does not know waits (group 1); everything else is compared
         assertEquals(1L, report.obj("waiting").long("steps"))
         assertEquals(1L, report.obj("waiting").obj("by_port_group").long("group 1"))
         assertEquals(7L, report.long("compared_steps"))

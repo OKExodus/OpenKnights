@@ -246,6 +246,91 @@ class AccountRegistry(path: Path, private val driver: SqlDriver, val strictPaths
         character(row)
     }
 
+    fun listAccounts(): List<JObj> = connect(readOnly = true).use { db ->
+        db.query("SELECT account_id,username,created_at_utc FROM accounts ORDER BY username_key").map { row ->
+            jobj("account_id" to row.string("account_id"), "username" to row.string("username"), "created_at_utc" to row.string("created_at_utc"))
+        }
+    }
+
+    /** The registry's display name follows a world rename; audited. */
+    fun renameCharacter(characterId: String, name: String, actor: String, reason: String) {
+        connect().use { db ->
+            db.immediate {
+                val row = db.queryOne("SELECT account_id,name FROM characters WHERE character_id=?", characterId)
+                    ?: throw IllegalArgumentException("Local character does not exist")
+                db.execute("UPDATE characters SET name=? WHERE character_id=?", name, characterId)
+                audit(db, label(actor, "Actor"), "character_renamed", row.string("account_id"), characterId,
+                    jobj("name_before" to row.string("name"), "name_after" to name, "reason" to label(reason, "Reason", 400)))
+            }
+        }
+    }
+
+    /**
+     * Owner deletion (`retire_character`): the character leaves every listing and can no longer be resolved. Additive
+     * and audited; the registry row and history stay, the save is archived by the caller.
+     */
+    fun retireCharacter(characterId: String, accountId: String, archivePath: String, actor: String, reason: String) {
+        val a = label(actor, "Actor")
+        val r = label(reason, "Reason", 400)
+        connect().use { db ->
+            db.immediate {
+                db.execute("""CREATE TABLE IF NOT EXISTS character_retirements (
+                character_id TEXT PRIMARY KEY REFERENCES characters(character_id),
+                retired_at_utc TEXT NOT NULL, archive_path TEXT NOT NULL, reason TEXT NOT NULL)""")
+                val owner = db.queryOne("SELECT account_id FROM characters WHERE character_id=?", characterId)
+                if (owner == null || owner.string("account_id") != accountId) throw IllegalArgumentException("Character is not owned by this local account")
+                val archive = if (!DataPaths.isAbsoluteText(archivePath)) archivePath else storedPath(Path.of(archivePath))
+                if (db.queryOne("SELECT 1 FROM character_retirements WHERE character_id=?", characterId) != null) {
+                    throw IllegalArgumentException("Character was already deleted")
+                }
+                db.execute("INSERT INTO character_retirements VALUES(?,?,?,?)", characterId, PyTime.nowIsoMillis(), archive, r)
+                if (db.tableExists("local_sessions")) {
+                    // Sessions already bound to the deleted character stop working immediately.
+                    db.execute("UPDATE local_sessions SET revoked_epoch=COALESCE(revoked_epoch, CAST(strftime('%s','now') AS INTEGER)) WHERE character_id=?", characterId)
+                }
+                audit(db, a, "character_retired", accountId, characterId, jobj("archive_path" to archive, "reason" to r))
+            }
+        }
+    }
+
+    fun isRetired(characterId: String): Boolean = connect(readOnly = true).use { db ->
+        db.tableExists("character_retirements") && db.queryOne("SELECT 1 FROM character_retirements WHERE character_id=?", characterId) != null
+    }
+
+    private fun relocate(db: SqlConnection, characterId: String, statePath: Path, checkpointPath: Path): Pair<String, String> {
+        val storedState = storedPath(statePath)
+        val storedCheckpoint = storedPath(checkpointPath)
+        db.execute("UPDATE characters SET state_path=?,state_path_key=?,checkpoint_path=? WHERE character_id=?",
+            storedState, DataPaths.keyOf(storedState), storedCheckpoint, characterId)
+        return storedState to storedCheckpoint
+    }
+
+    /** Point a registered character at its (restored) save files; audited. */
+    fun relocateCharacter(characterId: String, statePath: Path, checkpointPath: Path, actor: String, reason: String) {
+        connect().use { db ->
+            db.immediate {
+                val row = db.queryOne("SELECT account_id FROM characters WHERE character_id=?", characterId)
+                    ?: throw IllegalArgumentException("Local character does not exist")
+                val stored = relocate(db, characterId, statePath, checkpointPath)
+                audit(db, label(actor, "Actor"), "character_relocated", row.string("account_id"), characterId,
+                    jobj("state_path" to stored.first, "checkpoint_path" to stored.second, "reason" to label(reason, "Reason", 400)))
+            }
+        }
+    }
+
+    /** Undo a deletion: the retirement row goes, the character points at its restored save and belongs to the account again. */
+    fun reinstateCharacter(characterId: String, statePath: Path, checkpointPath: Path, accountId: String, name: String, actor: String, reason: String) {
+        connect().use { db ->
+            db.immediate {
+                if (db.execute("DELETE FROM character_retirements WHERE character_id=?", characterId) != 1) throw IllegalArgumentException("Character is not deleted")
+                db.execute("UPDATE characters SET account_id=?,name=? WHERE character_id=?", accountId, name, characterId)
+                val stored = relocate(db, characterId, statePath, checkpointPath)
+                audit(db, label(actor, "Actor"), "character_reinstated", accountId, characterId,
+                    jobj("state_path" to stored.first, "name" to name, "reason" to label(reason, "Reason", 400)))
+            }
+        }
+    }
+
     /** Validate an owned save before use (the full integrity read); revisions may advance normally. */
     fun resolveStateStore(characterId: String, accountId: String? = null): StateStore {
         val character = getCharacter(characterId)

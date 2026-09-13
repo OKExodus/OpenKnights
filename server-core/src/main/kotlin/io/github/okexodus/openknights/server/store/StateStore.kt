@@ -406,6 +406,38 @@ class StateStore(path: Path, private val driver: SqlDriver) {
         }
     }
 
+    /**
+     * A restored character's identity in its new world (`restore_reidentify`): role 0 (wire id) and the profile's wire
+     * id when the old one is taken there, role 2 (name) after a rename. One audited revision.
+     */
+    fun restoreReidentify(expectedRevision: Long, actor: String, reason: String, wireAccountId: Long? = null, name: String? = null): JObj {
+        require(expectedRevision >= 1) { "Expected revision must be a positive integer" }
+        require(actor.isNotBlank() && reason.isNotBlank()) { "Actor and reason must be nonempty text" }
+        connect().use { db ->
+            return db.immediate {
+                val current = read(db)
+                if (current.revision != expectedRevision) throw IllegalArgumentException("State revision changed; reread before editing")
+                val profile = current.characterProfile ?: throw IllegalArgumentException("Only a created character can be re-identified")
+                val roles = LinkedHashMap<Long, JObj>()
+                for (f in current.state.arr("role_properties")) roles[(f as JObj).long("id")] = f.obj("value")
+                val detail = jobj("actor" to actor, "reason" to reason)
+                if (wireAccountId != null) {
+                    detail["wire_account_id"] = io.github.okexodus.openknights.exact.jarr(roles.getValue(0)["bits"], wireAccountId)
+                    roles.getValue(0)["bits"] = JInt(wireAccountId)
+                    val document = JObj(LinkedHashMap(profile.obj("document").map)).also { it["wire_account_id"] = JInt(wireAccountId) }
+                    db.execute("UPDATE character_profile SET document_json=?,document_sha256=? WHERE id=1",
+                        FreshProfile.canonicalJson(document), FreshProfile.checksum(document))
+                }
+                if (name != null) {
+                    detail["name"] = io.github.okexodus.openknights.exact.jarr(roles.getValue(2)["text"], name)
+                    roles.getValue(2)["raw_hex"] = io.github.okexodus.openknights.exact.JStr(name.toByteArray(Charsets.UTF_8).toHexString())
+                    roles.getValue(2)["text"] = io.github.okexodus.openknights.exact.JStr(name)
+                }
+                commitState(db, current, "restore_reidentify", detail)
+            }
+        }
+    }
+
     /** Commit the edited state as the next revision with its history row (`_commit_state`): `{revision, timestamp_utc, **detail}`. */
     fun commitState(db: SqlConnection, current: Current, action: String, detail: JObj): JObj {
         val payload = PlayerState.encode(current.state)
