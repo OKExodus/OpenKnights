@@ -12,6 +12,7 @@
   <a href="LICENSE"><img alt="License: GPL-3.0" src="https://img.shields.io/badge/license-GPL--3.0-blue"></a>
   <img alt="Status: in development" src="https://img.shields.io/badge/status-in%20development-orange">
   <img alt="Patcher: Windows and Linux" src="https://img.shields.io/badge/patcher-Windows%20%7C%20Linux-lightgrey">
+  <a href="https://discord.gg/rFBcanFEKh"><img alt="Discord: join the OpenKnights server" src="https://img.shields.io/badge/Discord-join%20the%20server-5865F2?logo=discord&logoColor=white"></a>
 </p>
 
 OpenKnights is a preservation project for **Pocket Knights**. A small patcher turns your own copy of the game into a
