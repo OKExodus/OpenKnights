@@ -70,15 +70,25 @@ class DeviceClock(
         return if (epoch >= hwmEpoch) maxOf(day, hwmDay) else day
     }
 
+    /**
+     * The epoch of the local wall-clock time [wall] (seconds, as if UTC), with the offset taken at the candidate
+     * itself: a midnight across a DST change lands on the new offset.
+     */
+    private fun midnight(wall: Long, guessOffset: Int): Long {
+        val first = wall - guessOffset
+        return wall - offset(first)
+    }
+
     /** The first epoch after `epoch` whose (effective) local day is later than the day of `epoch`. */
     fun nextDayStart(epoch: Long): Long {
         val today = localDay(epoch)
         val moment = localDateTime(epoch).withHour(0).withMinute(0).withSecond(0).withNano(0)
+        val offset = offset(epoch)
         for (days in 1L..3L) {
-            val candidate = moment.plusDays(days).toEpochSecond()
+            val candidate = midnight(moment.plusDays(days).toLocalDateTime().toEpochSecond(java.time.ZoneOffset.UTC), offset)
             if (plainDay(candidate) > today) return candidate
         }
-        return moment.plusDays(1).toEpochSecond()
+        return midnight(moment.plusDays(1).toLocalDateTime().toEpochSecond(java.time.ZoneOffset.UTC), offset)
     }
 
     @Synchronized
