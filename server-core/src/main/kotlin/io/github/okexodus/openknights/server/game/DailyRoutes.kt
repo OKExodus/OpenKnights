@@ -72,6 +72,29 @@ object DailyRoutes {
             return found.first to found.second
         }
 
+        /**
+         * Add Royal Door EXP to the world's Door (`raise_door_exp`): level-ups by lv_yijiezhimen col 102. A world write
+         * after the character's commit (labeled policy), retried when the document changed meanwhile. Returns (level
+         * before, level after); (null, null) without a world or EXP.
+         */
+        fun raiseDoorExp(amount: Long, inputs: DailyInputs, actor: String = "local-service", attempts: Int = 3): Pair<Long?, Long?> {
+            if (world == null || amount <= 0) return null to null
+            repeat(attempts) {
+                val (revision, door) = document("royal_door")
+                val before = PyDocs.long(PyDocs.at(door, "level"))
+                val after = Daily.doorAfter(door, amount, inputs)
+                val level = after.long("level")
+                try {
+                    world.putDocument("royal_door", after, revision!!, actor, "royal_door_exp",
+                        jobj("added" to amount, "level_before" to before, "level_after" to level))
+                    return before to level
+                } catch (e: IllegalArgumentException) {
+                    // changed meanwhile: read again
+                }
+            }
+            throw PyValues.ValueError("Royal Door EXP could not be written (world document kept changing)")
+        }
+
         /** World characters + bots (`WorldContext.participants`). */
         fun participants(current: StateStore.Current? = null): List<Any> =
             participantsOf?.invoke(this, current) ?: throw NotPorted("world_participants (the participant list of the daily routes)")

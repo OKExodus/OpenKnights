@@ -18,6 +18,7 @@ import io.github.okexodus.openknights.server.game.WorldParticipants.Participant
 object Guild {
     const val C_MY_GUILD = 2145
     const val S_MY_GUILD = 2306
+    const val S_TASKS = 2344
     const val LEADER = 100L
     const val ERR_NOT_YOURS = 52007
     const val WAR_MATCH_HOUR = 19
@@ -116,5 +117,17 @@ object Guild {
     fun matchTime(now: Long): Long {
         val at = Shops.localDatetime(now)
         return now - ((at.hour - WAR_MATCH_HOUR) * 3600L + at.minute * 60L + at.second)
+    }
+
+    /**
+     * S2344 `u8 n, n × (u32 task, u32 done, u32 progress, u8 state), u8 star, u16 refreshes used, u32 star cd`
+     * (`tasks_payload`); the star timer runs to the next local midnight.
+     */
+    fun tasksPayload(document: JObj, now: Long): ByteArray {
+        val tasks = document.arr("tasks")
+        val w = WireWriter().raw(PyDocs.bytes(listOf(tasks.size.toLong())))
+        for (t in tasks) w.values("IIIB", t.asArr)
+        return w.number('B', PyDocs.at(document, "star")).number('H', PyDocs.at(document, "refreshes"))
+            .number('I', maxOf(0L, Shops.nextDayStart(now) - now)).bytes()
     }
 }

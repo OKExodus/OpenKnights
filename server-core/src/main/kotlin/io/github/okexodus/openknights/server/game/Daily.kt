@@ -141,6 +141,18 @@ object Daily {
         return copy(doc)
     }
 
+    /** Counter hook (`mission_count`, labeled policy): add to a Daily Mission counter, capped at dailyactivities col 103. */
+    fun missionCount(document: JValue?, ident: Long, amount: Long, inputs: DailyInputs, now: Long): JObj {
+        val doc = missionView(document, now)
+        val row = inputs.dailyActivity(ident)
+        if (row == null || amount <= 0) return doc
+        val counts = doc.obj("counts")
+        val before = counts[ident.toString()] ?: JInt(0)
+        val sum = JInt(PyDocs.int(before) + BigInteger.valueOf(amount))
+        counts[ident.toString()] = if (PyDocs.compare(sum, row["max"]!!) < 0) sum else row["max"]!!
+        return doc
+    }
+
     /** S2912 `u8 n, n × (u32 activity, u32 count)` (counts > 0, by id), `u8 m, m × u32 claimed gift`. */
     fun missionPayload(document: JObj): ByteArray {
         val counts = document.obj("counts").entries.filter { PyDocs.compare(it.value, JInt(0)) > 0 }
@@ -187,6 +199,23 @@ object Daily {
         val tasks = document.arr("tasks")
         w.raw(PyDocs.bytes(listOf(tasks.size.toLong()) + tasks.map { PyDocs.long(it) }))
         return w.bytes()
+    }
+
+    /**
+     * The world Door after `amount` EXP (`door_after`): level-ups by lv_yijiezhimen col 102 (EXP kept per level); the top
+     * level has no col 102. Shared by the donation reply and `WorldContext.raiseDoorExp`.
+     */
+    fun doorAfter(worldDoor: JObj, amount: Long, inputs: DailyInputs): JObj {
+        var level = PyDocs.long(PyDocs.at(worldDoor, "level"))
+        var exp = PyDocs.int(PyDocs.at(worldDoor, "exp")) + BigInteger.valueOf(amount)
+        while (true) {
+            val row = inputs.royalDoorLevel(level)
+            val next = row?.get("next_exp")
+            if (row == null || next == null || next == JNull || exp < PyDocs.int(next)) break
+            exp -= PyDocs.int(next)
+            level += 1
+        }
+        return PyDocs.shallow(worldDoor).also { it["level"] = JInt(level); it["exp"] = JInt(exp) }
     }
 
     /** S2722 `u32 n, n × (u32 item, u32 donated)` (by item), `u32 gold units donated`. */

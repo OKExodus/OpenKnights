@@ -21,7 +21,9 @@ import io.github.okexodus.openknights.server.game.SweepFeatures
 import io.github.okexodus.openknights.server.game.SystemSeeds
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.server.game.Achievements
 import io.github.okexodus.openknights.server.game.AltTeam
+import io.github.okexodus.openknights.server.game.DailyHooks
 import io.github.okexodus.openknights.server.game.Claims
 import io.github.okexodus.openknights.server.game.DailyRoutes
 import io.github.okexodus.openknights.server.game.Goals
@@ -360,8 +362,54 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
      * After a counted action: the follow-up `daily_counters` revision (quests, Daily Mission, Royal Door tasks, then the
      * world's Door EXP and new-medal mails). Returns the extra frames; never fails the action (`_daily_counters`).
      */
-    @Suppress("UNUSED_PARAMETER")
-    private fun dailyCounters(action: String, plan: JObj): List<Frame> = throw NotPorted("daily counters after $action")
+    private fun dailyCounters(action: String, plan: JObj, packets: List<Frame> = emptyList()): List<Frame> {
+        class NothingCounted : RuntimeException("nothing counted")
+        try {
+            val events = DailyHooks.eventsFor(action, plan, packets) + DailyHooks.achievementEvents(action, packets)
+            val inputs = service.inputs
+            val policy = deploymentPolicy()
+            if (events.isEmpty() || policy == null) return emptyList()
+            val worldCtx = worldContext()
+            val (_, door) = worldCtx.document("royal_door")
+            val now = service.clock.now()
+            val (result, counted) = try {
+                stateStore!!.acquisitionTransaction("daily_counters", characterId!!, policy, inputs, "local-service",
+                    "Daily counters after $action", detailExtra = jobj("after_action" to action, "contract" to "docs/DAILY_CONTRACT.md")) { owned, current ->
+                    val served = servedTime(current, now)
+                    val planned = DailyHooks.planCounters(owned, current, events, inputs, now, door, served, service.powerOf)
+                    if (!DailyHooks.countsAnything(planned)) throw NothingCounted()
+                    planned["now_epoch"] = now
+                    planned["served_time"] = served
+                    planned
+                }
+            } catch (e: NothingCounted) {
+                return emptyList()
+            }
+            val doorExp = counted.data.long("door_exp")
+            val levels = if (doorExp != 0L) worldCtx.raiseDoorExp(doorExp, inputs) else null to null
+            var frames = counted.packets.toList()
+            val mails = counted["medal_mails"] as? io.github.okexodus.openknights.exact.JArr
+            if (mails != null && mails.isNotEmpty() && service.world != null) {
+                // New-medal mails: a world write after the character's commit; each S258 goes right after its S576.
+                try {
+                    val ctx = socialContext()
+                    frames = Achievements.deliverMails(frames, mails, { change -> ctx.update("mail", "mail_achievement", change) }, now, ctx.clockOffset)
+                } catch (e: Exception) {
+                    guard(e)
+                    log("achievement_mail_error", "character_id" to characterId, "after_action" to action, "error" to described(e))
+                }
+            }
+            log("transaction_committed", "action" to "daily_counters", "character_id" to characterId, "revision" to result["revision"],
+                "after_action" to action, "events" to events.map { it.json() }, "door_exp" to doorExp,
+                "door_levels" to listOf(levels.first, levels.second), "medals" to counted["achievements_completed"],
+                "reply_opcodes" to frames.map { it.first })
+            return frames
+        } catch (e: Exception) {
+            guard(e)
+            log("daily_counters_error", "character_id" to characterId, "after_action" to action, "error" to described(e))
+            return emptyList()
+        }
+    }
 
     private fun worldContext(): DailyRoutes.WorldContext =
         DailyRoutes.WorldContext(service.world, service.auth.registry, service.powerOf, emptyList()) { ctx, current ->

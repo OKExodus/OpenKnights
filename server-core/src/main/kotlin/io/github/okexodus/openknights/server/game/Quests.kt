@@ -25,6 +25,7 @@ object Quests {
     const val C_QUEST_CLAIM = 261
     const val S_QUESTS = 320
     const val S_BOARD = 322
+    const val S_BOARD_ROW = 326
     const val ROLE_LEVEL = 3L
     const val QUEST_PROFILE = "quest_state_v1"
     const val BOARD_PROFILE = "bounty_board_v1"
@@ -290,6 +291,47 @@ object Quests {
         return changed
     }
 
+    /**
+     * Counter hook (`count`): every running quest of the kind counts; it becomes claimable at its target. A `param`
+     * must match quest.csv col 110 (0 matches any). Returns true when anything changed.
+     */
+    fun count(document: JObj, inputs: DailyInputs, kind: Long, amount: Long, param: Long? = null): Boolean {
+        var changed = false
+        for (r in document.arr("quests")) {
+            val row = r.asArr
+            val quest = inputs.quest(PyDocs.long(row[0]))
+            if (quest == null || quest.long("kind") != kind || row[1] != JInt(STATE_RUNNING)) continue
+            if (param != null && quest.long("param") != 0L && quest.long("param") != param) continue
+            row[2] = JInt(PyDocs.int(row[2]) + BigInteger.valueOf(amount))
+            if (PyDocs.compare(row[2], quest["target"]!!) >= 0) row[1] = JInt(STATE_READY)
+            changed = true
+        }
+        return changed
+    }
+
+    /**
+     * Level-state kinds (`set_state`: 2 building level, 25 tech level; param = the building / tech id): the progress of
+     * every running quest of the kind becomes the value; claimable at its target. Returns true when anything changed.
+     */
+    fun setState(document: JObj, inputs: DailyInputs, kind: Long, value: Long, param: Long? = null): Boolean {
+        var changed = false
+        for (r in document.arr("quests")) {
+            val row = r.asArr
+            val quest = inputs.quest(PyDocs.long(row[0]))
+            if (quest == null || quest.long("kind") != kind || row[1] != JInt(STATE_RUNNING)) continue
+            if (param != null && quest.long("param") != 0L && quest.long("param") != param) continue
+            if (row[2] != JInt(value)) {
+                row[2] = JInt(value)
+                changed = true
+            }
+            if (PyDocs.compare(JInt(value), quest["target"]!!) >= 0) {
+                row[1] = JInt(STATE_READY)
+                changed = true
+            }
+        }
+        return changed
+    }
+
     // --- bounty board ----------------------------------------------------------------------------------------------------
 
     /** `random.Random` seeded with the first 8 bytes (little-endian) of SHA-256 of `<owner_key>|<salt>`. */
@@ -333,6 +375,13 @@ object Quests {
         val autoId = PyDocs.at(document, "auto_id")
         val left: JValue = if (Py.truthy(autoId)) JInt(maxOf(BigInteger.ZERO, PyDocs.int(PyDocs.at(document, "auto_until")) - BigInteger.valueOf(now))) else JInt(0)
         return listOf(PyDocs.at(document, "used"), PyDocs.at(document, "limit"), autoId, left, PyDocs.at(document, "free"))
+    }
+
+    /** S326 one board row `u32 id, u8 state, u32 progress, u8 stars` and the board's tail (`row_payload`). */
+    fun rowPayload(document: JObj, row: JArr, now: Long): ByteArray {
+        val (used, limit, autoId, left, free) = tail(document, now)
+        return WireWriter().values("IBIB", row).number('I', used).number('I', limit).number('I', autoId).number('I', left)
+            .number('I', free).bytes()
     }
 
     fun boardPayload(document: JObj, now: Long): ByteArray {
