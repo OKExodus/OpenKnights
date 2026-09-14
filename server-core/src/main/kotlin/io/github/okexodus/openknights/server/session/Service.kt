@@ -83,6 +83,17 @@ class Service(
     /** The acquisition catalog (`snapshot.acquisition_catalog`: release-data/shop-catalog.json). */
     val acquisitionCatalog: JObj? by lazy { releaseData?.let { io.github.okexodus.openknights.server.game.Shops.releaseCatalog(it) } }
 
+    /** The hero / gear Fortify catalog inputs (`snapshot.fortify_inputs`). */
+    val fortifyInputs: io.github.okexodus.openknights.server.game.FortifyInputs by lazy { io.github.okexodus.openknights.server.game.FortifyInputs(tables) }
+
+    /** The EXP-item Fortify catalog inputs (`snapshot.item_fortify_inputs`). */
+    val itemFortifyInputs: io.github.okexodus.openknights.server.game.ItemFortifyInputs by lazy { io.github.okexodus.openknights.server.game.ItemFortifyInputs(tables) }
+
+    /** The history label `{path, sha256}` of the loaded acquisition RNG policy (`ReleaseData.policy("acquisition-rng")`). */
+    val acquisitionPolicyLabel: JObj? by lazy {
+        releaseData?.let { jobj("path" to it.label("policies/acquisition-rng.json"), "sha256" to it.sha256("policies/acquisition-rng.json")) }
+    }
+
     /** The labeled local RNG policy document (`snapshot.acquisition_policy`, bound to every character in release). */
     var acquisitionPolicy: JObj? = null
 
