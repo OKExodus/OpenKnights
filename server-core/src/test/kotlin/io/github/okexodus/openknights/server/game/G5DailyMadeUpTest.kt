@@ -3,6 +3,7 @@ package io.github.okexodus.openknights.server.game
 import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JObj
+import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.Json
 import io.github.okexodus.openknights.exact.jarr
@@ -125,7 +126,9 @@ class G5DailyMadeUpTest {
         "arena" to """{"ranks":[9002,9502,9500,9501,9001],"changed":true,"rows":[[1,9002],[2,9502],[3,9500],[4,9501]],"settle":1699995600,"view":{"profile":"arena_state_v1","joined_at":0,"settled_at":1699995600,"reward_rank":5,"claimed":0,"history":[{"name_hex":"5a6564","attacker":1,"result":0,"rank":2,"trend":-1}]},"info":"050000000a0000000a00000000000000000005000000015a656400010002000000ff042a2300005a6564001e000000010000000000000000000000000000001e2500004576650008000000020000000900000000000000400000001c250000426f740005000000030000000000000000010000420000001d250000426f62000c00000004000000050000000000000041000000","top":"052a2300005a6564001e0000000000000000000000001e25000045766500080000000900000000000000001c250000426f7400050000000000000000010000001d250000426f62000c000000050000000000000000292300004b6e69676874000c000000bc0200000000000001","catch":"0505031d250000426f62000c00000041000000001e250000457665000800000040000000001c250000426f7400050000004200000000012a2300005a6564001e000000000000000000","joined":1700006400}""",
         "query_417" to """[[448,"010000000a0000000a000000000000000000010000000000"]]""",
         "query_421" to """[[450,"01292300004b6e69676874000c000000e11000000000000001"]]""",
-        "query_753" to """[[804,"05050000"]]""",    )
+        "query_753" to """[[804,"05050000"]]""",
+        "fixes" to """{"door_row":["No lv_yijiezhimen row for this Door level",57001],"ladder_twice":[[9002,9001,9502,9500,9501],true],"catch_twin":"0505031d250000426f62000c00000041000000001e250000457665000800000040000000001c250000426f7400050000004200000000012a2300005a6564001e000000000000000000","settle_switch":1699995600,"zone_day":["2023-11-15","2023-11","0a1e030f0103"],"zone_sign":["Already checked in today",23000]}""",
+    )
 
     @Test
     fun `check-in milestones and the timed gift chain`() {
@@ -196,5 +199,41 @@ class G5DailyMadeUpTest {
             val reply = DailyRoutes.queryReply(opcode, ByteArray(0), current(), null, inputs, now, ctx, "char_x")
             assertEquals(expected["query_$opcode"], compact(frames(reply)))
         }
+    }
+
+    @Test
+    fun `the approved fixes - Door row code, ladder duplicates, catch list ids, settlement offset, protected check-in day`() {
+        val people = listOf(Participant(9001, "character", "Knight".toByteArray(), 12, power = BigInteger.valueOf(700), leaderTemplate = 77, gender = 1),
+            Participant(9002, "character", "Zed".toByteArray(), 30, power = null, leaderTemplate = 0),
+            Participant(9500, "bot", "Bot".toByteArray(), 5, power = BigInteger.ONE.shiftLeft(40), leaderTemplate = 66, extra = jobj("arena_seed" to 2)),
+            Participant(9501, "bot", "Bob".toByteArray(), 12, power = BigInteger.valueOf(5), leaderTemplate = 65),
+            Participant(9502, "bot", "Eve".toByteArray(), 8, power = BigInteger.valueOf(9), leaderTemplate = 64, extra = jobj("arena_seed" to 1)))
+        val out = JObj()
+        try {
+            Daily.planDoorClaim("level_up", Owned(current(), inputs), inputs, null, jobj("level" to 3, "exp" to 0, "born_at_utc" to "u"), now, JStr("u"))
+        } catch (e: Acquisition.Rejected) {
+            out["door_row"] = jarr(e.message, e.code)
+        }
+        val (ranks, changed) = Arena.ladderRanks(jobj("ranks" to listOf(9002, 9001, 9002)), people)
+        out["ladder_twice"] = jarr(ranks, changed)
+        val twin = people + Participant(9502, "bot", "Twin".toByteArray(), 99, power = BigInteger.ONE, leaderTemplate = 63)
+        out["catch_twin"] = JStr(Castle.catchListPayload(twin, JInt(9001), 12).toHexString())
+        val switch = now - 30000
+        DeviceClock.active = DeviceClock(null, timeSource = { 0L }, offsetSource = { e -> if (e < switch) 3600 else 7200 })
+        out["settle_switch"] = JInt(Arena.lastSettlement(now))
+        val seen = 1_700_000_000L - (1_700_000_000L + 7200) % 86400 + 1800
+        val clock = DeviceClock(null, timeSource = { seen }, offsetSource = { e -> if (e < seen + 60) 7200 else -18000 })
+        clock.now()
+        DeviceClock.active = clock
+        val later = seen + 120
+        out["zone_day"] = jarr(Shops.dayOf(later), Daily.monthKey(later), Daily.monthPayload(jobj("signed" to listOf(3)), later).toHexString())
+        try {
+            Daily.planMonthSign(Owned(current(), inputs), inputs, jobj("profile" to Daily.SIGN_PROFILE, "month" to Daily.monthKey(later),
+                "signed" to listOf(Shops.dayOf(later).substring(8).toInt()), "chain_day" to Shops.dayOf(later), "row" to 1, "available_at" to later,
+                "seed" to null), later)
+        } catch (e: Acquisition.Rejected) {
+            out["zone_sign"] = jarr(e.message, e.code)
+        }
+        assertEquals(expected["fixes"], compact(out))
     }
 }

@@ -35,12 +35,25 @@ object Arena {
     const val BELOW_ROWS = 4
     const val ARENA_PROFILE = "arena_state_v1"
 
-    /** Epoch of the latest 22:00 (device local, the offset of `now`) at or before now (`last_settlement`). */
+    private fun offset(epoch: Long): Int = Shops.localDatetime(epoch).offset.totalSeconds
+
+    /**
+     * Epoch of the latest 22:00 (device local) at or before now (`last_settlement`): each day's 22:00 in the offset in
+     * force at that instant (the offset taken at the candidate, as the device clock's midnight); with one offset, the
+     * 22:00 of `now`'s offset.
+     */
     fun lastSettlement(now: Long): Long {
         val moment = Shops.localDatetime(now)
-        var settle = moment.withHour(SETTLEMENT_HOUR).withMinute(0).withSecond(0).withNano(0)
-        if (settle.isAfter(moment)) settle = settle.minusDays(1)
-        return settle.toEpochSecond()
+        val guess = moment.offset.totalSeconds
+        val limit = moment.toEpochSecond()
+        val day = moment.toLocalDate().atTime(SETTLEMENT_HOUR, 0)
+        var candidate = 0L
+        for (back in 0L..2L) {
+            val wall = day.minusDays(back).toEpochSecond(java.time.ZoneOffset.UTC)
+            candidate = wall - offset(wall - guess)
+            if (candidate <= limit) return candidate
+        }
+        return candidate
     }
 
     /** `_arena_seed`: the sort key (seed is None, seed or 0) of an unranked bot. */
@@ -62,7 +75,8 @@ object Arena {
     /**
      * Ranks = the stored order, then any participant not yet ranked appended at the bottom in world order (a new
      * character joins last); unranked bots join before unranked characters, by the roster's optional `arena_seed`, then
-     * roster order (`ladder_ranks`). Returns (ids in rank order, changed).
+     * roster order (`ladder_ranks`). A stored id listed twice keeps its first place only (the ladder then differs from
+     * the stored one and is written back). Returns (ids in rank order, changed).
      */
     fun ladderRanks(ladderDocument: JObj?, participants: List<Participant>): Pair<List<Long>, Boolean> {
         val stored = when (val raw = if (Py.truthy(ladderDocument)) (ladderDocument!!["ranks"] ?: JArr()) else JArr()) {
@@ -73,8 +87,8 @@ object Arena {
         }
         val present = participants.mapTo(HashSet()) { it.participantId }
         val kept = ArrayList<Long>()
-        for (value in stored) rankId(value)?.takeIf { it in present }?.let { kept.add(it) }
-        val ranked = HashSet(kept)
+        val ranked = HashSet<Long>()
+        for (value in stored) rankId(value)?.takeIf { it in present && it !in ranked }?.let { kept.add(it); ranked.add(it) }
         val newcomers = participants.filter { it.participantId !in ranked }
         val bots = newcomers.filter { it.kind == "bot" }.sortedWith(SEED_ORDER)
         for (p in bots + newcomers.filter { it.kind != "bot" }) {

@@ -66,8 +66,14 @@ object Daily {
 
     // --- Check In ------------------------------------------------------------------------------------------------------
 
+    /**
+     * The check-in's calendar date (`_sign_date`): the protected local day ([Shops.dayOf], the device clock's day that
+     * never goes back), so a clock set back can neither sign an earlier day again nor reset the month.
+     */
+    fun signDate(now: Long): java.time.LocalDate = java.time.LocalDate.parse(Shops.dayOf(now))
+
     fun monthKey(now: Long): String {
-        val moment = Shops.localDatetime(now)
+        val moment = signDate(now)
         return "%04d-%02d".format(moment.year, moment.monthValue)
     }
 
@@ -79,7 +85,7 @@ object Daily {
         val signed = JArr()
         if (monthPayload != null && monthPayload.size >= 5) {
             val n = monthPayload[4].toInt() and 0xFF
-            if ((monthPayload[0].toInt() and 0xFF) == Shops.localDatetime(now).monthValue - 1 && monthPayload.size == 5 + n) {
+            if ((monthPayload[0].toInt() and 0xFF) == signDate(now).monthValue - 1 && monthPayload.size == 5 + n) {
                 for (i in 5 until 5 + n) signed.add(JInt(monthPayload[i].toInt() and 0xFF))
             }
         }
@@ -108,10 +114,13 @@ object Daily {
         return doc to changed
     }
 
-    /** S1152: `month − 1, days in month, weekday of the 1st (0 = Sunday), today, n, signed days (sorted)`. */
+    /**
+     * S1152: `month − 1, days in month, weekday of the 1st (0 = Sunday), today, n, signed days (sorted)` of the protected
+     * local day ([signDate]).
+     */
     fun monthPayload(document: JObj, now: Long): ByteArray {
-        val moment = Shops.localDatetime(now)
-        val days = moment.toLocalDate().lengthOfMonth().toLong()
+        val moment = signDate(now)
+        val days = moment.lengthOfMonth().toLong()
         val first = moment.withDayOfMonth(1)
         val wday1 = (first.dayOfWeek.value % 7).toLong()
         val signed = PyDocs.sorted(PyDocs.at(document, "signed") as JArr).map { PyDocs.long(it) }
@@ -313,7 +322,7 @@ object Daily {
      */
     fun planMonthSign(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan {
         val doc = signRoll(document, now, inputs).first
-        val today = Shops.localDatetime(now).dayOfMonth.toLong()
+        val today = signDate(now).dayOfMonth.toLong()
         val signed = PyDocs.at(doc, "signed") as JArr
         if (JInt(today) in signed) throw Acquisition.Rejected("Already checked in today", ERROR_SIGNED)
         doc["signed"] = PyDocs.sorted(signed + JInt(today))
@@ -418,7 +427,7 @@ object Daily {
         val doc = doorView(document, now, worldBirth)
         val level = PyDocs.at(worldDoor, "level")
         val row = inputs.royalDoorLevel(PyDocs.long(level))
-            ?: throw Acquisition.Rejected("No lv_yijiezhimen row for this Door level", ERROR_DOOR_DAILY)
+            ?: throw Acquisition.Rejected("No lv_yijiezhimen row for this Door level", if (kind == "daily") ERROR_DOOR_DAILY else ERROR_DOOR_LEVEL_UP)
         val triples: JArr
         val reply: Int
         if (kind == "daily") {
