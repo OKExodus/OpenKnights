@@ -54,7 +54,8 @@ class G6TrainingMadeUpTest {
             "11,9101,1,30,0,600,1,9601,5,300,1,9701,1,50,1,9702,2,50,0,0,0,0,40,40,20\n" +
             "12,9102,2,30,10,900,1,9601,0,400,1,9701,3,70,1,9702,1,30,0,0,0,0,0,0,50\n" +
             "13,9103,3,20,10,1200,2,9601,7,500,1,9703,1,10,1,0,0,0,0,0,0,0,100,0,0\n" +
-            "14,9104,4,0,40,1500,1,9601,1,600,1,9701,1,10,1,9702,1,10,1,9703,1,10,0,10,0\n",
+            "14,9104,4,0,40,1500,1,9601,1,600,1,9701,1,10,1,9702,1,10,1,9703,1,10,0,10,0\n" +
+            "15,9105,5,0,0,300,1,9601,0,100,0,0,0,0,0,0,0,0,0,0,0,0,0,50,0\n",
         "text.csv" to "101,102\n9101,Mossy Cave\n9102,Old Mill\n9103,Salt Road\n9701,Small Box\n9702,Big Box\n" +
             "4653,##0## went to ##1## and found ##2##; ##3## took it: ##4##. ##5## got ##6## EXP.\n" +
             "4654,##0## went to ##1## and found ##2##; met ##3##. ##4## got ##5## EXP.\n" +
@@ -121,9 +122,7 @@ class G6TrainingMadeUpTest {
         "add_time PLAN" to "{\"room\":2,\"price\":2,\"training_state_after\":{\"profile\":\"training_state_v1\",\"next_room\":3,\"rooms\":[{\"uid\":2,\"row\":402,\"password_hex\":\"\",\"expires_at\":1900029300}],\"seat\":null},\"evidence_class\":\"native_use_policy\"}",
         "add_time FRAMES" to "[[578, \"12022a000000\"], [128, \"0108047600\"], [2114, \"0200000092010000416e6e0074720000000000000000\"]]",
         "add_time STATE" to "{\"roles\":{\"8\":118},\"items\":[],\"new\":[],\"equipment\":[{\"wire_values\":[5,4101,1,50,1,0,0]},{\"wire_values\":[6,4101,5,0,1,0,0]}],\"blocks\":[{\"id\":0,\"raw_hex\":\"1f000000ed1300000a00000002000000020100004d00000000000000000000000000000000000000\"}]}",
-        "add_time_expired PLAN" to "{\"room\":2,\"price\":2,\"training_state_after\":{\"profile\":\"training_state_v1\",\"next_room\":3,\"rooms\":[{\"uid\":2,\"row\":402,\"password_hex\":\"\",\"expires_at\":1900028800}],\"seat\":null},\"evidence_class\":\"native_use_policy\"}",
-        "add_time_expired FRAMES" to "[[578, \"12022a000000\"], [128, \"0108047600\"], [2114, \"0200000092010000416e6e0080700000000000000000\"]]",
-        "add_time_expired STATE" to "{\"roles\":{\"8\":118},\"items\":[],\"new\":[],\"equipment\":[{\"wire_values\":[5,4101,1,50,1,0,0]},{\"wire_values\":[6,4101,5,0,1,0,0]}],\"blocks\":[{\"id\":0,\"raw_hex\":\"1f000000ed1300000a00000002000000020100004d00000000000000000000000000000000000000\"}]}",
+        "add_time_expired REFUSED" to "[\"Training room does not exist\", 38000]",
         "claim PLAN" to "{\"seconds\":49,\"attack_score\":11425,\"boost\":10000,\"exp\":18,\"honor\":0,\"levels_gained\":0,\"training_state_after\":{\"profile\":\"training_state_v1\",\"next_room\":3,\"rooms\":[{\"uid\":2,\"row\":402,\"password_hex\":\"\",\"expires_at\":1900000500}],\"seat\":null},\"evidence_class\":\"capture_observed_calculation_attack_score_policy\"}",
         "claim FRAMES" to "[[128, \"010404a800\"], [2118, \"0e00000012000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"]]",
         "claim STATE" to "{\"roles\":{\"4\":168},\"items\":[],\"new\":[],\"equipment\":[{\"wire_values\":[5,4101,1,50,1,0,0]},{\"wire_values\":[6,4101,5,0,1,0,0]}],\"blocks\":[{\"id\":0,\"raw_hex\":\"1f000000ed1300000a00000002000000020100004d00000000000000000000000000000000000000\"}]}",
@@ -191,6 +190,9 @@ class G6TrainingMadeUpTest {
         "claim_none PLAN" to "{\"slot\":0,\"items\":[],\"hero_exp\":{\"uid\":1,\"awarded\":0,\"granted\":0,\"levels_gained\":0,\"withheld\":\"no EXP\"},\"explore_state_after\":{\"profile\":\"explore_state_v1\",\"slots\":[{\"pos\":0,\"hero\":1,\"state\":1,\"choices\":[13,12,11],\"explore\":0,\"returns_at\":0,\"total\":0,\"text_hex\":\"\",\"reward\":null}],\"seed\":null},\"evidence_class\":\"native_use_policy\"}",
         "claim_none FRAMES" to "[[2276, \"0e00000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"], [2272, \"000100000001030d0000000c0000000b000000\"]]",
         "claim_none STATE" to "{\"roles\":{},\"items\":[],\"new\":[],\"equipment\":[{\"wire_values\":[5,4101,1,50,1,0,0]},{\"wire_values\":[6,4101,5,0,1,0,0]}],\"blocks\":[{\"id\":0,\"raw_hex\":\"1f000000ed1300000a00000002000000020100004d00000000000000000000000000000000000000\"}]}",
+        "go_gap REFUSED" to "[\"Invalid Set Out ID\", 51001]",
+        "return_gap REFUSED" to "[\"Invalid Set Out ID\", 51001]",
+        "claim_no_box REFUSED" to "[\"The Set Out dungeon has no reward box\", 102]",
         "cancel PLAN" to "{\"slot\":0,\"explore_state_after\":{\"profile\":\"explore_state_v1\",\"slots\":[{\"pos\":0,\"hero\":1,\"state\":1,\"choices\":[11],\"explore\":0,\"returns_at\":0,\"total\":0,\"text_hex\":\"\",\"reward\":null}],\"seed\":null},\"evidence_class\":\"native_use_policy\"}",
         "cancel FRAMES" to "[[2272, \"000100000001010b000000\"]]",
         "cancel STATE" to "{\"roles\":{},\"items\":[],\"new\":[],\"equipment\":[{\"wire_values\":[5,4101,1,50,1,0,0]},{\"wire_values\":[6,4101,5,0,1,0,0]}],\"blocks\":[{\"id\":0,\"raw_hex\":\"1f000000ed1300000a00000002000000020100004d00000000000000000000000000000000000000\"}]}",
@@ -325,6 +327,14 @@ class G6TrainingMadeUpTest {
             HiddenTraining.planExploreClaim(jobj("slot" to 0), o, inputs, explore(slot(0, 2, 3, listOf(11), 11, 0, 0, gift, "4869")), now, owner)
         }
         show("claim_none") { o, _ -> HiddenTraining.planExploreClaim(jobj("slot" to 0), o, inputs, explore(slot(0, 1, 3, listOf(11), 11)), now, owner) }
+        // table gaps: a dungeon outside the table, a row without a box
+        show("go_gap") { o, _ -> HiddenTraining.planExploreGo(jobj("slot" to 0, "explore" to 99), o, inputs, explore(slot(0, 1, 1, listOf(99, 11))), now) }
+        show("return_gap") { o, _ ->
+            HiddenTraining.planExploreReturn(jobj("slot" to 0), o, inputs, explore(slot(0, 1, 2, listOf(99), 99, now - 1)), now, owner)
+        }
+        show("claim_no_box") { o, _ ->
+            HiddenTraining.planExploreClaim(jobj("slot" to 0), o, inputs, explore(slot(0, 1, 2, listOf(15), 15, now - 1)), now, owner)
+        }
         show("cancel") { o, _ -> HiddenTraining.planExploreCancel(jobj("slot" to 0), o, inputs, explore(slot(0, 1, 2, listOf(11), 11, now + 50, 600)), now) }
         show("cancel_idle") { o, _ -> HiddenTraining.planExploreCancel(jobj("slot" to 0), o, inputs, explore(slot(0, 1, 1, listOf(11))), now) }
     }

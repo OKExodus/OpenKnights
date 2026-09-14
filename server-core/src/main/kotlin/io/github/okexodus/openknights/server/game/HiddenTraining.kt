@@ -574,6 +574,8 @@ object HiddenTraining {
             ?: throw Acquisition.Rejected("Your level is too low", ERROR_LEVEL)
         if (lt(roleBits(owned.state, VIP_LEVEL), JInt(row.long("vip")))) throw Acquisition.Rejected("VIP level too low to create this room", ERROR_INVALID)
         if (doc.arr("rooms").any { lt(JInt(now), PyDocs.at(it.asObj, "expires_at")) }) throw Acquisition.Rejected("You already have a training room", ERROR_INVALID)
+        // not a creatable room (type 4 = the default room's row, lifetime -1): refused before any charge
+        if (row.long("row") == DEFAULT_ROW || row.long("lifetime") <= 0) throw Acquisition.Rejected("Training room does not exist", ERROR_NO_ROOM)
         val frames = diamonds(owned, row.long("create_price"), servedTime)
         val uid = PyDocs.at(doc, "next_room")
         doc["next_room"] = JInt(PyDocs.int(uid) + BigInteger.ONE)
@@ -604,6 +606,8 @@ object HiddenTraining {
     fun planAddTime(request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan {
         val doc = trainingDocument(document)
         val room = ownRoom(doc, PyDocs.at(request, "room"))
+        // an own room whose lifetime ended is gone (C1769 answers 38000 for it too): no charge, no revival
+        if (!lt(JInt(now), PyDocs.at(room, "expires_at"))) throw Acquisition.Rejected("Training room does not exist", ERROR_NO_ROOM)
         val row = row(inputs, PyDocs.at(room, "row"))
         val frames = diamonds(owned, row.long("add_time_price"), servedTime)
         val expires = PyDocs.at(room, "expires_at")
@@ -845,7 +849,7 @@ object HiddenTraining {
         if (PyDocs.at(slot, "state") != JInt(1) || !Py.truthy(PyDocs.at(slot, "hero"))) throw Acquisition.Rejected("You have not assigned Hero yet", ERROR_NO_HERO)
         val explore = PyDocs.at(request, "explore")
         if (explore !in slot.arr("choices")) throw Acquisition.Rejected("Invalid Set Out ID", ERROR_EXPLORE_ID)
-        val row = inputs.exploreRow(PyDocs.long(explore)) ?: throw PyDocs.TypeError("'NoneType' object is not subscriptable")
+        val row = inputs.exploreRow(PyDocs.long(explore)) ?: throw Acquisition.Rejected("Invalid Set Out ID", ERROR_EXPLORE_ID)   // a seeded choice outside the table
         val frames = ArrayList<Frame>()
         if (row.long("cost_kind") == EXPLORE_TOKEN_KIND && row.long("cost_count") != 0L) frames += owned.consumeTemplate(row.long("cost_item"), row.long("cost_count"))
         slot["state"] = JInt(2)
@@ -915,7 +919,7 @@ object HiddenTraining {
      * box too but brings nothing back. The hero EXP is col 110.
      */
     internal fun outcome(inputs: DailyInputs, slot: JObj, ownerKey: String, now: Long): JObj {
-        val row = inputs.exploreRow(PyDocs.long(PyDocs.at(slot, "explore"))) ?: throw PyDocs.TypeError("'NoneType' object is not subscriptable")
+        val row = inputs.exploreRow(PyDocs.long(PyDocs.at(slot, "explore"))) ?: throw Acquisition.Rejected("Invalid Set Out ID", ERROR_EXPLORE_ID)
         val rng = rng("explore_return", ownerKey, now, PyDocs.at(slot, "pos"), PyDocs.at(slot, "explore"))
         val outcomes = listOf("robbed" to row.long("robbed_weight"), "met" to row.long("met_weight"), "gift" to row.long("gift_weight"))
         val kind = weighted(rng, outcomes.filter { it.second > 0 }) ?: "met"
@@ -925,6 +929,7 @@ object HiddenTraining {
             val found = if (boxes.isNotEmpty()) weightedBox(rng, boxes) else null
             return jobj("kind" to kind, "items" to JArr(), "robbed" to found?.let { jarr(it.first, it.second) }, "hero_exp" to row["hero_exp"])
         }
+        if (boxes.isEmpty()) throw Acquisition.Rejected("The Set Out dungeon has no reward box", ERROR_INVALID)   // no empty random range
         val reward = mutableListOf(weightedBox(rng, boxes))
         if (kind == "gift") reward.add(weightedBox(rng, boxes))
         return jobj("kind" to kind, "items" to JArr(reward.mapTo(ArrayList<JValue>()) { jarr(it.first, it.second) }), "hero_exp" to row["hero_exp"])
