@@ -112,6 +112,108 @@ object GodSkills {
     }
 
     fun startupPayload(document: JObj, ownedUids: Collection<Long>): ByteArray = encodeGodSkillList(startupHeroes(document, ownedUids))
+
+    // --- C2497 Astral Power press ------------------------------------------------------------------------------------
+
+    const val ITEM_UPDATE_OPCODE = 68
+    const val ITEM_REMOVE_OPCODE = 66
+    val ALLOWED_TIMES = listOf(1L, 10L, 100L)
+    const val ERROR_INVALID = 102
+    const val ERROR_TOP_LEVEL = 1008
+    const val ERROR_NO_SKILL = 1037
+    const val ERROR_ITEMS = 2002
+    const val EVIDENCE_CLASS = "capture_observed_astral_press_rule"
+
+    open class GodSkillRejected(message: String, val code: Int = ERROR_INVALID) : IllegalArgumentException(message)
+
+    /** C2497: u32 hero UID, u32 current skill id, u32 times. */
+    fun decodeUpgradeRequest(payload: ByteArray): JObj {
+        val r = WireReader(payload)
+        val value = jobj("hero_uid" to r.u32(), "skill_id" to r.u32(), "times" to r.u32())
+        if (r.offset != payload.size) throw PyValues.ValueError("Astral upgrade request has trailing bytes")
+        return value
+    }
+
+    fun encodeUpgradeRequest(value: JObj): ByteArray =
+        WireWriter().u32(uint(value.long("hero_uid"), 32, "Hero UID")).u32(uint(value.long("skill_id"), 32, "Skill"))
+            .u32(uint(value.long("times"), 32, "Times")).bytes()
+
+    /**
+     * Validate one decoded C2497 and return the exact mutation (`plan_upgrade`): one press consumes row 110 items of
+     * row 109 and adds +1 progress; at row 108 the skill becomes the next row (id + 1) at progress 0 and a multi-press
+     * stops there; a request whose stones run out stops at the last affordable press (local choice, recorded).
+     * `items` {uid: [uid, template, count]}; `rows` the zhushenzhili rows. [Plan.packets] holds the stone frame.
+     */
+    fun planUpgrade(request: JObj, document: JObj, ownedUids: Collection<Long>, items: Map<Long, JArr>, rows: JObj): Plan {
+        val heroUid = request.long("hero_uid")
+        val skillId = request.long("skill_id")
+        val times = request.long("times")
+        if (heroUid !in ownedUids.toSet()) throw GodSkillRejected("Hero is not owned", ERROR_NO_SKILL)
+        if (times !in ALLOWED_TIMES) throw GodSkillRejected("Press count outside the client's x1/x10/x100 choices")
+        val entry = document.arr("heroes").map { it.asObj }.firstOrNull { it["uid"] == JInt(heroUid) }
+            ?: throw GodSkillRejected("Hero has no god-skill state", ERROR_NO_SKILL)
+        val current = LinkedHashMap<Long, Long>()
+        for (s in entry.arr("skills")) current[s.asArr[0].long] = s.asArr[1].long
+        if (skillId !in current) throw GodSkillRejected("Hero does not have this astral skill", ERROR_NO_SKILL)
+        val row = rows[skillId.toString()] as JObj?
+        val following = rows[(skillId + 1).toString()] as JObj?
+        if (row == null) throw GodSkillRejected("Astral skill has no configured row")
+        if (following == null || following["series"] != row["series"] || following["level"] != JInt(row.int("level") + java.math.BigInteger.ONE)) {
+            throw GodSkillRejected("Astral skill is at its top configured level", ERROR_TOP_LEVEL)
+        }
+        val need = row.long("need_108")
+        val perPress = row.long("per_press_110")
+        if (need <= 0 || perPress <= 0 || !io.github.okexodus.openknights.server.game.Py.truthy(row["item_109"])) {
+            throw GodSkillRejected("Astral skill row has no press requirement")
+        }
+        var progress = current.getValue(skillId)
+        if (progress >= need) throw GodSkillRejected("Stored progress already reaches the level requirement")
+        val stacks = items.values.filter { it[1] == row["item_109"] }
+        if (stacks.size != 1) throw GodSkillRejected("Astral Stone is missing or not a single stack", ERROR_ITEMS)
+        val stackUid = stacks[0][0].long
+        val owned = stacks[0][2].long
+        if (owned < perPress) throw GodSkillRejected("Not enough Astral Stones for one press", ERROR_ITEMS)
+        var presses = 0L
+        var consumed = 0L
+        var newSkill = skillId
+        var stopped = "times"
+        while (presses < times) {
+            if (owned - consumed < perPress) {
+                stopped = "stones_exhausted_policy"
+                break
+            }
+            consumed += perPress
+            presses += 1
+            progress += 1
+            if (progress >= need) {
+                newSkill = skillId + 1
+                progress = 0
+                stopped = "level_up"
+                break
+            }
+        }
+        val remaining = owned - consumed
+        val packet = HeroEvolution.stackPacket(stackUid, remaining)
+        val newSkills = entry.arr("skills").map { val (s, p) = it.asArr.map { v -> v.long }; if (s == skillId) listOf(newSkill, progress) else listOf(s, p) }
+            .sortedWith { a, b -> val c = a[0].compareTo(b[0]); if (c != 0) c else a[1].compareTo(b[1]) }
+        val newSkillsJson = JArr(newSkills.mapTo(ArrayList()) { jarr(it[0], it[1]) })
+        val heroes = JArr(document.arr("heroes").mapTo(ArrayList()) { h ->
+            val hero = h.asObj
+            if (hero["uid"] == JInt(heroUid)) JObj(LinkedHashMap(hero.map)).also { it["skills"] = newSkillsJson } else hero
+        })
+        val documentAfter = JObj(LinkedHashMap(document.map)).also { it["heroes"] = heroes }
+        return Plan(jobj("hero_uid" to heroUid, "skill_before" to skillId, "progress_before" to current.getValue(skillId),
+            "skill_after" to newSkill, "progress_after" to progress, "times" to times, "presses" to presses,
+            "stopped" to stopped, "item" to row["item_109"], "per_press" to row["per_press_110"],
+            "item_change" to jobj("uid" to stackUid, "template" to row["item_109"], "quantity" to consumed, "remaining" to remaining),
+            "skills_after" to newSkillsJson, "document_after" to documentAfter,
+            "row_before" to JObj(LinkedHashMap(row.map)), "row_after" to JObj(LinkedHashMap((rows[newSkill.toString()] as JObj).map)),
+            "evidence_class" to (if (stopped != "stones_exhausted_policy") EVIDENCE_CLASS else "preservation_policy_local")), listOf(packet))
+    }
+
+    /** Observed live order: S68/66 (the Astral Stone stack) then S2850 (the hero's whole list). */
+    fun upgradePackets(plan: Plan): List<Frame> =
+        listOf(plan.packets[0], UPDATE_OPCODE to encodeGodSkillUpdate(plan.data.long("hero_uid"), plan.data.arr("skills_after").map { it.asArr }))
 }
 
 /** The unequipped-jewelry list of `equip_formation.py` (opcode 3072 and its stored document). */
