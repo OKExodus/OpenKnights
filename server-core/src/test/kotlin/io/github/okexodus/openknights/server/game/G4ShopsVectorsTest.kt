@@ -9,6 +9,7 @@ import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.Json
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.toHexString
@@ -78,7 +79,8 @@ class G4ShopsVectorsTest {
             else {
                 val rec = recorded as JObj
                 check("$label error kind", rec["value_error"] == io.github.okexodus.openknights.exact.JBool(true), e is IllegalArgumentException)
-                if (e is IllegalArgumentException) check("$label error", rec.str("message"), e.message)
+                // the text of a UTF-8 decode error only reaches the log
+                if (e is IllegalArgumentException && rec.str("error") != "UnicodeDecodeError") check("$label error", rec.str("message"), e.message)
                 val code = rec["code"]
                 if (code != null && code != JNull) check("$label code", (code as JInt).value.toInt(), (e as? Acquisition.Rejected)?.code)
             }
@@ -134,6 +136,178 @@ class G4ShopsVectorsTest {
             }
         }
         report("event ladder rules")
+    }
+
+    private fun sha(v: JValue?): String = io.github.okexodus.openknights.exact.sha256Hex(compact(v).toByteArray(Charsets.UTF_8)).take(24)
+
+    private fun installClock(spec: JObj) {
+        val offsets = spec.arr("offsets").map { it.asArr }
+        val hwm = spec["hwm"]?.takeIf { it != JNull }?.let { (it as JInt).value.toLong() }
+        val clock = DeviceClock(null, timeSource = { hwm ?: 0L }, offsetSource = { epoch ->
+            var value = 0
+            for (o in offsets) if (o[0] == JNull || epoch >= (o[0] as JInt).value.toLong()) value = (o[1] as JInt).value.toInt()
+            value
+        })
+        if (hwm != null) clock.now()
+        DeviceClock.active = clock
+    }
+
+    private fun currentOf(save: JObj): io.github.okexodus.openknights.server.store.StateStore.Current {
+        val docs = LinkedHashMap<String, JValue?>()
+        for ((k, v) in save.obj("documents")) docs[k] = v.deepCopy()
+        return io.github.okexodus.openknights.server.store.StateStore.Current((save["revision"] as JInt).value.toLong(), "", "",
+            save.obj("state").deepCopy(), ByteArray(0), 0, null, save.arr("inventory_items").deepCopy(), emptyList(),
+            save.arr("acquired_items").deepCopy(), emptyList(), null, null, null, (save["character_profile"] as? JObj)?.deepCopy(), null, docs)
+    }
+
+    private fun hashes(state: JObj): JObj {
+        val sub = state.obj("subsystems")
+        return jobj("state" to sha(state), "role_properties" to sha(state["role_properties"]), "items" to sha(state["items"]),
+            "vip" to sha(sub["vip"]), "game_activities" to sha(sub["game_activities"]), "achievements" to sha(sub["achievements"]))
+    }
+
+    private fun ownedRecord(owned: Owned): JObj = jobj(
+        "item_changes" to JArr(owned.itemChanges.entries.mapTo(ArrayList()) { (u, c) -> jarr(u, c) }),
+        "new_items" to JArr(owned.newItems.entries.mapTo(ArrayList()) { (u, e) -> jarr(u, e.first, e.second) }),
+        "role_changes" to JArr(owned.roleChanges.entries.mapTo(ArrayList()) { (f, c) -> jarr(f, c.first, c.second) }),
+        "log" to owned.log,
+        "granted" to JArr(owned.granted.entries.mapTo(ArrayList()) { (t, n) -> jarr(t, n) }))
+
+    @Test
+    fun `every planner of the slice on every recorded save`() {
+        assumeTrue(available("plans") && available("plan_saves"), "OPENKNIGHTS_DEV_DIR / OPENKNIGHTS_ORIGINALS not set: local-only test skipped")
+        val saves = vectors("plan_saves")!!.arr("saves").associate { it.asObj.str("id") to it.asObj }
+        val doc = vectors("plans")!!
+        blobs = doc.obj("blobs")
+        val inputs = inputs()
+        val catalog = doc.obj("catalog")
+        val rngPolicy = doc.obj("rng_policy")
+        val releaseEvents = doc.obj("events")
+        val ladderEvents = jobj("profile" to Events.PROFILE, "activities" to doc.arr("event_defs"), "exchanges" to JArr())
+        val fallbackProfile = saves.values.firstNotNullOf { it["character_profile"] as? JObj }
+        var ran = 0
+        for ((i, v) in doc.arr("vectors").withIndex()) {
+            val vector = v.asObj
+            val save = saves.getValue(vector.str("save"))
+            val opcode = vector.long("opcode").toInt()
+            val payload = vector.str("payload").hexBytes()
+            val now = vector.long("now")
+            installClock(vector.obj("clock"))
+            Events.setActive(if (vector.str("events") == "ladder") ladderEvents.deepCopy() else releaseEvents)
+            val rng = if ((vector["rng"] as io.github.okexodus.openknights.exact.JBool).value) rngPolicy else null
+            val label = "plan $i ${save.str("id")} C$opcode ${vector.str("payload")}"
+            val cur = currentOf(save)
+            val policy = FreshProfile.DeploymentPolicy(cur.characterProfile ?: fallbackProfile)
+            val recorded = vector["result"]
+            if (AcquisitionRoutes.isReadOnly(opcode, payload)) {
+                replay(label, recorded, { AcquisitionRoutes.readOnlyReply(opcode, payload, cur, inputs, catalog, rng, now) }) { rec, (frames, fields) ->
+                    check("$label read-only", true, (rec["read_only"] as? io.github.okexodus.openknights.exact.JBool)?.value)
+                    check("$label frames", framesOf(rec["frames"]!!), framesOf(frames))
+                    check("$label fields", compact(rec["fields"]), compact(fields))
+                }
+            } else {
+                var owned: Owned? = null
+                replay(label, recorded, {
+                    val routed = AcquisitionRoutes.plannerFor(opcode, payload, inputs, catalog, rng, policy, now) { now }
+                    owned = Owned(cur, inputs)
+                    routed to routed.planner(owned!!, cur)
+                }) { rec, (routed, plan) ->
+                    check("$label action", rec.str("action"), routed.action)
+                    check("$label request", compact(rec["request"]), compact(routed.request))
+                    check("$label plan", compact(rec["plan"]), compact(plan.data))
+                    check("$label frames", framesOf(rec["frames"]!!), framesOf(plan.packets))
+                    check("$label owned", compact(rec["owned"]), compact(ownedRecord(owned!!)))
+                    check("$label hashes", compact(rec["hashes"]), compact(hashes(owned!!.state)))
+                }
+            }
+            ran++
+        }
+        println("planners: $ran vectors")
+        report("planners")
+    }
+
+    @Test
+    fun `Fate Store ranking and Rename Card`() {
+        assumeTrue(available("rank") && available("plan_saves"), "OPENKNIGHTS_DEV_DIR / OPENKNIGHTS_ORIGINALS not set: local-only test skipped")
+        val saves = vectors("plan_saves")!!.arr("saves").associate { it.asObj.str("id") to it.asObj }
+        val doc = vectors("rank")!!
+        blobs = doc.obj("blobs")
+        val inputs = inputs()
+        for ((i, v) in doc.arr("record").withIndex()) {
+            val vector = v.asObj
+            replay("record $i", vector["result"], {
+                RouletteRank.record(vector.obj("document").deepCopy(), vector.long("role"), vector["today_score"]!!, vector["total_score"]!!,
+                    vector.str("today"), vector.str("yesterday"))
+            }) { rec, out -> check("record $i", compact(rec), compact(out)) }
+        }
+        for ((i, v) in doc.arr("listing").withIndex()) {
+            val vector = v.asObj
+            val tab = vector.long("tab").toInt()
+            val rows = RouletteRank.listing(vector.obj("document"), tab, vector.str("today"), vector.str("yesterday"), vector.long("threshold"))
+            check("listing $i rows", compact(vector["rows"]), compact(JArr(rows.mapTo(ArrayList()) { jarr(it.first, it.second) })))
+            val role = vector.long("role")
+            val flag = RouletteRank.ownFlag(rows, role, vector["claimed"]?.takeIf { it != JNull })
+            check("listing $i flag", compact(vector["flag"]), compact(jarr(flag.first, flag.second)))
+            val names = LinkedHashMap<Long, ByteArray>()
+            for ((k, n) in vector.obj("names")) names[k.toLong()] = (n as JStr).value.hexBytes()
+            check("listing $i payload", vector.str("payload"), RouletteRank.rankPayload(tab, rows, names, mapOf(role to flag.first)).toHexString())
+        }
+        for ((i, v) in doc.arr("claim").withIndex()) {
+            val vector = v.asObj
+            val cur = currentOf(saves.getValue(vector.str("save")))
+            var owned: Owned? = null
+            replay("claim $i", vector["result"], {
+                owned = Owned(cur, inputs)
+                RouletteRank.planClaim(owned!!, vector["claims"]?.takeIf { it != JNull }, vector.long("rank").toInt(), vector.str("yesterday"))
+            }) { rec, plan ->
+                check("claim $i plan", compact(rec["plan"]), compact(plan.data))
+                check("claim $i frames", framesOf(rec["frames"]!!), framesOf(plan.packets))
+                check("claim $i owned", compact(rec["owned"]), compact(ownedRecord(owned!!).also { it.remove("granted") }))
+                check("claim $i hashes", compact(rec["hashes"]), compact(hashes(owned!!.state)))
+            }
+        }
+        for ((i, v) in doc.arr("rename").withIndex()) {
+            val vector = v.asObj
+            var save = saves.getValue(vector.str("save"))
+            if ((vector["card"] as io.github.okexodus.openknights.exact.JBool).value) save = withItem(save, 10719, 1L + i / 4 % 2)
+            val cur = currentOf(save)
+            var owned: Owned? = null
+            replay("rename $i", vector["result"], {
+                owned = Owned(cur, inputs)
+                Rename.planRename(vector.str("name"), owned!!)
+            }) { rec, plan ->
+                check("rename $i plan", compact(rec["plan"]), compact(plan.data))
+                check("rename $i frames", framesOf(rec["frames"]!!), framesOf(plan.packets))
+                check("rename $i owned", compact(rec["owned"]), compact(ownedRecord(owned!!).also { it.remove("granted") }))
+                check("rename $i hashes", compact(rec["hashes"]), compact(hashes(owned!!.state)))
+            }
+        }
+        for ((i, v) in doc.arr("owns").withIndex()) {
+            val vector = v.asObj
+            val save = saves.getValue(vector.str("save"))
+            check("owns $i", (vector["owns"] as io.github.okexodus.openknights.exact.JBool).value, Rename.ownsCard(currentOf(save)))
+            check("owns_with $i", (vector["owns_with"] as io.github.okexodus.openknights.exact.JBool).value, Rename.ownsCard(currentOf(withItem(save, 10719, 1))))
+            check("owns_zero $i", (vector["owns_zero"] as io.github.okexodus.openknights.exact.JBool).value, Rename.ownsCard(currentOf(withItem(save, 10719, 0))))
+        }
+        for ((i, v) in doc.arr("decode").withIndex()) {
+            val vector = v.asObj
+            replay("decode $i", vector["result"], { Rename.decodeRequest(vector.str("payload").hexBytes()) }) { rec, raw ->
+                check("decode $i raw", rec.str("raw"), raw)
+                val name = rec["name"]!!
+                val actual = try { JStr(FreshProfile.normalizeName(raw)) } catch (e: IllegalArgumentException) { JStr("error: ${e.message}") }
+                check("decode $i name", if (isError(name)) JStr("error: ${(name as JObj).str("message")}") else name, actual)
+            }
+        }
+        report("rank and rename")
+    }
+
+    /** `add_items(save, [(template, count)])` of the exporter: one new stack with the next free uid. */
+    private fun withItem(save: JObj, template: Long, count: Long): JObj {
+        val out = save.deepCopy()
+        val items = out.obj("state").arr("items")
+        val taken = (items + out.arr("inventory_items") + out.arr("acquired_items")).map { (it.asObj.arr("wire_values")[0] as JInt).value.toLong() }
+        items.add(jobj("wire_values" to jarr((taken.maxOrNull() ?: 0L) + 1, template, count), "timed_flag" to 0))
+        return out
     }
 
     private fun inputs() = DailyInputs(io.github.okexodus.openknights.gamedata.GameTables(

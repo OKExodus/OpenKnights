@@ -46,4 +46,44 @@ class G4ShopsMadeUpTest {
         assertEquals(0, ActivityProgress.advance(state, "diamond_spend", 15, 1000).size)
         assertNull(ActivityProgress.claimRow(live))
     }
+
+    @Test
+    fun `shop counts, daily limits and the buy-back list`() {
+        assertEquals("0207000000010000000c00000003000000010500000002000000",
+            Shops.countsPayload(jobj("12" to 3, "7" to 1, "9" to 0), jobj("5" to 2)).toHexString())
+        assertEquals(9L, Shops.dailyLimit(jobj("limit" to 7), 3000))
+        assertEquals(3L, Shops.dailyLimit(jobj("limit" to 3), 0))
+        assertEquals(12L, Shops.dailyLimit(jobj("limit" to 10), 2500))
+        assertEquals("020002000000d204000005000000030000004d00000001000000", Warehouse.listPayload(listOf(
+            jobj("entry" to 2, "template" to 1234, "count" to 5), jobj("entry" to 3, "template" to 77, "count" to 1))).toHexString())
+        assertEquals(jarr(12, 34), Warehouse.decodePair("0c00000022000000".hexBytes(), "C83"))
+    }
+
+    @Test
+    fun `Fate Store ranking lists, flags and records`() {
+        val doc = jobj("profile" to RouletteRank.PROFILE,
+            "days" to jobj("2031-01-02" to jobj("501" to 4500, "502" to 7000, "503" to 100), "2031-01-01" to jobj("501" to 9000)),
+            "total" to jobj("501" to 13500, "502" to 7000, "504" to 7000))
+        val rows = RouletteRank.listing(doc, RouletteRank.TOTAL, "2031-01-02", "2031-01-01", 4000)
+        assertEquals(listOf(501L, 502L, 504L), rows.map { it.first })
+        assertEquals(1 to 3, RouletteRank.ownFlag(rows, 504, null))
+        assertEquals(2 to 2, RouletteRank.ownFlag(rows, 502, io.github.okexodus.openknights.exact.JInt(3)))
+        assertEquals(0 to null, RouletteRank.ownFlag(rows, 999, null))
+        assertEquals("0303f5010000416e6e00bc3400000000f6010000426f00581b00000000f801000000581b00000101",
+            RouletteRank.rankPayload(3, rows, mapOf(501L to "Ann".toByteArray(), 502L to byteArrayOf(0x42, 0x6f, 0, 0x78)), mapOf(504L to 1)).toHexString())
+        val recorded = RouletteRank.record(jobj("profile" to RouletteRank.PROFILE), 505, io.github.okexodus.openknights.exact.JInt(12),
+            io.github.okexodus.openknights.exact.JInt(34), "2031-01-03", "2031-01-02")
+        assertEquals("""{"profile":"roulette_rank_world_v1","days":{"2031-01-03":{"505":12}},"total":{"505":34}}""",
+            io.github.okexodus.openknights.exact.Json.dumps(recorded, itemSeparator = ",", keySeparator = ":"))
+    }
+
+    @Test
+    fun `Rename Card request and name frame`() {
+        assertEquals("Kay", Rename.decodeRequest("4b617900".hexBytes()))
+        assertEquals("0102614b617900", Rename.namePayload("Kay").toHexString())
+        for (bad in listOf("", "00", "4b61", "4b00790000", "ff00")) {
+            val failed = try { Rename.decodeRequest(bad.hexBytes()); false } catch (e: IllegalArgumentException) { true }
+            assertEquals(bad != "00", failed, bad)
+        }
+    }
 }
