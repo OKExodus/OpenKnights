@@ -19,7 +19,7 @@ import java.security.MessageDigest
 
 /**
  * Gift / redeem codes (`gift_codes.py`, C1537 → S1664): each code once per character; its amounts drawn by a seeded
- * RNG recorded in the history; a full bag refuses the whole code.
+ * RNG recorded in the history; a full bag (or, for a hero code, a full hero list) refuses the whole code.
  *
  * Codes are secrets: a code table (`gift-codes.json` of the release data) holds a PBKDF2-SHA256 salt, the iteration
  * count and, per code, only the hex digest of the normalised code (strip + casefold, UTF-8) with its reward. A request
@@ -151,6 +151,15 @@ object GiftCodes {
             frames.add(owned.grantItem(template, amount))
             reward.arr("items").add(jarr(template, amount))
             grants.add(jarr(template, amount))
+        }
+        // Hero codes: whole base heroes, granted as a Mail Reward's heroes are; a full hero list refuses the whole code.
+        for (t in (definition["heroes"] as? JArr) ?: JArr()) {
+            val template = PyDocs.long(t)
+            if (!inputs.heroExists(template)) continue
+            val groups = owned.grantHero(template).second
+            for (key in listOf("add", "book", "god", "activity")) frames.addAll(groups.getValue(key))
+            reward.arr("heroes").add(jarr(template))
+            grants.add(jarr("hero", template))
         }
         document.obj("redeemed")[digest!!] = jobj("at" to now, "items" to grants.size)
         return Plan(jobj("code_hash" to digest, "grants" to grants, "seed" to seed, "gift_codes_after" to document,
