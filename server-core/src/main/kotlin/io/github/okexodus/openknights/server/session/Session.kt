@@ -52,6 +52,7 @@ import io.github.okexodus.openknights.server.game.ChangeJob
 import io.github.okexodus.openknights.server.game.HeroFortify
 import io.github.okexodus.openknights.server.game.ItemFortify
 import io.github.okexodus.openknights.server.store.FortifyResult
+import io.github.okexodus.openknights.server.store.fortifyEquipment
 import io.github.okexodus.openknights.server.store.fortifyHero
 import io.github.okexodus.openknights.server.store.fortifyItemsGear
 import io.github.okexodus.openknights.server.store.fortifyItemsHero
@@ -814,17 +815,16 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         if (opcode == 3779) return secondaryReplaceRoute(payload)
         if (opcode == 3777) return secondaryUnlockRoute(payload)
         if (opcode == 69) return heroFortifyRoute(payload)
-        if (opcode == 81) group(opcode, "gear Fortify")
+        if (opcode == 81) return gearFortifyRoute(payload)
         if (opcode == 71) return evolutionRoute(payload)
         if (opcode == 2083) return leaderEvolutionRoute(payload)
-        if (opcode == 91 || opcode == 2641) return itemFortifyRoute(opcode, payload)
-        if (opcode == 93) group(opcode, "EXP-item Fortify")
+        if (opcode == 91 || opcode == 93 || opcode == 2641) return itemFortifyRoute(opcode, payload)
         if (opcode == 2561) return changeJobRoute(payload)
         if (opcode == 1569) group(opcode, "rename")
         if (opcode == 1537) group(opcode, "gift code")
         if (opcode == 643 || opcode == 645) group(opcode, "roulette rank")
-        if (opcode in setOf(2049, 2629, 2593, 2817)) group(opcode, "gear / jewelry evolve")
-        if (opcode in Routes.FORMATION) group(opcode, "formation")
+        if (opcode in setOf(2049, 2629, 2593, 2817)) return equipEvolveRoute(opcode, payload)
+        if (opcode in Routes.FORMATION) return formationRoute(opcode, payload)
         if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
         if (opcode == 705) group(opcode, "rank list")
         if (opcode in Routes.ACQUISITION) return acquisitionRoute(opcode, payload)
@@ -909,6 +909,31 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             activityPayload = PlayerSections.encodeSection("game_activities", result.activitySection!!),
             goldPayload = TransactionPackets.goldPropertyPayload(result.result.int("gold_after"))) +
             dailyCounters("fortify_hero", jobj("material_uids" to result["material_uids"]))
+    }
+
+    /** C81 gear Fortify (docs/GEAR_FORTIFY_CONTRACT.md): commit first, then 106, 108, 102, 98 and 128 only when Gold was charged. */
+    private fun gearFortifyRoute(payload: ByteArray): List<Frame> {
+        val result: FortifyResult
+        try {
+            if (!queriesSent) throw HeroFortify.FortifyRejected("Complete initialization queries before fortifying gear")
+            val request = HeroFortify.decodeFortifyRequest(payload)
+            result = stateStore!!.fortifyEquipment(request, characterId!!, deploymentPolicy(), service.fortifyInputs,
+                "authenticated-client", "Native opcode81 gear Fortify")
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_gear_fortify", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("fortify_internal_error", "character_id" to characterId, "kind" to "gear", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val settlement = result.result.obj("settlement")
+        log("transaction_committed", "action" to "fortify_equipment", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "material_uids" to result["material_uids"], "awarded_exp" to result["awarded_exp"],
+            "gold_cost" to result["gold_cost"], "levels_gained" to settlement["levels_gained"], "reached_cap" to settlement["reached_cap"])
+        return HeroFortify.equipmentFortifyPackets(result.plan, TransactionPackets.goldPropertyPayload(result.result.int("gold_after"))) +
+            dailyCounters("fortify_equipment", jobj("material_uids" to result["material_uids"]))
     }
 
     /**
@@ -1252,6 +1277,14 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             return listOf(6 to TransactionPackets.errorPayload(102))
         }
     }
+
+    // --- gear / jewelry evolve, formation ------------------------------------------------------------------------------
+
+    /** Gear C2049 / jewelry C2629 evolve; the excluded up-star C2593 / C2817 (`_equip_evolve_route`). */
+    private fun equipEvolveRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "gear / jewelry evolve")
+
+    /** Gear / jewelry / rune equip, rune combine, lineup, position, captain (`_formation_route`). */
+    private fun formationRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "formation")
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */
     private fun legacyHandle(opcode: Int, payload: ByteArray): List<Frame> {
