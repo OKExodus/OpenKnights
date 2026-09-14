@@ -286,4 +286,59 @@ object Castle {
     }
 
     fun rescueListPayload(remaining: Long = 6, second: Long = 2): ByteArray = PyDocs.bytes(listOf(remaining, second, 0))
+
+    // --- the Castle actions (C161, C545, C97, C2179, C739, C737, C769, C745, C749, C781) --------------------------------
+
+    const val C_COLLECT = 161
+    const val C_BUILDING = 545
+    const val C_TECH = 97
+    const val C_GUILD_TECH = 2179
+    const val C_TRANSMUTE = 739
+    const val C_ALCHEMY_REFRESH = 737
+    const val C_BUY_SLOT = 769
+    const val C_WORK = 745
+    const val C_RELEASE = 749
+    const val C_GUARD = 781
+
+    /** `u8` request (`decode_u8`). */
+    fun decodeU8(payload: ByteArray, opcode: Int): Long = throw NotPorted("castle.decode_u8")
+
+    /** `u32` request (`decode_u32`). */
+    fun decodeU32(payload: ByteArray, opcode: Int): Long = throw NotPorted("castle.decode_u32")
+
+    /** C161 collect (`plan_collect`); `document` = the stored `castle_state` or null. */
+    fun planCollect(kind: Long, owned: Owned, inputs: DailyInputs, document: JValue?, guildDoc: JObj, now: Long, servedTime: Long,
+                    ownerKey: String, forced: JValue? = null): Plan = throw NotPorted("castle.plan_collect")
+
+    /** C545 building upgrade (`plan_building`). */
+    fun planBuilding(ident: Long, owned: Owned, inputs: DailyInputs): Plan = throw NotPorted("castle.plan_building")
+
+    /** C97 Magic House tech (`plan_tech`). */
+    fun planTech(ident: Long, owned: Owned, inputs: DailyInputs): Plan = throw NotPorted("castle.plan_tech")
+
+    /** C2179 personal Guild Tech (`plan_guild_tech`). */
+    fun planGuildTech(ident: Long, owned: Owned, inputs: DailyInputs, document: JObj): Plan = throw NotPorted("castle.plan_guild_tech")
+
+    /** C739 Transmute (`plan_transmute`). */
+    fun planTransmute(owned: Owned, inputs: DailyInputs, document: JValue?, guildDoc: JObj, now: Long, ownerKey: String,
+                      forcedShards: JValue? = null): Plan = throw NotPorted("castle.plan_transmute")
+
+    /** C737 alchemy refresh (`plan_alchemy_refresh`). */
+    fun planAlchemyRefresh(owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long, ownerKey: String): Plan =
+        throw NotPorted("castle.plan_alchemy_refresh")
+
+    /** C769 servant slot purchase (`plan_buy_slot`). */
+    fun planBuySlot(owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan =
+        throw NotPorted("castle.plan_buy_slot")
+
+    /** C745 servant work (`plan_work`). */
+    fun planWork(ident: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan = throw NotPorted("castle.plan_work")
+
+    /** C749 servant release (`plan_release`). */
+    fun planRelease(ident: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan =
+        throw NotPorted("castle.plan_release")
+
+    /** C781 guard (`plan_guard`). */
+    fun planGuard(ident: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan =
+        throw NotPorted("castle.plan_guard")
 }

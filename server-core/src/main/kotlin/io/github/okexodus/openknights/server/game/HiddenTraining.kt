@@ -16,6 +16,7 @@ import io.github.okexodus.openknights.exact.toHexString
 import io.github.okexodus.openknights.protocol.BattleReport
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
 
 /**
@@ -455,4 +456,93 @@ object HiddenTraining {
         for (s in slots) w.raw(slotPayload(s.asObj, now))
         return w.bytes()
     }
+
+    // --- the training room actions (C1763, C1767, C1769, C1777, C1779) ---------------------------------------------------
+
+    /** C1767 `u32 room, u8 seat` (`decode_train`). */
+    fun decodeTrain(payload: ByteArray): JObj = throw NotPorted("hidden_training.decode_train")
+
+    /** C1767 seat (`plan_train`); `document` = the stored `training_state` or null. */
+    fun planTrain(request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan =
+        throw NotPorted("hidden_training.plan_train")
+
+    /** C1777 claim (`plan_claim`). */
+    fun planClaim(owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan = throw NotPorted("hidden_training.plan_claim")
+
+    /** C1763 `u8 type` room creation (`plan_create_room`). */
+    fun planCreateRoom(roomType: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan =
+        throw NotPorted("hidden_training.plan_create_room")
+
+    /** C1769 room password (`plan_password`). */
+    fun planPassword(request: RoomSecret, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan =
+        throw NotPorted("hidden_training.plan_password")
+
+    /** C1779 `u32 room` more time (`plan_add_time`). */
+    fun planAddTime(request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan =
+        throw NotPorted("hidden_training.plan_add_time")
+
+    // --- the forge (C1643, C3747, C3731, C3753) --------------------------------------------------------------------------
+
+    const val C_SMITH = 1643
+    const val C_SMITH_NO_CD = 3731
+    const val C_CRAFT = 3747
+    const val C_CRAFT_NO_CD = 3753
+
+    /** C1643 / C3747 pick (`decode_pick`). */
+    fun decodePick(payload: ByteArray, opcode: Int): JObj = throw NotPorted("hidden_training.decode_pick")
+
+    /** C3731 / C3753 `u32 slot` (`decode_u32_slot`). */
+    fun decodeU32Slot(payload: ByteArray, opcode: Int): JObj = throw NotPorted("hidden_training.decode_u32_slot")
+
+    /** C1643 Blacksmith (`plan_smith`); `document` = the stored `forge_state` or null. */
+    fun planSmith(request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan =
+        throw NotPorted("hidden_training.plan_smith")
+
+    /** C3747 Crafting (`plan_craft`). */
+    fun planCraft(request: JObj, owned: Owned, current: StateStore.Current, inputs: DailyInputs, document: JValue?, now: Long): Plan =
+        throw NotPorted("hidden_training.plan_craft")
+
+    /** C3731 / C3753 cooldown removal (`plan_no_cd`, kind "smith" / "craft"). */
+    fun planNoCd(kind: String, request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan =
+        throw NotPorted("hidden_training.plan_no_cd")
+
+    // --- Hero Set Out (C2113 … C2125) ------------------------------------------------------------------------------------
+
+    const val C_EXPLORE_HERO = 2113
+    const val C_EXPLORE_GO = 2115
+    const val C_EXPLORE_REFRESH = 2117
+    const val C_EXPLORE_CLAIM = 2119
+    const val C_EXPLORE_BUY = 2121
+    const val C_EXPLORE_RETURN = 2123
+    const val C_EXPLORE_CANCEL = 2125
+
+    /** C2113 / C2115 pick (`decode_explore_pick`). */
+    fun decodeExplorePick(payload: ByteArray, opcode: Int): JObj = throw NotPorted("hidden_training.decode_explore_pick")
+
+    /** C2117 refresh (`decode_refresh`). */
+    fun decodeRefresh(payload: ByteArray): JObj = throw NotPorted("hidden_training.decode_refresh")
+
+    /** C2119 / C2123 / C2125 `u8 slot` (`decode_u8_slot`). */
+    fun decodeU8Slot(payload: ByteArray, opcode: Int): JObj = throw NotPorted("hidden_training.decode_u8_slot")
+
+    fun planExploreHero(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long, ownerKey: String): Plan =
+        throw NotPorted("hidden_training.plan_explore_hero")
+
+    fun planExploreGo(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan =
+        throw NotPorted("hidden_training.plan_explore_go")
+
+    fun planExploreRefresh(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long, servedTime: Long,
+                           ownerKey: String): Plan = throw NotPorted("hidden_training.plan_explore_refresh")
+
+    fun planExploreReturn(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long, ownerKey: String): Plan =
+        throw NotPorted("hidden_training.plan_explore_return")
+
+    fun planExploreClaim(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long, ownerKey: String): Plan =
+        throw NotPorted("hidden_training.plan_explore_claim")
+
+    fun planExploreBuy(owned: Owned, inputs: DailyInputs, document: JObj, now: Long, servedTime: Long): Plan =
+        throw NotPorted("hidden_training.plan_explore_buy")
+
+    fun planExploreCancel(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan =
+        throw NotPorted("hidden_training.plan_explore_cancel")
 }
