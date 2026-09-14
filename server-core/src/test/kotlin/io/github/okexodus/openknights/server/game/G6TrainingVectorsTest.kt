@@ -263,20 +263,9 @@ class G6TrainingVectorsTest {
 
     // --- planners -------------------------------------------------------------------------------------------------------
 
-    /** The route of one request; C1779 decodes with Castle.decodeU32 (the other slice): a local stand-in until it lands. */
-    private fun route(opcode: Int, payload: ByteArray, inputs: DailyInputs, save: JObj, now: Long, served: Long): DailyRoutes.Routed = try {
+    /** The route of one request (`planner_for`). */
+    private fun route(opcode: Int, payload: ByteArray, inputs: DailyInputs, save: JObj, now: Long, served: Long): DailyRoutes.Routed =
         DailyRoutes.plannerFor(opcode, payload, inputs, seedsOf(save), now, { served }, DailyRoutes.WorldContext(), save.str("owner_key"))
-    } catch (e: NotPorted) {
-        if (opcode != HiddenTraining.C_ROOM_ADD_TIME) throw e
-        if (payload.size != 4) throw Acquisition.Rejected("C$opcode is u32")
-        val request = jobj("room" to io.github.okexodus.openknights.protocol.WireReader(payload).number('I'))
-        DailyRoutes.Routed("training_add_time", request) { owned, current ->
-            HiddenTraining.planAddTime(request, owned, inputs, PyDocs.get(current, "training_state"), now, served).also {
-                it["now_epoch"] = now
-                it["served_time"] = served
-            }
-        }
-    }
 
     private fun planners(name: String) {
         assumeTrue(available("saves", name), "OPENKNIGHTS_DEV_DIR / OPENKNIGHTS_ORIGINALS not set: local-only test skipped")

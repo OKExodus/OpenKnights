@@ -327,29 +327,6 @@ object CardReset {
     }
 
     /**
-     * `DailyInputs.card_property_value(kind, record)`: `Formula::GetEquipPropertyValue` / `GetJewelPropertyValue` of a
-     * record, the enchant return's base. (The Inputs.kt stub of the same name stays for the lead; this is its port.)
-     */
-    fun cardPropertyValue(inputs: DailyInputs, kind: String, record: JArr): Long {
-        if (record.size != 7) {
-            throw PyValues.ValueError(if (record.size > 7) "too many values to unpack (expected 7)" else "not enough values to unpack (expected 7, got ${record.size})")
-        }
-        val template = num(record[1])
-        val level = num(record[2])
-        val grade = num(record[4])
-        val flag = num(record[5])
-        val extra = num(record[6])
-        if (kind == "gear") {
-            val i = PkEquipEvolveContract.gearEvolveInputs(inputs.tables, template, grade)
-            return EquipEvolve.equipPropertyValue(level, flag, extra, i.long("base_108"), i.long("growth_109"), i.long("potential_before"),
-                i.long("property_912"))
-        }
-        val i = PkEquipEvolveContract.jewelEvolveInputs(inputs.tables, template, grade)
-        return EquipEvolve.jewelPropertyValue(level, flag, extra, i.long("base_108"), i.long("ratio_110"), i.long("potential_before"),
-            i.long("property_956"))
-    }
-
-    /**
      * The card description the returns read (`return_card`): hero Astral skill ids, Power Up dev 15–18, stats 4/6/8/10,
      * Rebirth Level 19 / Tier 21, ascension 24; gear / jewel: record fields, enchant = the record's last u32.
      */
@@ -369,7 +346,7 @@ object CardReset {
         }
         val record = card.record!!
         return ResetReturns.Described(card.kind, num(record[1]), num(record[2]), num(record[3]), grade = num(record[4]), superFlag = num(record[5]),
-            enchant = num(record[6]), propertyValue = if (num(record[6]) != 0L) cardPropertyValue(inputs, card.kind, record) else null)
+            enchant = num(record[6]), propertyValue = if (num(record[6]) != 0L) inputs.cardPropertyValue(card.kind, record) else null)
     }
 
     /**

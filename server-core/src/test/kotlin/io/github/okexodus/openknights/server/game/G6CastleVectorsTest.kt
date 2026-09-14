@@ -170,7 +170,7 @@ class G6CastleVectorsTest {
         }
         for ((i, v) in doc.arr("property_value").withIndex()) {
             val vector = v.asObj
-            replay("property_value $i", vector["result"], { CardReset.cardPropertyValue(inputs, vector.str("kind"), vector.arr("record")) }) { rec, r ->
+            replay("property_value $i", vector["result"], { inputs.cardPropertyValue(vector.str("kind"), vector.arr("record")) }) { rec, r ->
                 check("property_value $i ${compact(vector["record"])}", compact(rec), compact(JInt(r)))
             }
         }
