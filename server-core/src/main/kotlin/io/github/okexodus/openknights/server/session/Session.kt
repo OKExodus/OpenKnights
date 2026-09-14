@@ -1074,6 +1074,31 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return packets
     }
 
+    /**
+     * The free top-up pushed by the loopback gateway (`recharge`, docs/ACQUISITION_CONTRACT.md section 10): runs like a
+     * game request of this session; returns (packets, plan).
+     */
+    fun recharge(body: io.github.okexodus.openknights.exact.JValue): Pair<List<Frame>, io.github.okexodus.openknights.server.game.Plan> {
+        val request = io.github.okexodus.openknights.server.game.Recharge.decodeRequest(body)
+        val catalog = service.acquisitionCatalog
+        val inputs = service.inputs
+        val policy = deploymentPolicy()
+        if (kind != "game" || closed || !queriesSent || characterId == null) throw Acquisition.Rejected("No initialized game session for this login")
+        if (catalog == null || policy == null) throw Acquisition.Rejected("Recharge needs the captured catalog and a store-backed character")
+        stateStore = service.auth.resolveCharacter(token!!, characterId!!)
+        val now = service.clock.now()
+        val (result, plan) = stateStore!!.acquisitionTransaction("acquire_recharge", characterId!!, policy, inputs, "authenticated-client",
+            "Free top-up (operator policy 2026-09-11)", detailExtra = jobj("request" to request)) { owned, current ->
+            io.github.okexodus.openknights.server.game.Recharge.planRecharge(request, owned, inputs, catalog, current.document("recharge_ledger"),
+                servedTime(current, now), now, current.document("month_cards"))
+        }
+        log("transaction_committed", "action" to "acquire_recharge", "character_id" to characterId, "revision" to result["revision"],
+            "goods_id" to plan["goods_id"], "diamonds" to plan["diamonds"],
+            "vip_level" to listOf(plan["vip_level_before"], plan["vip_level_after"]),
+            "activities_updated" to plan["activities_updated"], "reply_opcodes" to plan.packets.map { it.first })
+        return plan.packets to plan
+    }
+
     /** The gift code C1537 (`_gift_code_route`, gift_codes.py): grants, then S1664 01 + Reward; unknown / used codes answer S1664. */
     private fun giftCodeRoute(payload: ByteArray): List<Frame> {
         val inputs = service.inputs

@@ -31,10 +31,18 @@ object AuthGateway {
         Response(401, """{"error":"Credentials, session or character selection rejected"}""")
     } catch (e: Conflict) {
         Response(409, Json.dumps(jobj("error" to (e.message ?: ""))))
+    } catch (e: io.github.okexodus.openknights.server.game.Acquisition.Rejected) {
+        // Fixed local texts of the recharge planner (unknown pack, monthly card, no game session).
+        Response(409, Json.dumps(jobj("error" to (e.message ?: ""))))
     } catch (e: NoSuchElementException) {
         Response(404, """{"error":"Not found"}""")
     } catch (e: IllegalArgumentException) {
         Response(400, """{"error":"Invalid request"}""")
+    } catch (e: io.github.okexodus.openknights.server.game.NotPorted) {
+        throw e
+    } catch (e: Exception) {
+        // Do not expose exception details, request bodies, paths, or credentials.
+        Response(500, """{"error":"Local authentication is unavailable"}""")
     }
 
     fun dispatch(service: Service, path: String, body: JValue): JObj {
@@ -52,10 +60,16 @@ object AuthGateway {
                 jobj("token" to issued.token, "ingame_select" to true, "expires_at_utc" to issued.session.expiresAtUtc)
             }
             else -> {
+                // The free top-up: granted on the login's newest live game session, its frames pushed there (`deliver_recharge`).
                 val token = request.strOrNull("token") ?: throw IllegalArgumentException("Recharge requires the session token")
                 service.auth.authenticate(token)
-                service.log.log("not_implemented", "service" to "http", "feature" to "free top-up (/api/recharge)")
-                throw Conflict("No active game session for this login")
+                val target = service.liveGameSessions.entries.lastOrNull { (s, _) -> s.token == token && s.characterId != null && s.queriesSent && !s.closed }
+                    ?: throw io.github.okexodus.openknights.server.game.Acquisition.Rejected("No active game session for this login")
+                val (packets, plan) = target.key.recharge(request)
+                target.value(packets)
+                service.log.log("response_batch", "service" to "game", "opcodes" to packets.map { it.first }, "pushed" to "recharge",
+                    "bytes" to packets.sumOf { it.second.size + 4 })
+                jobj("delivered" to true, "goods_id" to plan["goods_id"], "diamonds" to plan["diamonds"], "vip_level" to plan["vip_level_after"])
             }
         }
     }
