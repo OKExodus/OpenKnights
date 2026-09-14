@@ -8,16 +8,18 @@ import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.protocol.BattleReport
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.game.WorldParticipants.Participant
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
 
 /**
- * The arena outside combat, query side (`arena.py`): the panel (C417 → S448) and the ladder top list (C421 → S450). The
- * ladder is the shared world's participants, kept in the world document `arena_ladder`; the daily rank reward (C423)
- * with its 22:00 settlement belongs to the arena actions port. Challenges (C419) are combat.
+ * The arena outside combat (`arena.py`): the panel (C417 → S448), the ladder top list (C421 → S450) and the daily
+ * rank reward (C423) with its 22:00 settlement. The ladder is the shared world's participants, kept in the world
+ * document `arena_ladder`. Challenges (C419) are combat.
  */
 object Arena {
     const val C_ARENA_OPEN = 417
@@ -192,7 +194,63 @@ object Arena {
 
     // --- the Arena daily reward (C423) ------------------------------------------------------------------------------
 
-    /** C423 the daily ranking reward (`plan_reward`); `document` = the stored `arena_state` or null. */
+    const val S_ARENA_REWARD = 452
+    /** S578 [31, 9, total reputation] after the claim. */
+    const val ACH_REPUTATION = 31L
+    const val ROLE_REPUTATION = 12L
+    /** "Already claimed Arena Rewards". */
+    const val ERROR_CLAIMED = 15000
+    /** "New player can only claim Arena rewards from the second play day". */
+    const val ERROR_NEW_PLAYER = 15006
+    private val U32_MAX: BigInteger = BigInteger.valueOf(0xFFFFFFFFL)
+
+    /**
+     * The reference's `prestige.achievement_frame`: S578 [31, step, Reputation] (the captured form after the Arena
+     * reward); null without the kind-31 row.
+     */
+    private fun achievementFrame(owned: Owned): Frame? {
+        val subsystems = owned.state["subsystems"] as? JObj ?: JObj()
+        val achievements = subsystems["achievements"] as? JObj ?: JObj()
+        for (entry in (achievements["entries"] as? JArr) ?: JArr()) {
+            val wire = entry.asObj.arr("wire_values")
+            if (wire[0] == JInt(ACH_REPUTATION)) {
+                val reputation = try { owned.roleBits(ROLE_REPUTATION) } catch (e: Exception) { BigInteger.ZERO }
+                wire[2] = JInt(reputation.min(U32_MAX))
+                if (wire.size != 3) throw IllegalArgumentException("pack expected 3 items for packing (got ${wire.size})")
+                return Acquisition.S_ACHIEVEMENT to WireWriter().number('B', wire[0]).number('B', wire[1]).number('I', wire[2]).bytes()
+            }
+        }
+        return null
+    }
+
+    /**
+     * C423 → S578 [31, 9, reputation], S64 / S68 item, S128 Gold + Reputation, S452 Reward, S448 (capture observed;
+     * arena.csv floor tier) (`plan_reward`); [document] = the stored `arena_state` or null.
+     */
     fun planReward(owned: Owned, inputs: DailyInputs, document: JValue?, rank: Long, now: Long,
-                   rows: List<Pair<Long, Participant>>): Plan = throw NotPorted("arena.plan_reward")
+                   rows: List<Pair<Long, Participant>>): Plan {
+        val doc = arenaView(document, rank, now, joinedAtOf(owned.current))
+        if (PyDocs.at(doc, "reward_rank") == JInt(0)) throw Acquisition.Rejected("No settled arena rank yet", ERROR_NEW_PLAYER)
+        if (Py.truthy(PyDocs.at(doc, "claimed"))) throw Acquisition.Rejected("Arena reward already claimed", ERROR_CLAIMED)
+        val tier = inputs.arenaReward(PyDocs.long(doc["reward_rank"])) ?: throw Acquisition.Rejected("No arena.csv tier", ERROR_NEW_PLAYER)
+        val reward = Acquisition.emptyReward()
+        owned.roleAdd(Acquisition.GOLD, tier.long("gold"))
+        owned.roleAdd(ROLE_REPUTATION, tier.long("reputation"))
+        reward["gold"] = tier["gold"]!!
+        reward["reputation"] = tier["reputation"]!!
+        val frames = ArrayList<Frame>()
+        achievementFrame(owned)?.let { frames.add(it) }                 // S578 [31, step, Reputation] (captured first)
+        if (tier.long("item") != 0L && tier.long("count") != 0L) {
+            frames.add(owned.grantItem(tier.long("item"), tier.long("count")))
+            reward.arr("items").add(jarr(tier["item"], tier["count"]))
+        }
+        frames.add(Acquisition.S_ROLE to Acquisition.roleUpdatePayload(listOf(Acquisition.GOLD, ROLE_REPUTATION)
+            .map { Triple(it, owned.role(it).long("tag"), owned.roleBits(it)) }))
+        frames.addAll(Prestige.promote(owned, inputs))                    // P-TITLE-AUTO: S128 {22} when a new title is reached
+        doc["claimed"] = JInt(1)
+        frames.add(S_ARENA_REWARD to BattleReport.encodeReward(reward))
+        frames.add(S_ARENA_INFO to infoPayload(doc, rank, rows))
+        return Plan(jobj("reward_rank" to doc["reward_rank"], "tier" to tier["key"], "arena_state_after" to doc,
+            "evidence_class" to "capture_observed_csv_calculation"), frames)
+    }
 }
