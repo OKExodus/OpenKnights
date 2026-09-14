@@ -37,6 +37,7 @@ object Castle {
     const val S_BUILDING = 640
     const val S_GUILD_TECH = 2330
     const val S_ALCHEMY = 800
+    const val S_CATCH_LIST = 804
     const val S_RESCUE_LIST = 806
     const val S_SERVANT_MSG = 808
     const val S_ITEM_CAPACITY = 72
@@ -263,5 +264,36 @@ object Castle {
     }
 
     /** S806 `u8 challenges remaining, u8, u8 n`: the friends' recruits — none offline. */
+    /** The reference's participant equality (a frozen record: every field but `extra`, the lineup entries by value). */
+    private fun sameParticipant(a: WorldParticipants.Participant, b: WorldParticipants.Participant): Boolean =
+        a === b || (a.participantId == b.participantId && a.kind == b.kind && a.nameRaw.contentEquals(b.nameRaw) && a.level == b.level &&
+            a.vip == b.vip && a.reputation == b.reputation && a.power == b.power && a.leaderTemplate == b.leaderTemplate &&
+            a.characterId == b.characterId && a.created == b.created && a.gender == b.gender && a.lineup.size == b.lineup.size &&
+            a.lineup.indices.all { i ->
+                val x = a.lineup[i]
+                val y = b.lineup[i]
+                x.position == y.position && x.template == y.template && x.level == y.level && x.awaken == y.awaken &&
+                    x.rebornLevel == y.rebornLevel && x.uid == y.uid
+            })
+
+    /**
+     * S804 `u8 cost, u8 cost, u8 n1, n1 × (u32 id, name, u32 level, u32 hero, u8 role), u8 n2, n2 × (…, u8 flag)` from
+     * the shared world (`catch_list_payload`): "Defeated by Me" = up to six at or below the player's level (highest
+     * first), "Enemy" = up to six of the rest (lowest first); nobody is a recruit offline (role 0).
+     */
+    fun catchListPayload(participants: List<WorldParticipants.Participant>, ownId: JValue?, ownLevel: Long, cost: Long = 5): ByteArray {
+        val own = (ownId as? JInt)?.value
+        val others = participants.filter { own == null || BigInteger.valueOf(it.participantId) != own }
+        val below = others.filter { it.level <= ownLevel }.sortedByDescending { it.level }.take(6)
+        val above = others.filter { p -> below.none { sameParticipant(p, it) } }.sortedBy { it.level }.take(6)
+        fun row(p: WorldParticipants.Participant, flag: Boolean): ByteArray = WireWriter().number('I', p.participantId).raw(p.nameRaw)
+            .raw(byteArrayOf(0)).number('I', p.level).number('I', p.leaderTemplate).raw(if (flag) byteArrayOf(0, 0) else byteArrayOf(0)).bytes()
+        val w = WireWriter().raw(PyDocs.bytes(listOf(cost, cost, below.size.toLong())))
+        for (p in below) w.raw(row(p, false))
+        w.raw(PyDocs.bytes(listOf(above.size.toLong())))
+        for (p in above) w.raw(row(p, true))
+        return w.bytes()
+    }
+
     fun rescueListPayload(remaining: Long = 6, second: Long = 2): ByteArray = PyDocs.bytes(listOf(remaining, second, 0))
 }
