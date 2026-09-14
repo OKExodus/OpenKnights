@@ -12,6 +12,7 @@ import io.github.okexodus.openknights.gamedata.TableSource
 import io.github.okexodus.openknights.server.store.StateStore
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.Assertions.assertTrue
 import org.junit.jupiter.api.Test
 import java.math.BigInteger
 
@@ -31,16 +32,22 @@ class G4ItemsMadeUpTest {
     private val inputs = DailyInputs(GameTables(TextTables(mapOf(
         "item.csv" to "101,102,104,105,106,107,110,203,204,205,206,207,305\n" +
             "9101,1,1,0,90001,500,0,0,0,0,0,,1\n9102,2,1,0,80001,77,0,0,0,0,0,,1\n9103,3,4,0,0,88,0,0,0,0,0,,2\n" +
-            "9104,4,2,0,0,0,0,0,0,0,0,,1\n9105,5,2,0,0,0,0,0,0,0,0,,1\n9106,6,2,0,0,0,0,40,0,0,0,,1\n",
+            "9104,4,2,0,0,0,0,0,0,0,0,,1\n9105,5,2,0,0,0,0,0,0,0,0,,1\n9106,6,2,0,0,0,0,40,0,0,0,,1\n9107,7,2,0,0,0,0,0,0,0,0,,1\n",
         "box.csv" to "101,102,103,104,105,106,107,108,109,110,111,112,113,114,115,116,117,201,202,203\n" +
             "1,77,1,30,0,0,0,0,0,0,9104,2,0,0,0,0,0,0,0,0\n2,77,1,70,40,0,0,0,0,0,0,0,0,0,0,0,0,0,0,0\n" +
             "3,77,2,100,0,0,0,0,0,0,9106,1,0,0,0,0,0,0,0,0\n4,77,3,5,0,0,0,0,0,0,9104,0,0,0,0,0,0,0,0,0\n" +
             "5,77,3,5,0,0,0,0,0,0,9105,3,0,0,0,0,0,0,0,0\n",
         "hecheng.csv" to "101,102,103,104,105,106,107,108,109,110,111,112,113,115,201,202,203,301,302,303,304\n" +
             "88,81000,9106,10,9103,3,9105,1,0,0,0,0,1,0,0,0,0,0,0,0,0\n",
-        "item_rh.csv" to "101,102,103\n9105,9106,4\n9104,9101,2\n",
-        "property.csv" to "101,102\n970,100\n971,50\n",
-        "hero.csv" to "101,104,140\n4242,5,802\n4343,4,0\n4444,6,0\n",
+        "item_rh.csv" to "101,102,103\n9105,9106,4\n9104,9101,2\n9107,20001,7\n",
+        "property.csv" to "101,102\n970,100\n971,50\n533,2000\n902,4\n",
+        "hero.csv" to "101,103,104,132,140,143,145,146,511,512,513,514,996,997\n4242,1,5,7,802,0,3000,1000,300,40,30,20,20,30\n" +
+            "4343,1,4,7,0,0,0,0,10,10,10,10,0,0\n4444,1,6,7,0,0,0,0,10,10,10,10,0,0\n",
+        "jinhua.csv" to "101,102,103,104,503\n1,5,1,7,500\n2,5,2,7,700\n3,5,3,7,900\n",
+        "jinhuazhujue.csv" to "101,102,103,104,503\n",
+        "herojuexing.csv" to "101\n",
+        "herojuexingskill.csv" to "101\n",
+        "herorh.csv" to "101,102,103,104,105,106,107,108,109,110,116,119,121,122\n51,5,0,9105,4,1,9107,1,2,6000,3,10000,9104,5\n",
         "text.csv" to "101,102\n801,##0## got a ##1##-Star ##2##!\n802,Sir Test\n"))))
 
     private fun field(id: Int, tag: Int, bits: Long) = jobj("id" to id, "value" to jobj("tag" to tag, "bits" to bits))
@@ -162,7 +169,7 @@ class G4ItemsMadeUpTest {
         assertEquals("""{"uids":[5,6]}""", Json.compact(Summon.decodeRefineRequest(byteArrayOf(2, 5, 0, 0, 0, 6, 0, 0, 0))))
         assertEquals(listOf(9L), Compose.decodeUidList(byteArrayOf(1, 9, 0, 0, 0), "C2051"))
         assertEquals("C2633 is u8 n (>= 1), n x u32", assertThrows(Acquisition.Rejected::class.java) { Compose.decodeUidList(byteArrayOf(0), "C2633") }.message)
-        assertEquals("""{"target":4,"materials":[]}""", Json.compact(Compose.decodeFuseRequest(byteArrayOf(4, 0, 0, 0, 0))))
+        assertEquals("""{"target":4,"materials":[9]}""", Json.compact(Compose.decodeFuseRequest(byteArrayOf(4, 0, 0, 0, 1, 9, 0, 0, 0))))
         assertEquals("""{"entries":[[3,2]]}""", Json.compact(Compose.decodeItemRefineRequest(byteArrayOf(1, 0, 0, 0, 3, 0, 0, 0, 2, 0, 0, 0))))
         assertEquals("C2055 is u32 target, u8 n (>= 1), n x u32",
             assertThrows(Acquisition.Rejected::class.java) { Compose.decodeComposeRequest(byteArrayOf(4, 0, 0, 0, 0), "C2055") }.message)
@@ -179,6 +186,72 @@ class G4ItemsMadeUpTest {
             hex(SummonReports.summonFrames(entries, inputs, -34)))
         val doc = jobj("entries" to JArr((0 until 7).mapTo(ArrayList()) { SummonReports.entry(1, "a".toByteArray(), 4242001, it.toLong()) }))
         assertEquals((1..6).map { it.toLong() } + listOf(1234L, 1234L), SummonReports.append(doc, entries).map { (it as JObj).long("at") })
+    }
+
+    // --- operator fixes 2026-09-14 ---
+
+    @Test
+    fun `a fuse needs at least one material`() {
+        val refused = assertThrows(Acquisition.Rejected::class.java) { Compose.decodeFuseRequest(byteArrayOf(4, 0, 0, 0, 0)) }
+        assertEquals("C1249 is u32 target, u8 n (>= 1), n x u32" to 102, refused.message to refused.code)
+    }
+
+    @Test
+    fun `a currency product of an item refine is a role grant after the item stacks`() {
+        val cur = current()
+        cur.state.arr("items").add(item(506, 9107, 4))
+        val owned = Owned(cur, inputs)
+        val plan = Compose.planItemRefine(jarr(jarr(506, 2), jarr(504, 1)), owned, inputs)
+        assertEquals(REFINE_PLAN, Json.compact(plan.data))
+        assertEquals(REFINE_PACKETS, hex(plan.packets))
+        assertEquals(1014L, gold(owned))
+    }
+
+    @Test
+    fun `a successful fuse keeps the hero's progress`() {
+        val cur = current()
+        cur.state["heroes"] = JArr((listOf(Json.loads(TARGET_FIELDS)) + (Json.loads(MATERIAL_FIELDS) as JArr)).toMutableList())
+        cur.state["offline_hero_uids"] = jarr(601, 602, 603)
+        cur.state.arr("items").add(item(507, 9107, 5))
+        val owned = Owned(cur, inputs)
+        val plan = Compose.planFuse(jobj("target" to 601, "materials" to jarr(602, 603)), owned, inputs, JObj(), BigInteger.valueOf(77))
+        assertEquals(FUSE_PLAN, Json.compact(plan.data))
+        assertEquals(FUSE_PACKETS, hex(plan.packets))
+        assertEquals(HEROES_AFTER, Json.compact(owned.state.arr("heroes")))
+        // a target the stat model does not reproduce is refused before the roll, nothing consumed
+        val odd = current()
+        val tampered = Json.loads(TARGET_FIELDS) as JArr
+        tampered[4].let { (it as JObj).obj("value")["bits"] = io.github.okexodus.openknights.exact.JInt(12104) }
+        odd.state["heroes"] = JArr((listOf<io.github.okexodus.openknights.exact.JValue>(tampered) + (Json.loads(MATERIAL_FIELDS) as JArr)).toMutableList())
+        odd.state["offline_hero_uids"] = jarr(601, 602, 603)
+        odd.state.arr("items").add(item(507, 9107, 5))
+        val oddOwned = Owned(odd, inputs)
+        val refused = assertThrows(Acquisition.Rejected::class.java) {
+            Compose.planFuse(jobj("target" to 601, "materials" to jarr(602)), oddOwned, inputs, JObj(), BigInteger.ONE)
+        }
+        assertEquals(2001, refused.code)
+        assertEquals(5L, oddOwned.item(507).count)
+    }
+
+    @Test
+    fun `a missing free timer takes the new document's default`() {
+        val cur = StateStore.Current(3, "", "", jobj("subsystems" to jobj("achievements" to jobj("count" to 0, "entries" to JArr()))),
+            ByteArray(0), 0, null, JArr(), emptyList(), JArr(), emptyList(), null, null, null,
+            jobj("document" to jobj("created_at_utc" to "2026-01-02T03:04:05+00:00")), null, LinkedHashMap())
+        assertEquals("""{"free_next_epoch":{"3":5,"2":1767409445}}""",
+            Json.compact(Summon.withDefaultTimers(jobj("free_next_epoch" to jobj("3" to 5)), cur, 1000)))
+        val complete = jobj("free_next_epoch" to jobj("2" to 1, "3" to 2))
+        assertTrue(Summon.withDefaultTimers(complete, cur, 1000) === complete)
+    }
+
+    private companion object {
+        const val REFINE_PLAN = """{"entries":[[506,2],[504,1]],"refined":[{"uid":506,"template":9107,"count":2,"product":20001,"per_unit":7},{"uid":504,"template":9105,"count":1,"product":9106,"per_unit":4}],"products":{"20001":14,"9106":4},"reward":{"version":14,"exp":0,"exploit":0,"gold":0,"diamond":0,"stamina":0,"energy":0,"friend_point":0,"reputation":0,"arena_chance":0,"items":[[20001,14],[9106,4]],"heroes":[],"equips":[],"hero_grow":[],"equip_grow":[],"partner_friend_point":0,"vip_exp":0,"buffs":[],"gems":[],"courage":0,"hero_levels":[],"equip_levels":[],"double_charge_raw":0,"flag_17d_raw":0,"donation":0,"equip_grades":[],"jewels":[],"jewel_grow":[],"kind_door_score":0,"soul_hero":0,"soul_equip":0,"soul_jewel":0,"vip_pt":0},"evidence_class":"config_candidate_capture_confirmed"}"""
+        val REFINE_PACKETS = listOf(68 to "01fa01000002000000", 68 to "01f801000008000000", 64 to "01fb010000922300000400000000", 128 to "010608f603000000000000", 3340 to "0e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000002214e00000e000000922300000400000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000")
+        const val TARGET_FIELDS = """[{"id":0,"value":{"tag":6,"bits":601}},{"id":1,"value":{"tag":6,"bits":4242003}},{"id":2,"value":{"tag":4,"bits":30}},{"id":3,"value":{"tag":6,"bits":555}},{"id":4,"value":{"tag":6,"bits":12103}},{"id":5,"value":{"tag":4,"bits":336}},{"id":6,"value":{"tag":6,"bits":1589}},{"id":7,"value":{"tag":4,"bits":44}},{"id":8,"value":{"tag":6,"bits":1191}},{"id":9,"value":{"tag":4,"bits":33}},{"id":10,"value":{"tag":6,"bits":793}},{"id":11,"value":{"tag":4,"bits":22}},{"id":12,"value":{"tag":6,"bits":1000}},{"id":13,"value":{"tag":6,"bits":0}},{"id":14,"value":{"tag":2,"bits":0}},{"id":15,"value":{"tag":6,"bits":7}},{"id":16,"value":{"tag":6,"bits":5}},{"id":17,"value":{"tag":6,"bits":3}},{"id":18,"value":{"tag":6,"bits":1}},{"id":19,"value":{"tag":5,"bits":1}},{"id":20,"value":{"tag":5,"bits":0}},{"id":21,"value":{"tag":5,"bits":1}},{"id":22,"value":{"tag":6,"bits":111}},{"id":23,"value":{"tag":6,"bits":222}},{"id":24,"value":{"tag":5,"bits":0}}]"""
+        const val MATERIAL_FIELDS = """[[{"id":0,"value":{"tag":6,"bits":602}},{"id":1,"value":{"tag":6,"bits":4242001}},{"id":2,"value":{"tag":4,"bits":1}},{"id":3,"value":{"tag":6,"bits":0}},{"id":4,"value":{"tag":6,"bits":1500}},{"id":5,"value":{"tag":4,"bits":300}},{"id":6,"value":{"tag":6,"bits":200}},{"id":7,"value":{"tag":4,"bits":40}},{"id":8,"value":{"tag":6,"bits":150}},{"id":9,"value":{"tag":4,"bits":30}},{"id":10,"value":{"tag":6,"bits":100}},{"id":11,"value":{"tag":4,"bits":20}},{"id":12,"value":{"tag":6,"bits":1000}},{"id":13,"value":{"tag":6,"bits":0}},{"id":14,"value":{"tag":2,"bits":0}},{"id":15,"value":{"tag":6,"bits":0}},{"id":16,"value":{"tag":6,"bits":0}},{"id":17,"value":{"tag":6,"bits":0}},{"id":18,"value":{"tag":6,"bits":0}},{"id":19,"value":{"tag":5,"bits":0}},{"id":20,"value":{"tag":5,"bits":0}},{"id":21,"value":{"tag":5,"bits":0}},{"id":22,"value":{"tag":6,"bits":90}},{"id":23,"value":{"tag":6,"bits":60}},{"id":24,"value":{"tag":5,"bits":0}}],[{"id":0,"value":{"tag":6,"bits":603}},{"id":1,"value":{"tag":6,"bits":4242001}},{"id":2,"value":{"tag":4,"bits":1}},{"id":3,"value":{"tag":6,"bits":0}},{"id":4,"value":{"tag":6,"bits":1500}},{"id":5,"value":{"tag":4,"bits":300}},{"id":6,"value":{"tag":6,"bits":200}},{"id":7,"value":{"tag":4,"bits":40}},{"id":8,"value":{"tag":6,"bits":150}},{"id":9,"value":{"tag":4,"bits":30}},{"id":10,"value":{"tag":6,"bits":100}},{"id":11,"value":{"tag":4,"bits":20}},{"id":12,"value":{"tag":6,"bits":1000}},{"id":13,"value":{"tag":6,"bits":0}},{"id":14,"value":{"tag":2,"bits":0}},{"id":15,"value":{"tag":6,"bits":0}},{"id":16,"value":{"tag":6,"bits":0}},{"id":17,"value":{"tag":6,"bits":0}},{"id":18,"value":{"tag":6,"bits":0}},{"id":19,"value":{"tag":5,"bits":0}},{"id":20,"value":{"tag":5,"bits":0}},{"id":21,"value":{"tag":5,"bits":0}},{"id":22,"value":{"tag":6,"bits":90}},{"id":23,"value":{"tag":6,"bits":60}},{"id":24,"value":{"tag":5,"bits":0}}]]"""
+        const val FUSE_PLAN = """{"target":601,"materials":[602,603],"template_before":4242003,"template_after":4242103,"fields_changed":[1,4,6,8,10],"rate":12000,"luck_before":0,"success":true,"consumed":[602,603],"luck_after":{"5":0},"seed":77,"reward":{"version":14,"exp":0,"exploit":0,"gold":0,"diamond":0,"stamina":0,"energy":0,"friend_point":0,"reputation":0,"arena_chance":0,"items":[],"heroes":[],"equips":[],"hero_grow":[[601,0,0,336,44,33,22,0,0,0,0]],"equip_grow":[],"partner_friend_point":0,"vip_exp":0,"buffs":[],"gems":[],"courage":0,"hero_levels":[],"equip_levels":[],"double_charge_raw":0,"flag_17d_raw":0,"donation":0,"equip_grades":[],"jewels":[],"jewel_grow":[],"kind_door_score":0,"soul_hero":0,"soul_equip":0,"soul_jewel":0,"vip_pt":0},"evidence_class":"preservation_policy_fuse_roll"}"""
+        val FUSE_PACKETS = listOf(68 to "01fb01000003000000", 1568 to "0159020000190006590200000106b7ba400002041e0003062b0200000406ba3800000504500106067107000007042c00080694050000090421000a06b70300000b0416000c06e80300000d06000000000e02000f060700000010060500000011060300000012060100000013050100000014050000000015050100000016066f0000001706de0000001805000000000e000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000001590200000000000000000000500100002c0000002100000016000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000073697a653d322c20726174653d313230303000", 40 to "025a0200005b020000", 34 to "025a0200005b020000", 1572 to "010500")
+        const val HEROES_AFTER = """[[{"id":0,"value":{"tag":6,"bits":601}},{"id":1,"value":{"tag":6,"bits":4242103}},{"id":2,"value":{"tag":4,"bits":30}},{"id":3,"value":{"tag":6,"bits":555}},{"id":4,"value":{"tag":6,"bits":14522}},{"id":5,"value":{"tag":4,"bits":336}},{"id":6,"value":{"tag":6,"bits":1905}},{"id":7,"value":{"tag":4,"bits":44}},{"id":8,"value":{"tag":6,"bits":1428}},{"id":9,"value":{"tag":4,"bits":33}},{"id":10,"value":{"tag":6,"bits":951}},{"id":11,"value":{"tag":4,"bits":22}},{"id":12,"value":{"tag":6,"bits":1000}},{"id":13,"value":{"tag":6,"bits":0}},{"id":14,"value":{"tag":2,"bits":0}},{"id":15,"value":{"tag":6,"bits":7}},{"id":16,"value":{"tag":6,"bits":5}},{"id":17,"value":{"tag":6,"bits":3}},{"id":18,"value":{"tag":6,"bits":1}},{"id":19,"value":{"tag":5,"bits":1}},{"id":20,"value":{"tag":5,"bits":0}},{"id":21,"value":{"tag":5,"bits":1}},{"id":22,"value":{"tag":6,"bits":111}},{"id":23,"value":{"tag":6,"bits":222}},{"id":24,"value":{"tag":5,"bits":0}}]]"""
     }
 
     private object BattleRewardFixture {

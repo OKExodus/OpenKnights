@@ -602,7 +602,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             current = stateStore!!.read()
             now = service.clock.now()
             val stored = current.document(StateStore.SUMMON_STATE)
-            val document = if (Py.truthy(stored)) stored as JObj else Summon.initialDocument(current, now)
+            val document = Summon.withDefaultTimers(if (Py.truthy(stored)) stored as JObj else Summon.initialDocument(current, now), current, now)
             remaining = Summon.freeCdRemaining(document, now)
         } catch (e: Exception) {      // a login must not fail on this side system
             guard(e)
@@ -1154,7 +1154,8 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             val role = SocialRoutes.roleOf(current)
             val name = current.state.arr("role_properties").map { it as JObj }.firstOrNull { it.long("id") == 2L }
                 ?.let { (it.obj("value")["text"] ?: io.github.okexodus.openknights.exact.JStr("")) as io.github.okexodus.openknights.exact.JStr }?.value ?: ""
-            val entries = reports.record(service.world, role, name.toByteArray(Charsets.UTF_8), heroes, service.clock.now())
+            // the summon's own clock reading (plan now_epoch), not a second read after the commit (operator 2026-09-14)
+            val entries = reports.record(service.world, role, name.toByteArray(Charsets.UTF_8), heroes, plan.data.long("now_epoch"))
             val ctx = socialContext()
             for (other in service.onlineRoles()) {
                 if (other != role) ctx.push(other) { offset -> reports.summonFrames(entries, inputs, offset) }

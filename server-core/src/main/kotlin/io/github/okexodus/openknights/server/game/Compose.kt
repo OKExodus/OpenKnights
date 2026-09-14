@@ -89,9 +89,14 @@ object Compose {
         return (0 until n).map { r.u32() }
     }
 
-    /** `decode_fuse_request(payload)`: `u32 target, u8 n, n x u32`. */
+    /**
+     * `decode_fuse_request(payload)`: `u32 target, u8 n (>= 1), n x u32` — n = 0 is refused like the Combine requests
+     * (operator 2026-09-14; the client needs at least one material for a rate).
+     */
     fun decodeFuseRequest(payload: ByteArray): JObj {
-        if (payload.size < 5 || payload.size != 5 + 4 * (payload[4].toInt() and 0xFF)) throw Acquisition.Rejected("C1249 is u32 target, u8 n, n x u32")
+        if (payload.size < 5 || payload[4].toInt() == 0 || payload.size != 5 + 4 * (payload[4].toInt() and 0xFF)) {
+            throw Acquisition.Rejected("C1249 is u32 target, u8 n (>= 1), n x u32", Acquisition.ERROR_INVALID)
+        }
         val r = WireReader(payload)
         val target = r.u32()
         val n = r.u8()
@@ -222,18 +227,25 @@ object Compose {
         }
         val pairs = ArrayList<Pair<Long, Long>>()
         val newFrames = ArrayList<Frame>()
+        val roleFrames = ArrayList<Frame>()
         for ((template, amount) in products) {
             val frame = owned.grantItem(template, amount)
-            if (frame.first == 68) {
-                val r = WireReader(frame.second.copyOfRange(1, frame.second.size))
-                pairs.add(r.u32() to r.u32())
-            } else newFrames.add(frame)
+            when (frame.first) {
+                Acquisition.S_ITEM_UPDATE -> {
+                    val r = WireReader(frame.second.copyOfRange(1, frame.second.size))
+                    pairs.add(r.u32() to r.u32())
+                }
+                Acquisition.S_ITEM_ADD -> newFrames.add(frame)
+                // A currency placeholder product is paid into its role property by the role grant (S128, as the
+                // mail and the other currency grants), after the item stacks (operator 2026-09-14).
+                else -> roleFrames.add(frame)
+            }
         }
         val grantFrames = (if (pairs.isNotEmpty()) {
             val w = WireWriter().number('B', pairs.size.toLong())
             for ((u, c) in pairs) w.number('I', u).number('I', c)
-            listOf<Frame>(68 to w.bytes())
-        } else emptyList()) + newFrames
+            listOf<Frame>(Acquisition.S_ITEM_UPDATE to w.bytes())
+        } else emptyList()) + newFrames + roleFrames
         val reward = Acquisition.emptyReward()
         reward["items"] = JArr(products.entries.mapTo(ArrayList()) { jarr(it.key, it.value) })
         val packets = consumeFrames + grantFrames + listOf(S_ITEM_REFINE to BattleReport.encodeReward(reward))
@@ -422,7 +434,53 @@ object Compose {
         return rate to row
     }
 
-    /** `plan_fuse(request, owned, inputs, luck, seed, deployed_uids, excluded_uids)`: C1249 (displayed rate + 100 x luck, seeded roll). */
+    private val FUSE_STAT_IDS = listOf(4L, 6L, 8L, 10L)
+    private val FUSE_GROW_IDS = listOf(5L, 7L, 9L, 11L)
+
+    /** `_fuse_reject`: the stat-model refusals of a fuse target answer "Wrong type of items" (2001). */
+    private val FUSE_REJECT = HeroStats.Reject { m, _ -> Acquisition.Rejected(m, Acquisition.ERROR_WRONG_TYPE) }
+
+    /**
+     * `fused_fields(target_fields, template, new_template, inputs)`: the target's map after a successful fuse — POLICY
+     * (operator 2026-09-14), the hero keeps its progress. Modelled on hero card Evolve's super-evolution branch (the
+     * packed hundreds digit rises, the grade stays): every field stays except the template and the growth / stats, which
+     * the shared stat model recomputes for the new template (catalog growth at the unchanged grade, the new template's
+     * permille, the kept development). A target the model does not reproduce is refused before any change. Returns
+     * (resolved profile, new field list, {field id: new bits}).
+     */
+    fun fusedFields(targetFields: JArr, template: Long, newTemplate: Long, inputs: AcquisitionInputs): Triple<JObj, JArr, LinkedHashMap<Long, BigInteger>> {
+        val resolved = HeroStats.resolveProfile(targetFields, inputs.heroStatInputs(template), FUSE_REJECT, Acquisition.ERROR_WRONG_TYPE)
+        val newInputs = inputs.heroStatInputs(newTemplate)
+        val grow = HeroStats.recomputeGrow(newInputs.arr("raw_511_514").map { it.long }, newInputs.long("current_potential_rate"))
+            .map { BigInteger.valueOf(it) }
+        val permille = HeroStats.statPermille(newTemplate, newInputs, resolved.obj("profile").int("awaken"), FUSE_REJECT)
+        val wireGrow = HeroStats.wireGrowBits(grow, resolved.arr("grow_widths").map { it.long.toInt() })
+        val stats = HeroStats.baseStats(grow, resolved.int("level"), resolved.long("grade"), permille, resolved.arr("dev").map { it.big })
+        val after = LinkedHashMap<Long, BigInteger>()
+        after[1L] = BigInteger.valueOf(newTemplate)
+        for (i in 0 until 4) {
+            after[FUSE_GROW_IDS[i]] = wireGrow[i]
+            after[FUSE_STAT_IDS[i]] = stats[i]
+        }
+        val values = resolved.obj("values")
+        for (fieldId in after.keys.sorted()) {
+            val tag = values.obj(fieldId.toString()).long("tag").toInt()
+            val width = when (TypedValues.WIDTH_FORMAT.getValue(tag).uppercaseChar()) { 'B' -> 8; 'H' -> 16; 'I' -> 32; else -> 64 }
+            if (after.getValue(fieldId) >= BigInteger.ONE.shiftLeft(width)) throw Acquisition.Rejected("Hero field $fieldId would overflow its wire width")
+        }
+        val fields = JArr(targetFields.mapTo(ArrayList()) { f ->
+            val id = f.asObj.long("id")
+            val value = JObj(LinkedHashMap(f.asObj.obj("value").map))
+            after[id]?.let { value["bits"] = JInt(it) }
+            jobj("id" to f.asObj["id"], "value" to value)
+        })
+        return Triple(resolved, fields, after)
+    }
+
+    /**
+     * `plan_fuse(request, owned, inputs, luck, seed, deployed_uids, excluded_uids)`: C1249 (displayed rate + 100 x luck,
+     * seeded roll). A success keeps the target's progress (POLICY, operator 2026-09-14; [fusedFields]).
+     */
     fun planFuse(request: JObj, owned: Owned, inputs: AcquisitionInputs, luck: JObj, seed: BigInteger,
                  deployedUids: Collection<Long> = emptyList(), excludedUids: Collection<Long> = emptyList()): Plan {
         val targetUid = request.long("target")
@@ -448,6 +506,7 @@ object Compose {
         val (rate, row) = fuseRate(template, materials.map { Acquisition.heroValues(heroes.getValue(it))[1L]!!.long }, inputs)
         val newTemplate = template + 100
         if (!inputs.heroExists(newTemplate) || superOf(newTemplate) != superClass + 1) throw Acquisition.Rejected("No next super class for this hero", Acquisition.ERROR_WRONG_TYPE)
+        val (_, newFields, after) = fusedFields(heroes.getValue(targetUid), template, newTemplate, inputs)
         val currentLuck = intOr(luck[star.toString()], 0)
         val threshold = intOr(row["119"], 10000)
         if (rate + currentLuck * 100 < threshold) throw Acquisition.Rejected("Success rate below the client's minimum", Acquisition.ERROR_INVALID)
@@ -459,18 +518,17 @@ object Compose {
         val packets = ArrayList<Frame>(stoneFrames)
         val consumed: List<Long>
         var body: ByteArray
+        var fieldsChanged: List<Long> = emptyList()
         if (success) {
-            val s32 = inputs.freshHeroFields(targetUid, newTemplate)
-            val stored = Acquisition.storedHeroFields(s32)
+            val before = Acquisition.heroValues(heroes.getValue(targetUid))
+            fieldsChanged = after.keys.sorted().filter { JInt(after.getValue(it)) != before[it] }
             owned.state["heroes"] = JArr(owned.state.arr("heroes").mapTo(ArrayList()) { f ->
-                if (Acquisition.heroValues(f.asArr)[0L]!!.long == targetUid) stored else f
+                if (Acquisition.heroValues(f.asArr)[0L]!!.long == targetUid) newFields else f
             })
-            val newValues = LinkedHashMap<Long, JValue>()
-            for (f in stored) newValues[f.asObj.long("id")] = f.asObj.obj("value").getValue("bits")
-            reward["hero_grow"] = jarr(jarr(targetUid, 0, 0, newValues[5L], newValues[7L], newValues[9L], newValues[11L], 0, 0, 0, 0))
+            reward["hero_grow"] = jarr(jarr(targetUid, 0, 0, after[5L], after[7L], after[9L], after[11L], 0, 0, 0, 0))
             consumed = ArrayList(materials)
             luckAfter[star.toString()] = JInt(0)
-            body = WireWriter().number('B', 1).number('I', targetUid).bytes() + TypedValues.encodeFieldsBytes(stored)
+            body = WireWriter().number('B', 1).number('I', targetUid).bytes() + TypedValues.encodeFieldsBytes(newFields)
         } else {
             consumed = if (materials.size <= 3) materials else rng.sample(materials, 3)
             val c0 = row["121"]
@@ -489,7 +547,8 @@ object Compose {
         packets.add(S_HERO_REMOVE to Acquisition.uidListPayload(consumed))
         packets.add(S_LUCK to luckPayload(luckAfter))
         return Plan(jobj("target" to targetUid, "materials" to request["materials"], "template_before" to template,
-            "template_after" to (if (success) newTemplate else template), "rate" to rate, "luck_before" to currentLuck,
+            "template_after" to (if (success) newTemplate else template), "fields_changed" to fieldsChanged,
+            "rate" to rate, "luck_before" to currentLuck,
             "success" to JBool(success), "consumed" to consumed, "luck_after" to luckAfter, "seed" to seed, "reward" to reward,
             "evidence_class" to "preservation_policy_fuse_roll"), packets)
     }
