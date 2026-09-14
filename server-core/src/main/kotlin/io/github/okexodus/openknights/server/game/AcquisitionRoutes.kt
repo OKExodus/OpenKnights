@@ -74,13 +74,9 @@ object AcquisitionRoutes {
         }
         val request = Shops.decodeLuckyRequest(payload)
         val plan = Shops.planLuckyInfo(request, Owned(current, inputs), inputs, catalog!!, current.document("lucky_state"), now,
-            poolPolicy = luckyPools(rngPolicy))
+            poolPolicy = Acquisition.policyAllows(rngPolicy, "lucky_refresh"))
         return plan.packets to io.github.okexodus.openknights.exact.jobj("remaining" to plan["remaining"])
     }
-
-    /** `aq.policy_allows(rng_policy, "lucky_refresh")` (the policy document names the one allowed Lucky Shop draw). */
-    private fun luckyPools(rngPolicy: JObj?): Boolean =
-        rngPolicy != null && Py.truthy(rngPolicy) && rngPolicy.strOrNull("lucky_refresh") == "uniform_over_observed_pools"
 
     /** `served(current)` of `planner_for`: the served clock, recorded as the plan's `served_time`. */
     private fun served(used: JObj, servedTime: (StateStore.Current) -> Long, current: StateStore.Current): Long {
@@ -230,9 +226,9 @@ object AcquisitionRoutes {
                     val seed = Acquisition.seedFor(payload, current.revision, "lucky:$now")
                     val serverTime = served(used, servedTime, current)
                     if (opcode == 2725) Shops.planLuckyInfo(req, owned, inputs, catalog!!, current.document("lucky_state"), now, seed = seed,
-                        poolPolicy = luckyPools(rngPolicy), serverTime = serverTime)
+                        poolPolicy = Acquisition.policyAllows(rngPolicy, "lucky_refresh"), serverTime = serverTime)
                     else Shops.planLuckyExchange(req, owned, inputs, catalog!!, current.document("lucky_state"), now,
-                        poolPolicy = luckyPools(rngPolicy), seed = seed, serverTime = serverTime)
+                        poolPolicy = Acquisition.policyAllows(rngPolicy, "lucky_refresh"), seed = seed, serverTime = serverTime)
                 }
             }
             641 -> {
