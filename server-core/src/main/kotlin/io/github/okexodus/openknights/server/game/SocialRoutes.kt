@@ -418,9 +418,9 @@ object SocialRoutes {
         when (opcode) {
             Guild.C_CREATE -> {
                 val (name, notice) = Guild.decodeCstrings(payload, 2, opcode)
-                val doc = guildDoc(ctx)
-                if (Guild.guildOf(doc, role).second != null) throw Acquisition.Rejected("Already in a guild", Guild.ERR_OTHER_GUILD)
-                Guild.validateName(name, doc, inputs)
+                // the world checks (membership, rejoin cooldown, name, notice length) before the character pays;
+                // Guild.create repeats them at the world write
+                Guild.checkCreate(guildDoc(ctx), role, name, notice, inputs, now)
                 val plan = commit("guild_create") { owned, cur ->
                     if (owned.roleBits(Guild.ROLE_LEVEL) <= BigInteger.valueOf(inputs.prop(200003, 50))) {
                         throw Acquisition.Rejected("Player level must be above 50", Guild.ERR_INVALID)
@@ -443,13 +443,14 @@ object SocialRoutes {
             }
             Guild.C_DONATE -> {
                 if (payload.size != 8) throw Acquisition.Rejected("C2157 is u32 gold, u32 diamonds")
-                val (gold, diamonds) = u32Pair(payload)
+                val (requested, diamonds) = u32Pair(payload)
+                val gold = Guild.goldTaken(requested)                 // only whole 10,000s are taken
                 val (_, guildNow) = guildRequired(ctx, role)
                 var points = 0L
                 var reward = JObj()
                 val plan = commit("guild_donate") { owned, _ ->
                     val guild = guildNow.deepCopy()
-                    val (p, r, spent) = Guild.donateGold(guild, role, gold, diamonds, owned, inputs, now)
+                    val (p, r, spent) = Guild.donateGold(guild, role, requested, diamonds, owned, inputs, now)
                     points = p
                     reward = r
                     val fields = listOf(Guild.GOLD to gold, Guild.DIAMOND to spent).filter { it.second != 0L }.map { it.first } + Guild.CONTRIBUTION
