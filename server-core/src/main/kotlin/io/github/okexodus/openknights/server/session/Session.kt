@@ -26,16 +26,19 @@ import io.github.okexodus.openknights.server.store.evolveHero
 import io.github.okexodus.openknights.server.store.evolveLeaderHero
 import io.github.okexodus.openknights.server.store.powerUpSave
 import io.github.okexodus.openknights.server.store.powerUpTrain
+import io.github.okexodus.openknights.server.store.formationTransaction
 import io.github.okexodus.openknights.server.game.LeaderRepair
 import io.github.okexodus.openknights.server.game.Owned
 import io.github.okexodus.openknights.server.game.SecondaryTeam
 import io.github.okexodus.openknights.server.game.SweepFeatures
 import io.github.okexodus.openknights.server.game.SystemSeeds
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.server.game.Achievements
 import io.github.okexodus.openknights.server.game.AltTeam
 import io.github.okexodus.openknights.server.game.DailyHooks
+import io.github.okexodus.openknights.server.game.EquipEvolve
 import io.github.okexodus.openknights.server.game.Claims
 import io.github.okexodus.openknights.server.game.DailyRoutes
 import io.github.okexodus.openknights.server.game.Goals
@@ -52,6 +55,10 @@ import io.github.okexodus.openknights.server.game.ChangeJob
 import io.github.okexodus.openknights.server.game.HeroFortify
 import io.github.okexodus.openknights.server.game.ItemFortify
 import io.github.okexodus.openknights.server.store.FortifyResult
+import io.github.okexodus.openknights.server.store.EquipEvolveResult
+import io.github.okexodus.openknights.server.store.evolveGear
+import io.github.okexodus.openknights.server.store.evolveJewelry
+import io.github.okexodus.openknights.server.store.fortifyEquipment
 import io.github.okexodus.openknights.server.store.fortifyHero
 import io.github.okexodus.openknights.server.store.fortifyItemsGear
 import io.github.okexodus.openknights.server.store.fortifyItemsHero
@@ -814,17 +821,16 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         if (opcode == 3779) return secondaryReplaceRoute(payload)
         if (opcode == 3777) return secondaryUnlockRoute(payload)
         if (opcode == 69) return heroFortifyRoute(payload)
-        if (opcode == 81) group(opcode, "gear Fortify")
+        if (opcode == 81) return gearFortifyRoute(payload)
         if (opcode == 71) return evolutionRoute(payload)
         if (opcode == 2083) return leaderEvolutionRoute(payload)
-        if (opcode == 91 || opcode == 2641) return itemFortifyRoute(opcode, payload)
-        if (opcode == 93) group(opcode, "EXP-item Fortify")
+        if (opcode == 91 || opcode == 93 || opcode == 2641) return itemFortifyRoute(opcode, payload)
         if (opcode == 2561) return changeJobRoute(payload)
         if (opcode == 1569) group(opcode, "rename")
         if (opcode == 1537) group(opcode, "gift code")
         if (opcode == 643 || opcode == 645) group(opcode, "roulette rank")
-        if (opcode in setOf(2049, 2629, 2593, 2817)) group(opcode, "gear / jewelry evolve")
-        if (opcode in Routes.FORMATION) group(opcode, "formation")
+        if (opcode in setOf(2049, 2629, 2593, 2817)) return equipEvolveRoute(opcode, payload)
+        if (opcode in Routes.FORMATION) return formationRoute(opcode, payload)
         if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
         if (opcode == 705) group(opcode, "rank list")
         if (opcode in Routes.ACQUISITION) return acquisitionRoute(opcode, payload)
@@ -909,6 +915,31 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             activityPayload = PlayerSections.encodeSection("game_activities", result.activitySection!!),
             goldPayload = TransactionPackets.goldPropertyPayload(result.result.int("gold_after"))) +
             dailyCounters("fortify_hero", jobj("material_uids" to result["material_uids"]))
+    }
+
+    /** C81 gear Fortify (docs/GEAR_FORTIFY_CONTRACT.md): commit first, then 106, 108, 102, 98 and 128 only when Gold was charged. */
+    private fun gearFortifyRoute(payload: ByteArray): List<Frame> {
+        val result: FortifyResult
+        try {
+            if (!queriesSent) throw HeroFortify.FortifyRejected("Complete initialization queries before fortifying gear")
+            val request = HeroFortify.decodeFortifyRequest(payload)
+            result = stateStore!!.fortifyEquipment(request, characterId!!, deploymentPolicy(), service.fortifyInputs,
+                "authenticated-client", "Native opcode81 gear Fortify")
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_gear_fortify", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("fortify_internal_error", "character_id" to characterId, "kind" to "gear", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val settlement = result.result.obj("settlement")
+        log("transaction_committed", "action" to "fortify_equipment", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "material_uids" to result["material_uids"], "awarded_exp" to result["awarded_exp"],
+            "gold_cost" to result["gold_cost"], "levels_gained" to settlement["levels_gained"], "reached_cap" to settlement["reached_cap"])
+        return HeroFortify.equipmentFortifyPackets(result.plan, TransactionPackets.goldPropertyPayload(result.result.int("gold_after"))) +
+            dailyCounters("fortify_equipment", jobj("material_uids" to result["material_uids"]))
     }
 
     /**
@@ -1251,6 +1282,108 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             log("hero_card_internal_error", "character_id" to characterId, "kind" to kind, "error" to described(e))
             return listOf(6 to TransactionPackets.errorPayload(102))
         }
+    }
+
+    // --- gear / jewelry evolve, formation ------------------------------------------------------------------------------
+
+    /**
+     * (payload, source) of the opcode-3072 unequipped-jewelry list this session served at login (`_served_jewel_list`);
+     * (null, null) when none was served (a release service has no captured snapshot to fall back on).
+     */
+    private fun servedJewelList(): Pair<ByteArray?, String?> {
+        val payloads = (jewelryFrames ?: emptyList()).filter { it.first == 3072 }.map { it.second }
+        val source = if (jewelryFrames != null) "session_login_s3072" else "captured_snapshot_s3072"
+        return if (payloads.isNotEmpty()) payloads.last() to source else null to null
+    }
+
+    /** UIDs of the unequipped (opcode-3072) jewelry: the stored list, else what the session served (`_unequipped_jewelry_uids`). */
+    private fun unequippedJewelryUids(): List<Long> {
+        val stored = stateStore?.read()?.jewelryList
+        if (stored != null && stored.isNotEmpty()) {
+            return stored.obj("document").arr("entries").map { (it.asObj.arr("record")[0] as io.github.okexodus.openknights.exact.JInt).value.toLong() }
+        }
+        val uids = ArrayList<Long>()
+        for ((op, data) in jewelryFrames ?: emptyList()) {
+            if (op != 3072) continue
+            try {
+                EquipEvolve.decodeJewelList(data).forEach { uids.add(it[0]) }
+            } catch (e: IllegalArgumentException) {
+                continue
+            }
+        }
+        return uids
+    }
+
+    /**
+     * Gear C2049 / jewelry C2629 evolve (docs/EQUIP_EVOLVE_CONTRACT.md, `_equip_evolve_route`): commit first, then the live
+     * order (gear 68 / 66, 106, 2208, 128; jewelry 68 / 66, 3080, 3084). The up-star requests C2593 / C2817 are an
+     * excluded branch: an error reply ends the client's waiting layer and nothing changes.
+     */
+    private fun equipEvolveRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val kind = mapOf(2049 to "gear", 2629 to "jewelry", 2593 to "upstar", 2817 to "upstar").getValue(opcode)
+        val result: EquipEvolveResult
+        try {
+            if (!queriesSent) throw EquipEvolve.EquipEvolveRejected("Complete initialization queries before evolving")
+            val request = EquipEvolve.decodeRequest(payload)
+            if (kind == "upstar") {
+                val code = if (opcode == EquipEvolve.UPSTAR_GEAR_OPCODE) EquipEvolve.ERROR_GEAR_NOT_EVOLVABLE else EquipEvolve.ERROR_JEWEL_NOT_EVOLVABLE
+                throw EquipEvolve.EquipEvolveRejected("Super-evolution (up-star) is an excluded branch", code)
+            }
+            val policy = deploymentPolicy()
+            val reason = "Native opcode$opcode $kind evolve"
+            result = if (kind == "gear") stateStore!!.evolveGear(request, characterId!!, policy, service.equipEvolveInputs, "authenticated-client", reason)
+                else {
+                    val unequipped = unequippedJewelryUids()
+                    stateStore!!.evolveJewelry(request, characterId!!, policy, service.equipEvolveInputs, "authenticated-client", reason,
+                        unequippedUids = unequipped)
+                }
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? EquipEvolve.EquipEvolveRejected)?.code ?: 102
+            log("rejected_equip_evolve", "character_id" to characterId, "kind" to kind, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("equip_evolve_internal_error", "character_id" to characterId, "kind" to kind, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val plan = result.plan
+        log("transaction_committed", "action" to "evolve_$kind", "character_id" to characterId, "revision" to result.result["revision"],
+            "target_uid" to plan["target_uid"], "grade_after" to plan.arr("after_record")[4], "row_key" to plan["row_key"],
+            "value_increase" to plan["value_increase"], "gold_cost" to plan["gold_cost"], "observed_row" to plan["observed_row"])
+        val gold = if (kind == "gear") TransactionPackets.goldPropertyPayload((plan["gold_after"] as io.github.okexodus.openknights.exact.JInt).value) else null
+        return EquipEvolve.evolvePackets(plan, gold) + dailyCounters(if (kind == "gear") "evolve_gear" else "evolve_jewelry", plan)
+    }
+
+    /** Gear / jewelry / rune equip, rune combine, lineup, position, captain (`_formation_route`). */
+    private fun formationRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val ef = io.github.okexodus.openknights.server.game.EquipFormation
+        val request: JObj
+        val result: io.github.okexodus.openknights.server.store.FormationResult
+        try {
+            if (!queriesSent) throw io.github.okexodus.openknights.server.game.EquipFormation.FormationRejected("Complete initialization queries before changing the formation")
+            request = ef.decodeRequest(opcode, payload)
+            val (served, source) = if (opcode == ef.JEWEL_OPCODE) servedJewelList() else null to null
+            result = stateStore!!.formationTransaction(opcode, request, characterId!!, deploymentPolicy(), service.formationInputs,
+                "authenticated-client", "Native opcode$opcode formation change", servedJewelList = served, servedJewelSource = source)
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? io.github.okexodus.openknights.server.game.EquipFormation.FormationRejected)?.code ?: 102
+            log("rejected_formation_change", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("formation_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val plan = result.plan
+        val fields = mutableListOf<Pair<String, Any?>>("action" to result.action, "character_id" to characterId,
+            "revision" to result["revision"], "request" to request, "reply_opcodes" to plan.packets.map { it.first })
+        for (k in listOf("stripped_runes", "position_assigned", "uid_in", "uid_out", "gem_in", "gem_out", "produced", "times")) {
+            if (k in plan.data) fields.add(k to plan.data[k])
+        }
+        log("transaction_committed", *fields.toTypedArray())
+        // lineup (C67) / gear equip (C79) can meet the owned-state quest kinds (worn 3-star gear); a rune equip (C1217)
+        // the Goals' "Equip 3 runes" (docs/GOALS_CONTRACT.md)
+        return plan.packets + (if (opcode in setOf(67, 79, 1217)) dailyCounters("formation", jobj()) else emptyList())
     }
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */

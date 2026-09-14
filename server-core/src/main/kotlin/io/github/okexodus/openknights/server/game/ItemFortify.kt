@@ -194,12 +194,13 @@ object ItemFortify {
      * order until the cap. Without `roll` every item grants its base EXP; with it each consumed item rolls a multiplier.
      * With `fill_to_cap` a staged quantity equal to the client's maximum may be topped up from the owned stack (at most
      * `max_items_per_action` items of a type); the Gold-cost base then covers the items taken beyond the staged count.
-     * One action awards at most u32 EXP in total (the result frame's width).
+     * One action awards at most u32 EXP in total (the result frame's width). A target already at its cap is refused
+     * with `maxLevelCode`: the hero text 1008 for heroes, the gear text 6010 for gear and jewelry records.
      */
     fun planConsumption(stagedResolved: List<JObj>, level: Long, exp: Long, cap: Long, requirement: (Long) -> Long,
-                        roll: (() -> Long)? = null, fillToCap: JObj? = null): JObj {
+                        roll: (() -> Long)? = null, fillToCap: JObj? = null, maxLevelCode: Int = ERROR_MAX_LEVEL): JObj {
         val need = expToCap(level, exp, cap, requirement)
-        if (need <= 0) throw ItemFortifyRejected("The target already reached its configured level cap", ERROR_MAX_LEVEL)
+        if (need <= 0) throw ItemFortifyRejected("The target already reached its configured level cap", maxLevelCode)
         val totalStagedBase = stagedResolved.fold(0L) { s, r -> Math.addExact(s, Math.multiplyExact(r.long("item_exp"), r.long("quantity"))) }
         var totalCostBase = totalStagedBase
         val consumed = ArrayList<JObj>()
@@ -451,7 +452,8 @@ object ItemFortify {
             HeroFortify.expForEquipLevel(base, scale)
         }
         val resolved = resolveStaged(request.arr("staged"), itemMap, ownedByItem, expectedClass)
-        val settle = planConsumption(resolved, levelBefore, wire[HeroFortify.E_EXP], cap, requirement, setup.roll, setup.fillToCap)
+        val settle = planConsumption(resolved, levelBefore, wire[HeroFortify.E_EXP], cap, requirement, setup.roll, setup.fillToCap,
+            maxLevelCode)
         if (settle.bool("reached_cap") && settle.long("new_level") == levelBefore) {
             throw ItemFortifyRejected("The target already reached its configured level cap", maxLevelCode)
         }

@@ -89,6 +89,9 @@ class Service(
     /** The EXP-item Fortify catalog inputs (`snapshot.item_fortify_inputs`). */
     val itemFortifyInputs: io.github.okexodus.openknights.server.game.ItemFortifyInputs by lazy { io.github.okexodus.openknights.server.game.ItemFortifyInputs(tables) }
 
+    /** The equipment / jewelry / runes / main-formation catalog inputs (`snapshot.formation_inputs`). */
+    val formationInputs: io.github.okexodus.openknights.server.game.FormationInputs by lazy { io.github.okexodus.openknights.server.game.FormationInputs(tables) }
+
     /** The history label `{path, sha256}` of the loaded acquisition RNG policy (`ReleaseData.policy("acquisition-rng")`). */
     val acquisitionPolicyLabel: JObj? by lazy {
         releaseData?.let { jobj("path" to it.label("policies/acquisition-rng.json"), "sha256" to it.sha256("policies/acquisition-rng.json")) }
@@ -109,6 +112,9 @@ class Service(
 
     /** The hero-card catalog inputs (`snapshot.hero_card_inputs`: Power Up, Astral Power, Ascension). */
     val heroCardInputs: io.github.okexodus.openknights.server.game.HeroCardInputs by lazy { io.github.okexodus.openknights.server.game.HeroCardInputs(tables) }
+
+    /** The gear / jewelry evolve catalog inputs (`snapshot.equip_evolve_inputs`). */
+    val equipEvolveInputs: io.github.okexodus.openknights.server.game.EquipEvolveInputs by lazy { io.github.okexodus.openknights.server.game.EquipEvolveInputs(tables) }
 
     /** The verified client lineup rules (`snapshot.secondary_rules`): loaded by the first C3779 of the process, then kept. */
     var secondaryRules: io.github.okexodus.openknights.server.game.SecondaryTeam.NativeLineupRules? = null
