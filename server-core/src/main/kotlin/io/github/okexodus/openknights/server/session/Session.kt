@@ -32,10 +32,12 @@ import io.github.okexodus.openknights.server.game.SecondaryTeam
 import io.github.okexodus.openknights.server.game.SweepFeatures
 import io.github.okexodus.openknights.server.game.SystemSeeds
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.server.game.Achievements
 import io.github.okexodus.openknights.server.game.AltTeam
 import io.github.okexodus.openknights.server.game.DailyHooks
+import io.github.okexodus.openknights.server.game.EquipEvolve
 import io.github.okexodus.openknights.server.game.Claims
 import io.github.okexodus.openknights.server.game.DailyRoutes
 import io.github.okexodus.openknights.server.game.Goals
@@ -52,6 +54,9 @@ import io.github.okexodus.openknights.server.game.ChangeJob
 import io.github.okexodus.openknights.server.game.HeroFortify
 import io.github.okexodus.openknights.server.game.ItemFortify
 import io.github.okexodus.openknights.server.store.FortifyResult
+import io.github.okexodus.openknights.server.store.EquipEvolveResult
+import io.github.okexodus.openknights.server.store.evolveGear
+import io.github.okexodus.openknights.server.store.evolveJewelry
 import io.github.okexodus.openknights.server.store.fortifyEquipment
 import io.github.okexodus.openknights.server.store.fortifyHero
 import io.github.okexodus.openknights.server.store.fortifyItemsGear
@@ -1290,8 +1295,63 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return if (payloads.isNotEmpty()) payloads.last() to source else null to null
     }
 
-    /** Gear C2049 / jewelry C2629 evolve; the excluded up-star C2593 / C2817 (`_equip_evolve_route`). */
-    private fun equipEvolveRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "gear / jewelry evolve")
+    /** UIDs of the unequipped (opcode-3072) jewelry: the stored list, else what the session served (`_unequipped_jewelry_uids`). */
+    private fun unequippedJewelryUids(): List<Long> {
+        val stored = stateStore?.read()?.jewelryList
+        if (stored != null && stored.isNotEmpty()) {
+            return stored.obj("document").arr("entries").map { (it.asObj.arr("record")[0] as io.github.okexodus.openknights.exact.JInt).value.toLong() }
+        }
+        val uids = ArrayList<Long>()
+        for ((op, data) in jewelryFrames ?: emptyList()) {
+            if (op != 3072) continue
+            try {
+                EquipEvolve.decodeJewelList(data).forEach { uids.add(it[0]) }
+            } catch (e: IllegalArgumentException) {
+                continue
+            }
+        }
+        return uids
+    }
+
+    /**
+     * Gear C2049 / jewelry C2629 evolve (docs/EQUIP_EVOLVE_CONTRACT.md, `_equip_evolve_route`): commit first, then the live
+     * order (gear 68 / 66, 106, 2208, 128; jewelry 68 / 66, 3080, 3084). The up-star requests C2593 / C2817 are an
+     * excluded branch: an error reply ends the client's waiting layer and nothing changes.
+     */
+    private fun equipEvolveRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val kind = mapOf(2049 to "gear", 2629 to "jewelry", 2593 to "upstar", 2817 to "upstar").getValue(opcode)
+        val result: EquipEvolveResult
+        try {
+            if (!queriesSent) throw EquipEvolve.EquipEvolveRejected("Complete initialization queries before evolving")
+            val request = EquipEvolve.decodeRequest(payload)
+            if (kind == "upstar") {
+                val code = if (opcode == EquipEvolve.UPSTAR_GEAR_OPCODE) EquipEvolve.ERROR_GEAR_NOT_EVOLVABLE else EquipEvolve.ERROR_JEWEL_NOT_EVOLVABLE
+                throw EquipEvolve.EquipEvolveRejected("Super-evolution (up-star) is an excluded branch", code)
+            }
+            val policy = deploymentPolicy()
+            val reason = "Native opcode$opcode $kind evolve"
+            result = if (kind == "gear") stateStore!!.evolveGear(request, characterId!!, policy, service.equipEvolveInputs, "authenticated-client", reason)
+                else {
+                    val unequipped = unequippedJewelryUids()
+                    stateStore!!.evolveJewelry(request, characterId!!, policy, service.equipEvolveInputs, "authenticated-client", reason,
+                        unequippedUids = unequipped)
+                }
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? EquipEvolve.EquipEvolveRejected)?.code ?: 102
+            log("rejected_equip_evolve", "character_id" to characterId, "kind" to kind, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("equip_evolve_internal_error", "character_id" to characterId, "kind" to kind, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val plan = result.plan
+        log("transaction_committed", "action" to "evolve_$kind", "character_id" to characterId, "revision" to result.result["revision"],
+            "target_uid" to plan["target_uid"], "grade_after" to plan.arr("after_record")[4], "row_key" to plan["row_key"],
+            "value_increase" to plan["value_increase"], "gold_cost" to plan["gold_cost"], "observed_row" to plan["observed_row"])
+        val gold = if (kind == "gear") TransactionPackets.goldPropertyPayload((plan["gold_after"] as io.github.okexodus.openknights.exact.JInt).value) else null
+        return EquipEvolve.evolvePackets(plan, gold) + dailyCounters(if (kind == "gear") "evolve_gear" else "evolve_jewelry", plan)
+    }
 
     /** Gear / jewelry / rune equip, rune combine, lineup, position, captain (`_formation_route`). */
     private fun formationRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "formation")

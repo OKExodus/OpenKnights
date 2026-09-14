@@ -110,6 +110,9 @@ class Service(
     /** The hero-card catalog inputs (`snapshot.hero_card_inputs`: Power Up, Astral Power, Ascension). */
     val heroCardInputs: io.github.okexodus.openknights.server.game.HeroCardInputs by lazy { io.github.okexodus.openknights.server.game.HeroCardInputs(tables) }
 
+    /** The gear / jewelry evolve catalog inputs (`snapshot.equip_evolve_inputs`). */
+    val equipEvolveInputs: io.github.okexodus.openknights.server.game.EquipEvolveInputs by lazy { io.github.okexodus.openknights.server.game.EquipEvolveInputs(tables) }
+
     /** The verified client lineup rules (`snapshot.secondary_rules`): loaded by the first C3779 of the process, then kept. */
     var secondaryRules: io.github.okexodus.openknights.server.game.SecondaryTeam.NativeLineupRules? = null
 
