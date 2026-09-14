@@ -697,7 +697,9 @@ object Castle {
 
     /**
      * C737 → new shards → S800 (`plan_alchemy_refresh`). Free when the countdown is over (it restarts at property 73),
-     * else property 94 Diamonds; all three at the top shard → 21012. New shards by lianjin weight B.
+     * else property 94 Diamonds; all three at the top shard → 21012. New shards by lianjin weight B, seeded with the
+     * refreshes made so far (the document's `refreshes`, which then goes up by one), so two refreshes inside one second
+     * draw different shards.
      */
     fun planAlchemyRefresh(owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long, ownerKey: String): Plan {
         val doc = castleDocument(document, now)
@@ -721,9 +723,11 @@ object Castle {
             timers["refresh_until"] = JInt(now + inputs.prop(73, 3600))
             values[3] = JInt(PyDocs.int(timers["refresh_until"]) - BigInteger.valueOf(now))
         }
-        setHead(values, drawShards(inputs, rng("refresh", ownerKey, now.toString()), "weight_b"))
+        val refreshes = doc["refreshes"] ?: JInt(0)
+        setHead(values, drawShards(inputs, rng("refresh", ownerKey, now.toString(), PyDocs.str(refreshes)), "weight_b"))
         sub(owned.state, "alchemy")["wire_values"] = values
         doc["alchemy"] = timers
+        doc["refreshes"] = JInt(PyDocs.int(refreshes) + BigInteger.ONE)
         return Plan(jobj("shards_after" to JArr(values.subList(0, 3).toMutableList()), "castle_state_after" to doc,
             "evidence_class" to EVIDENCE_POLICY), listOf(alchemyFrame(values)) + frames)
     }
@@ -773,11 +777,12 @@ object Castle {
 
     /**
      * C745 `u32 recruit` (Work / Bounty Quest) → S128 Gold → S814 Reward → S808 text 760 → S802 (actions − 1, work CD
-     * property 82) (`plan_work`); Gold = outcome(player, recruit level, Alchemy Lab level, P76 − property 88).
+     * property 82) (`plan_work`); Gold = outcome(player, recruit level, Alchemy Lab level, P76 − property 88). Recruits
+     * whose term ended before the action leave first: their S808 text 758 frames lead the packets (also Release, Guard).
      */
     fun planWork(ident: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan {
         val state = owned.state
-        val doc = servantsView(state, castleDocument(document, now), now, inputs).first
+        val (doc, expired) = servantsView(state, castleDocument(document, now), now, inputs)
         val servant = servant(state, ident) ?: throw Acquisition.Rejected("Target Recruit not found", ERROR_TARGET)
         val prefix = sub(state, "servants").arr("wire_u8_prefix")
         val values = servant.arr("wire_values_after_string")
@@ -796,7 +801,7 @@ object Castle {
         reward["gold"] = JInt(gold)
         val name = servantName(servant)
         return Plan(jobj("recruit" to ident, "gold" to gold, "castle_state_after" to doc, "evidence_class" to EVIDENCE_FORMULA),
-            listOf(roles(owned, listOf(Acquisition.GOLD)), S_WORK_REWARD to BattleReport.encodeReward(reward),
+            expired + listOf(roles(owned, listOf(Acquisition.GOLD)), S_WORK_REWARD to BattleReport.encodeReward(reward),
                 message(state, 760, listOf(name, gold.toString())), servantsFrame(state)))
     }
 
@@ -806,7 +811,7 @@ object Castle {
      */
     fun planRelease(ident: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan {
         val state = owned.state
-        val doc = servantsView(state, castleDocument(document, now), now, inputs).first
+        val (doc, expired) = servantsView(state, castleDocument(document, now), now, inputs)
         val servant = servant(state, ident) ?: throw Acquisition.Rejected("Target Recruit not found", ERROR_TARGET)
         val section = sub(state, "servants").obj("servants")
         section["entries"] = JArr(section.arr("entries").filter { it.asObj["wire_u32_1"] != JInt(ident) }.toMutableList())
@@ -820,7 +825,7 @@ object Castle {
         doc["alchemy"] = timers
         val name = servantName(servant)
         return Plan(jobj("recruit" to ident, "castle_state_after" to doc, "evidence_class" to EVIDENCE_POLICY),
-            listOf(message(state, 759, listOf(name, PyDocs.str(total))), servantsFrame(state), alchemyFrame(values)))
+            expired + listOf(message(state, 759, listOf(name, PyDocs.str(total))), servantsFrame(state), alchemyFrame(values)))
     }
 
     /**
@@ -829,7 +834,7 @@ object Castle {
      */
     fun planGuard(ident: Long, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long, servedTime: Long): Plan {
         val state = owned.state
-        val doc = servantsView(state, castleDocument(document, now), now, inputs).first
+        val (doc, expired) = servantsView(state, castleDocument(document, now), now, inputs)
         val servant = servant(state, ident) ?: throw Acquisition.Rejected("Target Recruit not found", ERROR_TARGET)
         if (PyDocs.compare(sub(state, "servants").arr("wire_u8_prefix")[1], JInt(1)) < 0) {
             throw Acquisition.Rejected("Insufficient remaining Actions", ERROR_ACTIONS)
@@ -840,7 +845,7 @@ object Castle {
         val values = servant.arr("wire_values_after_string")
         values[GUARD_CD] = values[TERM]
         ((PyDocs.at(doc, "servants") as JObj)[ident.toString()] as JObj)["guard_until"] = JInt(BigInteger.valueOf(now) + PyDocs.int(values[TERM]))
-        val packets = listOf(roles(owned, listOf(Acquisition.DIAMOND))) + Shops.diamondAchievement(owned, price, servedTime) +
+        val packets = expired + listOf(roles(owned, listOf(Acquisition.DIAMOND))) + Shops.diamondAchievement(owned, price, servedTime) +
             listOf(servantsFrame(state))
         return Plan(jobj("recruit" to ident, "price" to price, "castle_state_after" to doc, "evidence_class" to EVIDENCE_POLICY), packets)
     }

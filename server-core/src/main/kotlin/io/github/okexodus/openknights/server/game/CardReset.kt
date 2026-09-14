@@ -174,11 +174,18 @@ object CardReset {
 
     /**
      * Grant the candidate items (ascending id, zero counts kept) → one S68 naming every owned candidate stack with its new
-     * count (unchanged stacks too) and one S64 of the new stacks (`_grant_all`).
+     * count (unchanged stacks too) and one S64 of the new stacks (`_grant_all`); a currency placeholder item is paid into
+     * its role by [Owned.grantItem], whose S128 follows the bag frames in grant order.
      */
     fun grantAll(owned: Owned, items: List<Pair<Long, Long>>): MutableList<Frame> {
         val newBefore = owned.newItems.keys.toSet()
-        for ((template, count) in items) if (count > 0) owned.grantItem(template, count)
+        val roles = ArrayList<Frame>()
+        for ((template, count) in items) {
+            if (count > 0) {
+                val frame = owned.grantItem(template, count)
+                if (template in Acquisition.CURRENCY_ITEM_ROLE) roles.add(frame)
+            }
+        }
         val pairs = ArrayList<Pair<Long, Long>>()
         val records = JArr()
         for ((template, _) in items) {
@@ -198,6 +205,7 @@ object CardReset {
             frames.add(S_ITEM_UPDATE to w.bytes())
         }
         if (records.isNotEmpty()) frames.add(S_ITEM_ADD to Inventory.encode(records))
+        frames.addAll(roles)
         return frames
     }
 
