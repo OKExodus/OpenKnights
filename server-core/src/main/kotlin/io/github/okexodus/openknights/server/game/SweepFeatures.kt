@@ -7,10 +7,18 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.PyRandom
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.exact.jvalue
+import io.github.okexodus.openknights.exact.toHexString
+import io.github.okexodus.openknights.gamedata.GameTable
+import io.github.okexodus.openknights.protocol.BattleReport
+import io.github.okexodus.openknights.protocol.TypedValues
+import io.github.okexodus.openknights.protocol.Utf8
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
@@ -52,6 +60,21 @@ object SweepFeatures {
     const val ROLE_SIGNATURE = 21L
     const val TEXT_TAG = 0x61
     const val SIGNATURE_MAX_BYTES = 64
+
+    // Roulette rank (C643): its lists were always empty; the request moved to another module, but `stateless_reply`
+    // keeps its constants + branch. Not in STATELESS, so unreachable through the sweep route (dead branch here).
+    const val C_ROULETTE_RANK = 643
+    const val S_ROULETTE_RANK = 706
+
+    // Album activation (C513) refusal codes + the collection section per tujian kind.
+    const val ERROR_NO_ALBUM = 59001
+    const val ERROR_ALBUM_CLAIMED = 17001
+    const val ERROR_ALBUM_INCOMPLETE = 17000
+    val ALBUM_SECTIONS: Map<Long, String> = mapOf(1L to "hero_collection", 2L to "equip_collection", 3L to "jewelry_collection")
+
+    // event_hall.ERROR_OFFER (text 8033000). Agent A defines this in EventHall.kt when porting `plan_great_offer`;
+    // referenced here as the literal to keep this slice compiling independently (see final answer / coordination note).
+    private const val ERROR_OFFER = 33000
 
     /**
      * The closed special-event S1760 frames served instead of S6 102 (none reachable with today's closed state): DLLJ
@@ -388,35 +411,181 @@ object SweepFeatures {
     }
 
     /** `level_gift_frame(seeds)`: the served S1760 type-1 frame (the first type-1 seed frame, else `01 00000000`). */
-    fun levelGiftFrame(seeds: SystemSeeds.SeedFrames?): ByteArray =
-        throw NotPorted("sweep_features.level_gift_frame (C1633 login gift)")
+    fun levelGiftFrame(seeds: SystemSeeds.SeedFrames?): ByteArray {
+        for (payload in seeds?.all(S_EVENT_UPDATE) ?: emptyList()) {
+            if (payload.isNotEmpty() && (payload[0].toInt() and 0xFF) == 1) return payload
+        }
+        return byteArrayOf(1, 0, 0, 0, 0)
+    }
 
     /** `stateless_reply(opcode, payload, inputs, seeds)`: (packets, log fields) of the requests that read / change nothing. */
-    fun statelessReply(opcode: Int, payload: ByteArray, inputs: AcquisitionInputs?, seeds: SystemSeeds.SeedFrames?): Pair<List<Frame>, JObj> =
-        throw NotPorted("sweep_features.stateless_reply (opcode $opcode)")
+    fun statelessReply(opcode: Int, payload: ByteArray, inputs: AcquisitionInputs?, seeds: SystemSeeds.SeedFrames?): Pair<List<Frame>, JObj> {
+        if (opcode == C_ROULETTE_RANK) {
+            // Dead here (C643 not in STATELESS); kept for parity with the reference. POLICY: no ranking offline.
+            val tab = if (payload.isNotEmpty()) payload[0].toInt() and 0xFF else -1
+            if (payload.size != 1 || tab !in listOf(1, 2, 3)) throw Acquisition.Rejected("C643 carries one tab byte 1-3")
+            return listOf(S_ROULETTE_RANK to byteArrayOf(tab.toByte(), 0)) to jobj("tab" to tab, "policy" to "empty_rank_lists")
+        }
+        if (opcode == C_YKHD_OLD_CARD) throw Acquisition.Rejected("The old event card is not active", ERROR_NOT_ACTIVATED)
+        if (opcode == C_LEVEL_GIFT) return listOf(S_EVENT_UPDATE to levelGiftFrame(seeds)) to jobj("event_type" to 1, "policy" to "closed_event_frame")
+        if (opcode in CLOSED_EVENT_FRAMES) {
+            val body = CLOSED_EVENT_FRAMES.getValue(opcode)
+            return listOf(S_EVENT_UPDATE to body) to jobj("event_type" to (body[0].toInt() and 0xFF), "policy" to "closed_event_frame")
+        }
+        throw Acquisition.Rejected("Not a stateless sweep request")
+    }
+
+    /** `_album_row(inputs, family)`: the tujian.csv row whose column 101 equals `family` (else null). */
+    private fun albumRow(inputs: DailyInputs, family: Long): GameTable.Row? {
+        for (fields in inputs.tableRows("tujian")) {
+            if (PyValues.strip(fields.field("101") ?: "") == family.toString()) return fields
+        }
+        return null
+    }
 
     /** `plan_album_activate(payload, owned, current, inputs, seeds)`: C513 → tujian.csv reward (once), S550 + S548. */
-    fun planAlbumActivate(payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?): Plan =
-        throw NotPorted("sweep_features.plan_album_activate (C513)")
+    fun planAlbumActivate(payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?): Plan {
+        if (payload.size != 4) throw Acquisition.Rejected("C513 carries one u32 family id")
+        val family = WireReader(payload).u32()
+        val row = albumRow(inputs, family) ?: throw Acquisition.Rejected("Cannot find the Album", ERROR_NO_ALBUM)
+        val document = albumDocument(current, seeds)
+        if (document.arr("families").any { it.long == family }) throw Acquisition.Rejected("Album reward has been claimed", ERROR_ALBUM_CLAIMED)
+        fun num(key: String): Long = PyValues.digitInt(row.field(key), 0)
+        val kind = num("102")
+        val members = (104 until 112).map { num(it.toString()) }.filter { it != 0L }
+        val subsystems = owned.state["subsystems"] as? JObj
+        val section = subsystems?.get(ALBUM_SECTIONS[kind] ?: "") as? JObj
+        val held = HashSet<Long>()
+        for (e in (section?.get("entries") as? JArr) ?: JArr()) {
+            val v0 = e.asObj.arr("wire_values")[0].long
+            held.add(if (kind == 1L) Math.floorDiv(v0, 1000L) else v0)
+        }
+        if (members.isEmpty() || members.any { it !in held }) throw Acquisition.Rejected("Not enough cards and failed to receive the album", ERROR_ALBUM_INCOMPLETE)
+        val frames = ArrayList<Frame>()
+        val reward = Acquisition.emptyReward()
+        if (num("120") == 1L && num("121") != 0L && num("122") != 0L) {
+            frames.add(owned.grantItem(num("121"), num("122")))
+            reward.arr("items").add(jarr(num("121"), num("122")))
+        }
+        for ((field, amount, name) in listOf(Triple(Acquisition.GOLD, num("123"), "gold"), Triple(Acquisition.DIAMOND, num("124"), "diamond"))) {
+            if (amount != 0L) {
+                frames.add(owned.roleAdd(field, amount))
+                reward[name] = JInt(amount)
+            }
+        }
+        val fams = document.arr("families").map { it.long }.toSortedSet()
+        fams.add(family)
+        document["families"] = jvalue(fams.toList())
+        frames.add(S_ALBUM_REWARD to BattleReport.encodeReward(reward))
+        frames.add(S_ALBUM to albumPayload(listOf(JInt(family))))
+        return Plan(jobj("family" to family, "album_state_after" to document,
+            "evidence_class" to "native_use_table_policy_order"), frames)
+    }
 
     /** `plan_totem_lineup(payload, current, seeds)`: C2529 `u32 target` → S2884 (the same lineup again is [Unchanged]). */
-    fun planTotemLineup(payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?): Plan =
-        throw NotPorted("sweep_features.plan_totem_lineup (C2529)")
+    fun planTotemLineup(payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?): Plan {
+        if (payload.size != 4) throw Acquisition.Rejected("C2529 carries one u32")
+        val target = WireReader(payload).u32()
+        val document = totemDocument(current, seeds)
+        if (document.arr("totems").none { it.asArr[0].long == target }) throw Acquisition.Rejected("That Mastery is not owned")
+        val reply = listOf(S_TOTEM_LINEUP to WireWriter().u32(target).bytes())
+        if (document.long("lineup") == target) throw Unchanged(reply, jobj("lineup" to target))
+        val before = document.long("lineup")
+        document["lineup"] = JInt(target)
+        return Plan(jobj("lineup_before" to before, "lineup_after" to target, "totem_state_after" to document,
+            "evidence_class" to "native_use_layout_policy_refusal"), reply)
+    }
+
+    /** `decode_signature(payload)`: `text bytes + NUL`, strict UTF-8, no embedded NUL. */
+    fun decodeSignature(payload: ByteArray): Pair<ByteArray, String> {
+        if (payload.isEmpty() || payload[payload.size - 1].toInt() != 0 || payload.copyOfRange(0, payload.size - 1).any { it.toInt() == 0 }) {
+            throw Acquisition.Rejected("C577 carries one NUL-terminated text")
+        }
+        val raw = payload.copyOfRange(0, payload.size - 1)
+        val text = Utf8.decodeStrict(raw) ?: throw Acquisition.Rejected("Signature is not UTF-8")
+        return raw to text
+    }
+
+    /** `_signature_value(state)`: the single text (tag 0x61) role-property-21 value (mutated in place by [planSignature]). */
+    private fun signatureValue(state: JObj): JObj {
+        val matches = state.arr("role_properties").map { it.asObj }.filter { it.long("id") == ROLE_SIGNATURE }.map { it.obj("value") }
+        if (matches.size != 1 || (matches[0]["tag"] as? JInt)?.value?.toInt() != TEXT_TAG) throw Acquisition.Rejected("Expected one text role property 21")
+        return matches[0]
+    }
+
+    /** `signature_payload(raw)`: S128 with role property 21 = the raw bytes as a tag-0x61 string. */
+    fun signaturePayload(raw: ByteArray): ByteArray =
+        TypedValues.encodeFieldsBytes(JArr(mutableListOf(jobj("id" to ROLE_SIGNATURE, "value" to jobj("tag" to TEXT_TAG, "raw_hex" to raw.toHexString())))))
 
     /** `plan_signature(payload, owned, inputs)`: C577 → role property 21 + S128 (same text again is [Unchanged]). */
-    fun planSignature(payload: ByteArray, owned: Owned, inputs: AcquisitionInputs): Plan =
-        throw NotPorted("sweep_features.plan_signature (C577)")
+    fun planSignature(payload: ByteArray, owned: Owned, inputs: AcquisitionInputs): Plan {
+        val (raw, text) = decodeSignature(payload)
+        val limit = prop(inputs, 703, 20)
+        if (text.codePointCount(0, text.length).toLong() > limit || raw.size > SIGNATURE_MAX_BYTES) {
+            throw Acquisition.Rejected("Signature longer than $limit characters / $SIGNATURE_MAX_BYTES bytes")
+        }
+        val value = signatureValue(owned.state)
+        val reply = listOf(S_ROLE to signaturePayload(raw))
+        val before = value.str("raw_hex").hexBytes()
+        if (before.contentEquals(raw)) throw Unchanged(reply, jobj("signature_bytes" to raw.size))
+        value["raw_hex"] = JStr(raw.toHexString())
+        value["text"] = JStr(text)
+        return Plan(jobj("signature_bytes_before" to before.size, "signature_bytes_after" to raw.size,
+            "evidence_class" to "native_use_reply_candidate_policy_validation"), reply)
+    }
 
     /** `plan_tmp_vip_claim(payload, current, seeds, now)`: C25 → S1824 `01 <4 days>` (already claimed → [Unchanged]). */
-    fun planTmpVipClaim(payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, now: Long): Plan =
-        throw NotPorted("sweep_features.plan_tmp_vip_claim (C25)")
+    fun planTmpVipClaim(payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, now: Long): Plan {
+        empty(payload, C_TMP_VIP)
+        val document = tmpVipDocument(current, seeds)
+        val (state, seconds) = tmpVipView(document, now, realVipLevel(current))
+        if (state != TMP_VIP_UNCLAIMED) throw Unchanged(listOf(S_TMP_VIP to tmpVipPayload(state, seconds)), jobj("tmp_vip_state" to state, "tmp_vip_left" to seconds))
+        document["claimed"] = JBool(true)
+        document["claimed_at"] = JInt(now)
+        document["expires_at"] = JInt(now + TMP_VIP_SECONDS)
+        document["duration_seconds"] = JInt(TMP_VIP_SECONDS)
+        document["clock"] = JStr("device_clock_epoch")
+        return Plan(jobj("tmp_vip_after" to document, "tmp_vip_state_after" to TMP_VIP_ACTIVE, "expires_at" to document["expires_at"],
+            "duration_seconds" to TMP_VIP_SECONDS, "evidence_class" to "native_use_layout_capture_states_policy_duration"),
+            listOf(S_TMP_VIP to tmpVipPayload(TMP_VIP_ACTIVE, TMP_VIP_SECONDS)))
+    }
 
     /** `plan_great_offer_spin(payload, owned, current, inputs, now)`: C1649 → one Great Offer spin, closed / no attempt → [Unchanged]. */
-    fun planGreatOfferSpin(payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs, now: Long): Plan =
-        throw NotPorted("sweep_features.plan_great_offer_spin (C1649)")
+    fun planGreatOfferSpin(payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs, now: Long): Plan {
+        empty(payload, C_GREAT_OFFER)
+        val document = current.document("sgxj_state")
+        val view = EventHall.greatOfferView(document, inputs, now)
+            ?: throw Unchanged(listOf(EventHall.s1760(EventHall.T_GREAT_OFFER, byteArrayOf(0)), 6 to TransactionPackets.errorPayload(ERROR_OFFER)),
+                jobj("event_type" to EventHall.T_GREAT_OFFER, "policy" to "great_offer_closed"))
+        if (view.long("remaining") == 0L) {
+            throw Unchanged(listOf(EventHall.s1760(EventHall.T_GREAT_OFFER, EventHall.greatOfferBody(document, inputs, now)), 6 to TransactionPackets.errorPayload(ERROR_OFFER)),
+                jobj("event_type" to EventHall.T_GREAT_OFFER, "policy" to "great_offer_no_attempts"))
+        }
+        val salt = "sgxj:${view.str("window")}:${PyDocs.str(view["spins"])}:${current.payloadSha256}"
+        val seed = Acquisition.seedFor(payload, current.revision, salt)
+        return EventHall.planGreatOffer(owned, document, inputs, now, seed)
+    }
 
     /** `plan_rebirth_shop(opcode, payload, owned, current, inputs, seeds, now, owner_key)`: C3941 timer / C3939 refresh / C3937 buy. */
     fun planRebirthShop(opcode: Int, payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs,
-                        seeds: SystemSeeds.SeedFrames?, now: Long, ownerKey: String): Plan =
-        throw NotPorted("sweep_features.plan_rebirth_shop (opcode $opcode)")
+                        seeds: SystemSeeds.SeedFrames?, now: Long, ownerKey: String): Plan {
+        val seed = seeds?.first(RebirthShop.S_LIST)
+        val stored = (current.document("rebirth_shop") as? JObj)?.deepCopy()
+        val (document, rolled) = RebirthShop.view(stored, inputs, owned.state, now, ownerKey, seed,
+            if (seed != null) seeds!!.provenance(RebirthShop.S_LIST) else null)
+        if (opcode == C_REBIRTH_SHOP_TIMER) {
+            empty(payload, opcode)
+            val reply = listOf(S_REBIRTH_SHOP to RebirthShop.listPayload(document, now))
+            if (!rolled) throw Unchanged(reply, jobj("policy" to "rebirth_shop_today"))
+            return Plan(jobj("rebirth_shop_after" to document, "evidence_class" to "native_use_table_policy_draw"), reply)
+        }
+        val request = RebirthShop.decodeRequest(opcode, payload)
+        if (opcode == C_REBIRTH_SHOP_REFRESH) {
+            val used = document.obj("shops").obj(request.long("shop").toString()).long("used")
+            val rng = PyRandom.seeded(Acquisition.seedFor(payload, current.revision, "rebirth_shop:${document.str("day")}:$used"))
+            return RebirthShop.planRefresh(request, owned, document, inputs, now, rng)
+        }
+        val jewels = current.jewelEntriesView
+        return RebirthShop.planBuy(request, owned, document, inputs, now, if (jewels != null) JArr(ArrayList(jewels.items)) else null)
+    }
 }
