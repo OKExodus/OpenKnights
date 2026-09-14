@@ -87,6 +87,28 @@ object SocialRoutes {
     fun myGuildFrame(ctx: SocialContext, role: Long, now: Long, current: StateStore.Current? = null): Frame =
         Guild.S_MY_GUILD to Guild.myGuildPayload(guildDoc(ctx), role, ctx.people(current), ctx.inputs!!, now)
 
+    private fun guildRequired(ctx: SocialContext, role: Long): Pair<Long, JObj> {
+        val (gid, guild) = myGuild(ctx, role)
+        if (guild == null || !Py.truthy(guild)) throw Acquisition.Rejected("Not in a Guild yet", Guild.ERR_NOT_IN_GUILD)
+        return gid to guild
+    }
+
+    const val GUILD_SHOP = 9L
+
+    /**
+     * C75 of a Guild Shop commodity (shop type 9): only a guild member whose guild reached the commodity's unlock level
+     * (juntuan_dengji 111) may buy. The client already hides the request below the level, so the server errors are
+     * POLICY: not a member 52002, level too low 52009.
+     */
+    fun guildShopGate(current: StateStore.Current, ctx: SocialContext, record: JObj?) {
+        if (record == null || record["type"] != JInt(GUILD_SHOP)) return
+        val (_, guild) = guildRequired(ctx, roleOf(current))
+        val unlock = ctx.inputs!!.guildShopUnlock(PyDocs.long(PyDocs.at(record, "id")))
+        if (unlock == null || Guild.levelOf(guild, ctx.inputs) < unlock) {
+            throw Acquisition.Rejected("Unlock when your Guild reaches the level", Guild.ERR_NO_ACCESS)
+        }
+    }
+
     /** One social request (only the initialization queries are ported yet). */
     fun dispatch(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long): List<Frame> {
         val role = roleOf(current)

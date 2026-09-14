@@ -59,7 +59,30 @@ object AcquisitionRoutes {
     fun readOnlyReply(opcode: Int, payload: ByteArray, current: StateStore.Current, inputs: DailyInputs, catalog: JObj?, rngPolicy: JObj?,
                       now: Long): Pair<List<Frame>, JObj> {
         if (opcode == 1253) return fuseLuckReply(payload, current)
-        throw NotPorted("acquisition query (opcode $opcode)")
+        if (opcode == 89) {
+            if (payload.isNotEmpty()) throw Acquisition.Rejected("C89 has no payload")
+            return Warehouse.planList(current.document("buyback_state")).packets to JObj()
+        }
+        if (opcode == 1057) {
+            val request = Shops.decodeListRequest(payload)
+            val plan = Shops.planList(request, catalog!!, current.document("shop_state"), now)
+            return plan.packets to io.github.okexodus.openknights.exact.jobj("shop_type" to request["type"], "records" to plan["records"], "served" to plan["served"])
+        }
+        val request = Shops.decodeLuckyRequest(payload)
+        val plan = Shops.planLuckyInfo(request, Owned(current, inputs), inputs, catalog!!, current.document("lucky_state"), now,
+            poolPolicy = luckyPools(rngPolicy))
+        return plan.packets to io.github.okexodus.openknights.exact.jobj("remaining" to plan["remaining"])
+    }
+
+    /** `aq.policy_allows(rng_policy, "lucky_refresh")` (the policy document names the one allowed Lucky Shop draw). */
+    private fun luckyPools(rngPolicy: JObj?): Boolean =
+        rngPolicy != null && Py.truthy(rngPolicy) && rngPolicy.strOrNull("lucky_refresh") == "uniform_over_observed_pools"
+
+    /** `served(current)` of `planner_for`: the served clock, recorded as the plan's `served_time`. */
+    private fun served(used: JObj, servedTime: (StateStore.Current) -> Long, current: StateStore.Current): Long {
+        val value = servedTime(current)
+        used["served_time"] = io.github.okexodus.openknights.exact.JInt(value)
+        return value
     }
 
     /** One committed acquisition request's (action, request, planner) — the reference's `planner_for` result. */
@@ -96,8 +119,81 @@ object AcquisitionRoutes {
                     Reborn.planReborn(request, owned, inputs, excluded)
                 }
             }
-            // shops, Lucky Shop, Fate Store spin, sell / buy-back, claims, VIP buys, VIP quest (shops, warehouse, claims)
-            75, 2725, 2723, 641, 83, 85, 87, 1121, 1025, 1027, 1029, 1669, 1125 -> throw NotPorted("acquisition planner (opcode $opcode)")
+            75 -> {
+                val req = Shops.decodeBuyRequest(payload)
+                request = req
+                planner = { owned, current ->
+                    Shops.planBuy(req, owned, inputs, catalog!!, current.document("shop_state"), now, serverTime = served(used, servedTime, current))
+                }
+            }
+            2725, 2723 -> {
+                val req = Shops.decodeLuckyRequest(payload)
+                request = req
+                planner = { owned, current ->
+                    val seed = Acquisition.seedFor(payload, current.revision, "lucky:$now")
+                    val serverTime = served(used, servedTime, current)
+                    if (opcode == 2725) Shops.planLuckyInfo(req, owned, inputs, catalog!!, current.document("lucky_state"), now, seed = seed,
+                        poolPolicy = luckyPools(rngPolicy), serverTime = serverTime)
+                    else Shops.planLuckyExchange(req, owned, inputs, catalog!!, current.document("lucky_state"), now,
+                        poolPolicy = luckyPools(rngPolicy), seed = seed, serverTime = serverTime)
+                }
+            }
+            641 -> {
+                val req = Shops.decodeRouletteRequest(payload)
+                request = req
+                if (rngPolicy == null) throw Acquisition.Rejected("The roulette needs the labeled local acquisition policy", Acquisition.ERROR_WRONG_TYPE)
+                planner = { owned, current ->
+                    Shops.planSpin(req, owned, catalog!!, seed = Acquisition.seedFor(payload, current.revision, "roulette:$now"),
+                        now = served(used, servedTime, current))
+                }
+            }
+            83, 85 -> {
+                val req = Warehouse.decodePair(payload, "C$opcode")
+                request = req
+                planner = { owned, current ->
+                    val plan = if (opcode == 83) Warehouse.planSell(req, owned, inputs, current.document("buyback_state"))
+                        else Warehouse.planBuyback(req, owned, inputs, current.document("buyback_state"))
+                    plan["buyback_state_after"] = plan.data.remove("buyback_after")
+                    plan
+                }
+            }
+            1121 -> {
+                val req = Claims.decodeActivityClaim(payload)
+                request = req
+                planner = { owned, current -> Claims.planActivityClaim(req, owned, serverTime = served(used, servedTime, current)) }
+            }
+            1025 -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C1025 has no payload")
+                request = JObj()
+                planner = { owned, current -> Claims.planVipDaily(owned, inputs, current.document("vip_state"), now = now) }
+            }
+            1027, 1029 -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                val kind = if (opcode == 1027) "ap" else "energy"
+                request = io.github.okexodus.openknights.exact.jobj("kind" to kind)
+                planner = { owned, current ->
+                    Claims.planVipBuy(kind, owned, inputs, current.document("vip_state"), now = now, serverTime = served(used, servedTime, current))
+                }
+            }
+            1669 -> {
+                val req = Claims.decodeCardClaim(payload)
+                request = req
+                planner = { owned, current -> Claims.planCardClaim(req, owned, inputs, current.document("month_cards"), now = now) }
+            }
+            1125 -> {
+                val req = VipQuest.decodeClaim(payload)
+                request = req
+                planner = { owned, current -> VipQuest.planClaim(req, owned, inputs, current) }
+            }
+            87 -> {
+                val req = Warehouse.decodePair(payload, "C87")
+                request = req
+                planner = { _, current ->
+                    val plan = Warehouse.planBuybackDelete(req, current.document("buyback_state"))
+                    plan["buyback_state_after"] = plan.data.remove("buyback_after")
+                    plan
+                }
+            }
             else -> throw Acquisition.Rejected("Not an acquisition opcode")
         }
         val recorded = { owned: Owned, current: StateStore.Current ->
