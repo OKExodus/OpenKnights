@@ -226,6 +226,30 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
         }
     }
 
+    /**
+     * Rename Card (`rename`): an active character's world name, under the creation rules — normalized, and free across
+     * every entry (reserved, active, abandoned) and the bound bots. A taken name is refused ("… taken …"). Returns the
+     * old name.
+     */
+    fun rename(characterId: String, name: String, actor: String, reason: String): String {
+        val normalized = io.github.okexodus.openknights.server.game.FreshProfile.normalizeName(name)
+        val key = io.github.okexodus.openknights.server.game.FreshProfile.nameKey(normalized)
+        return connect().use { db ->
+            db.immediate {
+                val row = db.queryOne("SELECT entry_id,name,name_key FROM world_characters WHERE character_id=? AND status='active'", characterId)
+                    ?: throw IllegalArgumentException("Only an active world character can be renamed")
+                if (row.string("name_key") != key && (db.queryOne("SELECT 1 FROM world_characters WHERE name_key=?", key) != null || key in botNames)) {
+                    throw io.github.okexodus.openknights.server.game.FreshProfile.CreationRejected("That name is already taken in this world")
+                }
+                db.execute("UPDATE world_characters SET name=?,name_key=?,updated_at_utc=? WHERE entry_id=?", normalized, key,
+                    PyTime.nowIsoMillis(), row.string("entry_id"))
+                audit(db, actor, "rename_character", row.string("entry_id"), characterId,
+                    jobj("name_before" to row.string("name"), "name_after" to normalized, "reason" to reason))
+                row.string("name")
+            }
+        }
+    }
+
     fun activate(entryId: String, characterId: String, statePath: Path, actor: String) {
         connect().use { db ->
             db.immediate {
