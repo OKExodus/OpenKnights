@@ -39,6 +39,7 @@ import io.github.okexodus.openknights.server.game.Achievements
 import io.github.okexodus.openknights.server.game.AltTeam
 import io.github.okexodus.openknights.server.game.DailyHooks
 import io.github.okexodus.openknights.server.game.EquipEvolve
+import io.github.okexodus.openknights.server.game.GiftCodes
 import io.github.okexodus.openknights.server.game.Claims
 import io.github.okexodus.openknights.server.game.DailyRoutes
 import io.github.okexodus.openknights.server.game.Goals
@@ -1074,8 +1075,39 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
     }
 
     /** The gift code C1537 (`_gift_code_route`, gift_codes.py): grants, then S1664 01 + Reward; unknown / used codes answer S1664. */
-    @Suppress("UNUSED_PARAMETER")
-    private fun giftCodeRoute(payload: ByteArray): List<Frame> = group(1537, "gift code")
+    private fun giftCodeRoute(payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Gift codes need a store-backed character with a deployment policy")
+            val now = service.clock.now()
+            val tables = service.giftCodeTables
+            try {
+                val committed = stateStore!!.acquisitionTransaction("gift_code", characterId!!, policy, inputs, "authenticated-client",
+                    "Native opcode1537 gift code", detailExtra = jobj("opcode" to 1537, "contract" to "server/gift_codes.py")) { owned, current ->
+                    GiftCodes.planRedeem(payload, owned, current, inputs, Acquisition.seedFor(payload, current.revision, "gift_code"), now, tables)
+                }
+                result = committed.first
+                plan = committed.second
+            } catch (unchanged: GiftCodes.Unchanged) {
+                log("gift_code_refused", "character_id" to characterId, "reason" to unchanged.message)
+                return unchanged.packets
+            }
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? Acquisition.Rejected)?.code ?: 102
+            log("rejected_gift_code", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {
+            guard(e)
+            log("gift_code_internal_error", "character_id" to characterId, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "gift_code", "character_id" to characterId, "revision" to result["revision"],
+            "code_hash" to (plan["code_hash"] as io.github.okexodus.openknights.exact.JStr).value.take(12), "items" to plan.data.arr("grants").size)
+        return plan.packets.toList()
+    }
 
     // --- items, summons, compose ------------------------------------------------------------------------------------------
 
