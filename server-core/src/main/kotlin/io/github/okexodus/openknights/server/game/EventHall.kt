@@ -7,9 +7,13 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.PyRandom
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.protocol.BattleReport
+import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
@@ -44,6 +48,39 @@ object EventHall {
     const val PERMANENT_SECONDS = 5L * 365 * 86400
     const val GREAT_OFFER_PROFILE = "sgxj_state_v1"
     const val GREAT_OFFER_DAYS = 3L
+
+    // --- action-planner constants (event_hall.py) ---
+    const val PAIR_DIAMOND = 20003L
+    const val PAIR_GOLD = 20001L
+    const val ERROR_EVENT = 30000                       // "The Daily Event Reward is invalid" (generic daily-event refusal)
+    const val PIE_PROFILE = "magic_pie_state_v1"
+    const val PIE_STAMINA = 40L
+    const val PIE_ENERGY = 300L
+    /** SpecialEventMFDG TimeIntervalChecker windows (served hours). */
+    val PIE_PIECES: Map<Long, Pair<Long, Long>> = mapOf(0x65L to (12L to 13L), 0x66L to (18L to 19L))
+    // Combine (ZBHC)
+    const val S_COMBINE = 3300
+    const val ERROR_MATERIALS = 1011                    // "You don't have all the Materials yet"
+    const val S_BAG_REMOVE = 102
+    const val S_SET_EQUIP = 104
+    const val S_EQUIP_REMOVE = 98
+    // Exchanges (DHHD)
+    const val ERROR_EXCHANGE_EVENT = 35000              // "The Event is invalid"
+    const val ERROR_EXCHANGE_LIMIT = 35001              // "Exceed the exchange limit"
+    const val ITEM_KIND = 1L
+    const val HERO_KIND = 2L
+    const val EQUIP_KIND = 3L
+    const val JEWEL_KIND = 9L
+    val MATERIAL_KINDS = setOf(ITEM_KIND, HERO_KIND, EQUIP_KIND, JEWEL_KIND)
+    val RESULT_KINDS = setOf(ITEM_KIND, EQUIP_KIND, JEWEL_KIND)
+    const val INSTANCE_POLICY = "least_invested_first_v1"
+    const val S_HERO_BENCH_REMOVE = 40
+    const val S_HERO_REMOVE = 34
+    const val S_JEWEL_LIST_REMOVE = 3074
+    const val ERROR_NO_JEWEL_LIST = 102                 // the opcode-3072 list is neither stored nor served
+    // Great Offer (SGXJ)
+    const val ERROR_OFFER = 33000                       // "Offer is not currently available"
+    const val GREAT_OFFER_DRAW = "table_weights_seeded_v1"
 
     private fun copy(value: JValue): JObj = value.deepCopy() as JObj
 
@@ -309,37 +346,320 @@ object EventHall {
     }
 
     // --- Event Hall action planners (group 8, owned by the Event Hall slice) -------------------------------------------
-    // Lead-written stubs with fixed signatures so the daily / sweep routes wire in without conflicts; the Event Hall
-    // slice replaces each body with the port of the matching `event_hall.py` function. Until then a NotPorted keeps the
-    // step waiting in the harness (the request's first cause moves here from the route).
+
+    /** `_counted(uids)`: `u8 n, n × u32 uid`. */
+    private fun counted(uids: List<Long>): ByteArray {
+        val w = WireWriter().number('B', uids.size.toLong())
+        for (u in uids) w.number('I', u)
+        return w.bytes()
+    }
+
+    // --- Palace (CBNW) ---
 
     /** `plan_palace_visit(owned, inputs, document, now)`: C1635 → S1762 `02`+Reward(Gold), S128 Gold, S1760 `02`. */
-    fun planPalaceVisit(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan =
-        throw NotPorted("event_hall.plan_palace_visit (C1635)")
+    fun planPalaceVisit(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan {
+        val today = Shops.dayOf(now)
+        val doc = palaceRoll(document, today, inputs)
+        if (PyDocs.get(doc, "visit_day") == JStr(today)) throw Acquisition.Rejected("The Palace was already visited today", ERROR_EVENT)
+        val row = inputs.palaceRow(PyDocs.long(PyDocs.at(doc, "bonus_day"))) ?: JObj()
+        val gold = if (Py.truthy(row["gold"])) PyDocs.long(row["gold"]) else 0L
+        if (gold <= 0L) throw Acquisition.Rejected("No canbainvwang row for this cycle", ERROR_EVENT)
+        val reward = Acquisition.emptyReward()
+        reward["gold"] = JInt(gold)
+        owned.roleAdd(Acquisition.GOLD, gold)
+        doc["visit_day"] = JStr(today)
+        val visits = PyDocs.long(PyDocs.at(doc, "visits_needed"))
+        if (visits > 0L) {
+            val remaining = visits - 1
+            doc["visits_needed"] = JInt(remaining)
+            if (remaining == 0L && PyDocs.long(PyDocs.at(doc, "bonus_state")) == 0L) doc["bonus_state"] = JInt(1)
+        }
+        val goldRole = owned.role(Acquisition.GOLD)
+        val frames = listOf(
+            S_EVENT_REWARD to (byteArrayOf(T_PALACE.toByte()) + BattleReport.encodeReward(reward)),
+            Acquisition.S_ROLE to Acquisition.roleUpdatePayload(listOf(Triple(Acquisition.GOLD, goldRole.long("tag"), owned.roleBits(Acquisition.GOLD)))),
+            s1760(T_PALACE, palaceBody(doc, today)))
+        return Plan(jobj("gold" to gold, "palace_state_after" to doc, "evidence_class" to "capture_observed_csv_calculation"), frames)
+    }
 
     /** `plan_palace_claim(owned, inputs, document, now)`: C1637 → Diamond / bonus items, S1762 `02`+Reward, S1760 `02`. */
-    fun planPalaceClaim(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan =
-        throw NotPorted("event_hall.plan_palace_claim (C1637)")
+    fun planPalaceClaim(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan {
+        val today = Shops.dayOf(now)
+        val doc = palaceRoll(document, today, inputs)
+        if (PyDocs.long(PyDocs.at(doc, "bonus_state")) != 1L) throw Acquisition.Rejected("The Palace bonus is not claimable", ERROR_EVENT)
+        val row = inputs.palaceRow(PyDocs.long(PyDocs.at(doc, "bonus_day")))
+        if (row == null || !Py.truthy(row["bonus"])) throw Acquisition.Rejected("No canbainvwang bonus for this cycle", ERROR_EVENT)
+        val reward = Acquisition.emptyReward()
+        val roles = ArrayList<Long>()
+        val items = ArrayList<Frame>()
+        for (entry in row.arr("bonus")) {
+            val b = entry.asArr
+            val item = b[1].long
+            val count = b[2].long
+            if (item == PAIR_DIAMOND) {                     // Diamond pair (CLAIMS_CONTRACT §2 currency remap)
+                owned.roleAdd(Acquisition.DIAMOND, count)
+                reward["diamond"] = JInt(reward.long("diamond") + count)
+                roles.add(Acquisition.DIAMOND)
+            } else {
+                items.add(owned.grantItem(item, count))
+                reward.arr("items").add(jarr(item, count))
+            }
+        }
+        val frames = ArrayList<Frame>()
+        if (roles.isNotEmpty()) {
+            frames.add(Acquisition.S_ROLE to Acquisition.roleUpdatePayload(
+                roles.toSortedSet().map { Triple(it, owned.role(it).long("tag"), owned.roleBits(it)) }))
+        }
+        frames.addAll(items)
+        doc["bonus_state"] = JInt(2)
+        doc["cycle_day"] = JStr(today)
+        frames.add(S_EVENT_REWARD to (byteArrayOf(T_PALACE.toByte()) + BattleReport.encodeReward(reward)))
+        frames.add(s1760(T_PALACE, palaceBody(doc, today)))
+        return Plan(jobj("bonus_day" to PyDocs.at(doc, "bonus_day"), "reward" to reward, "palace_state_after" to doc,
+            "evidence_class" to "capture_observed_csv_calculation"), frames)
+    }
+
+    // --- Magic Pie (MFDG) ---
 
     /** `decode_pie_request(payload)`: C1641 `u32 piece id`. */
-    fun decodePieRequest(payload: ByteArray): JObj =
-        throw NotPorted("event_hall.decode_pie_request (C1641)")
+    fun decodePieRequest(payload: ByteArray): JObj {
+        if (payload.size != 4) throw Acquisition.Rejected("C1641 is u32 piece id")
+        return jobj("piece" to WireReader(payload).u32())
+    }
 
     /** `plan_magic_pie(request, owned, document, served_time)`: C1641 → S128 AP, S128 Energy, S1762 `04`, S1760 `04`. */
-    fun planMagicPie(request: JObj, owned: Owned, document: JValue?, servedTime: Long): Plan =
-        throw NotPorted("event_hall.plan_magic_pie (C1641)")
+    fun planMagicPie(request: JObj, owned: Owned, document: JValue?, servedTime: Long): Plan {
+        val piece = request.long("piece")
+        val window = PIE_PIECES[piece] ?: throw Acquisition.Rejected("Unknown Magic Pie piece", ERROR_EVENT)
+        val (start, end) = window
+        val hour = Math.floorDiv(Math.floorMod(servedTime, 86400L), 3600L)
+        val claimed = pieView(document, servedTime)
+        if (!(start <= hour && hour < end) || claimed.any { it == JInt(piece) })
+            throw Acquisition.Rejected("This Magic Pie piece is not claimable now", ERROR_EVENT)
+        val doc = jobj("profile" to PIE_PROFILE, "served_day" to Math.floorDiv(servedTime, 86400L),
+            "claimed" to JArr((claimed + JInt(piece)).toMutableList()))
+        val frames = ArrayList<Frame>()
+        frames.add(owned.roleAdd(Acquisition.STAMINA, PIE_STAMINA))
+        frames.add(owned.roleAdd(Acquisition.ENERGY, PIE_ENERGY))
+        val reward = Acquisition.emptyReward()
+        reward["stamina"] = JInt(PIE_STAMINA)
+        reward["energy"] = JInt(PIE_ENERGY)
+        frames.add(S_EVENT_REWARD to (byteArrayOf(T_MAGIC_PIE.toByte()) + BattleReport.encodeReward(reward)))
+        frames.add(s1760(T_MAGIC_PIE, pieBody(doc, servedTime)))
+        return Plan(jobj("piece" to piece, "magic_pie_state_after" to doc, "served_time" to servedTime,
+            "evidence_class" to "capture_observed"), frames)
+    }
+
+    // --- Combine (ZBHC) ---
 
     /** `decode_combine(payload)`: C3077 `u32 recipe, u8 4, 4 × u32 equipment uid`. */
-    fun decodeCombine(payload: ByteArray): JObj =
-        throw NotPorted("event_hall.decode_combine (C3077)")
+    fun decodeCombine(payload: ByteArray): JObj {
+        if (payload.size != 21) throw Acquisition.Rejected("C3077 is u32 recipe, u8 count, 4 x u32 uid")
+        val r = WireReader(payload)
+        val recipe = r.u32()
+        val count = r.u8()
+        val uids = listOf(r.u32(), r.u32(), r.u32(), r.u32())
+        if (count != 4) throw Acquisition.Rejected("C3077 carries four materials")
+        return jobj("recipe" to recipe, "uids" to uids)
+    }
 
     /** `plan_combine(request, owned, inputs)`: C3077 → the recipe's result equipment (equip_hecheng.csv), S3300. */
-    fun planCombine(request: JObj, owned: Owned, inputs: DailyInputs): Plan =
-        throw NotPorted("event_hall.plan_combine (C3077)")
+    fun planCombine(request: JObj, owned: Owned, inputs: DailyInputs): Plan {
+        val recipe = inputs.combineRecipe(request.long("recipe")) ?: throw Acquisition.Rejected("Unknown Combine recipe", ERROR_MATERIALS)
+        val uids = request.arr("uids").map { it.long }
+        if (uids.toSet().size != 4) throw Acquisition.Rejected("Four distinct materials are required", ERROR_MATERIALS)
+        val state = owned.state
+        val records = LinkedHashMap<Long, JObj>()
+        for (r in state.arr("equipment")) { val o = r.asObj; records[o.arr("wire_values")[0].long] = o }
+        val materials = recipe.arr("materials")
+        for (i in uids.indices) {
+            val mat = materials[i].asArr
+            val template = mat[0].long; val minLevel = mat[1].big; val minGrade = mat[2].big
+            val record = records[uids[i]]
+            val wire = record?.arr("wire_values")
+            if (record == null || wire!![1].long != template || wire[2].big < minLevel || wire[4].big < minGrade)
+                throw Acquisition.Rejected("A material does not fit the recipe", ERROR_MATERIALS)
+        }
+        val frames = ArrayList<Frame>(owned.consumeTemplate(recipe.long("cost_item"), recipe.long("cost")))
+        val bag = state.arr("bag_equipment_uids").map { it.long }
+        for (uid in uids) if (uid in bag) frames.add(S_BAG_REMOVE to counted(listOf(uid)))
+        for (slot in state.arr("formation")) {
+            val s = slot.asObj
+            val kept = JArr()
+            for (assignment in s.arr("assignments")) {
+                val a = assignment.asArr
+                val position = a[0].long; val uid = a[1].long
+                if (uid in uids) frames.add(S_SET_EQUIP to WireWriter().u8(s.long("slot_id").toInt()).u8(position.toInt()).u32(0).bytes())
+                else kept.add(jarr(position, uid))
+            }
+            s["assignments"] = kept
+        }
+        frames.add(S_BAG_REMOVE to counted(uids))
+        frames.add(S_EQUIP_REMOVE to counted(uids))
+        val uidSet = uids.toSet()
+        state["equipment"] = JArr(state.arr("equipment").filter { it.asObj.arr("wire_values")[0].long !in uidSet }.toMutableList())
+        state["bag_equipment_uids"] = JArr(bag.filter { it !in uidSet }.mapTo(ArrayList()) { JInt(it) })
+        owned.log.add(jobj("op" to "combine_consume", "uids" to uids, "recipe" to recipe["recipe"]))
+        val (newUid, groups) = owned.grantEquipment(recipe.long("result"))
+        val book = (groups["book"] ?: emptyList()).filter { it.first == Acquisition.S_COLLECTION || it.first == Acquisition.S_ACHIEVEMENT }
+        val reward = Acquisition.emptyReward()
+        reward["equips"] = jarr(jarr(recipe.long("result")))
+        frames.addAll(groups["add"] ?: emptyList())
+        frames.addAll(book)
+        frames.add(S_COMBINE to BattleReport.encodeReward(reward))
+        return Plan(jobj("recipe" to recipe["recipe"], "consumed_uids" to uids, "new_uid" to newUid, "result" to recipe.long("result"),
+            "evidence_class" to "capture_observed_csv_recipe"), frames)
+    }
+
+    // --- Exchanges (DHHD) ---
 
     /** `decode_exchange(payload)`: C1665 `u32 event, u8 formula index, u32 amount`. */
-    fun decodeExchange(payload: ByteArray): JObj =
-        throw NotPorted("event_hall.decode_exchange (C1665)")
+    fun decodeExchange(payload: ByteArray): JObj {
+        if (payload.size != 9) throw Acquisition.Rejected("C1665 is u32 event, u8 formula, u32 amount")
+        val r = WireReader(payload)
+        return jobj("event" to r.u32(), "formula" to r.u8(), "amount" to r.u32())
+    }
+
+    /** `decode_exchange_body(body)`: inverse of `exchangeBody` for a captured S1760 type-9 body (after the type byte). */
+    fun decodeExchangeBody(body: ByteArray): JArr {
+        var offset = 0
+        fun u8(): Long { val v = body[offset].toLong() and 0xFF; offset += 1; return v }
+        fun u32at(): Long { var v = 0L; for (i in 0 until 4) v = v or ((body[offset + i].toLong() and 0xFF) shl (8 * i)); offset += 4; return v }
+        fun cstring(): String {
+            var e = offset
+            while (body[e].toInt() != 0) e++
+            val text = String(body, offset, e - offset, Charsets.UTF_8)
+            offset = e + 1
+            return text
+        }
+        val count = u8()
+        val events = JArr()
+        for (n in 0 until count) {
+            val ident = u32at(); val cd = u32at()
+            val name = cstring(); val desc = cstring()
+            val formulas = JArr()
+            val formulaCount = u8()
+            for (f in 0 until formulaCount) {
+                val m = u8()
+                val materials = JArr()
+                for (k in 0 until m) { val kind = u8(); val item = u32at(); val cnt = u32at(); materials.add(jarr(kind, item, cnt)) }
+                val kind = u8(); val item = u32at(); val qty = u32at(); val remaining = u32at()
+                formulas.add(jobj("materials" to materials, "result" to jarr(kind, item, qty), "remaining" to remaining))
+            }
+            events.add(jobj("id" to ident, "cd" to cd, "name" to name, "desc" to desc, "formulas" to formulas))
+        }
+        if (offset != body.size) throw PyValues.ValueError("S1760 type 9 has trailing bytes")
+        return events
+    }
+
+    /** `_hero_investment(values)`: sort key of least_invested_first_v1 for a hero card. */
+    private fun heroInvestment(values: Map<Long, JValue?>): List<BigInteger> {
+        fun v(k: Long): BigInteger = values[k]?.takeIf { Py.truthy(it) }?.let { PyDocs.int(it) } ?: BigInteger.ZERO
+        val powerUp = listOf(15L, 16L, 17L, 18L).fold(BigInteger.ZERO) { acc, f -> acc + v(f) }
+        return listOf(v(2L), v(3L), powerUp, v(19L), v(24L), PyDocs.int(values[0L]).negate())
+    }
+
+    /** `_record_investment(record)`: sort key for a gear / jewel record `(uid, template, level, EXP, grade, super, enchant)`. */
+    private fun recordInvestment(record: JArr): List<BigInteger> = listOf(
+        PyDocs.int(record[2]), PyDocs.int(record[3]), PyDocs.int(record[4]), PyDocs.int(record[5]), PyDocs.int(record[6]),
+        PyDocs.int(record[0]).negate())
+
+    private val KEY_ORDER: Comparator<List<BigInteger>> = Comparator { a, b ->
+        var c = 0
+        for (i in 0 until minOf(a.size, b.size)) { c = a[i].compareTo(b[i]); if (c != 0) return@Comparator c }
+        a.size.compareTo(b.size)
+    }
+
+    /** `protected_heroes(owned, excluded_heroes)`: {uid: why} of the hero cards an exchange never takes. */
+    fun protectedHeroes(owned: Owned, excludedHeroes: Collection<JValue> = emptyList()): Map<Long, String> {
+        val state = owned.state
+        val isLeader = owned.inputs as? DailyInputs         // getattr(inputs, "hero_is_leader", None)
+        val protectedMap = LinkedHashMap<Long, String>()
+        for (fields in state.arr("heroes")) {
+            val values = Acquisition.heroValues(fields.asArr)
+            val uid = PyDocs.int(values[0L]).toLong()
+            if (Py.truthy(values[14L])) protectedMap[uid] = "tutorial hero"
+            else if (isLeader != null && isLeader.heroIsLeader(if (Py.truthy(values[1L])) PyDocs.long(values[1L]) else 0L)) protectedMap[uid] = "leader"
+        }
+        for (slot in (state["formation"] as? JArr) ?: JArr()) {
+            val hu = slot.asObj["hero_uid"]
+            if (Py.truthy(hu)) protectedMap.putIfAbsent(PyDocs.long(hu), "lineup")
+        }
+        val secondaryTeam = PyDocs.get(owned.current, "secondary_team")
+        val secondary = (if (Py.truthy(secondaryTeam)) (secondaryTeam as JObj)["document"] else null)?.takeIf { Py.truthy(it) } as? JObj ?: JObj()
+        for (reference in (secondary["references"] as? JArr) ?: JArr()) {
+            if (reference is JObj && Py.truthy(reference["hero_uid"])) protectedMap.putIfAbsent(PyDocs.long(reference["hero_uid"]), "alternate team")
+        }
+        for (uid in excludedHeroes) protectedMap.putIfAbsent(PyDocs.long(uid), "set out / mining")
+        return protectedMap
+    }
+
+    /** `pick_instances(kind, template, need, owned, excluded_heroes, taken)`: the `need` least-invested unequipped instances. */
+    fun pickInstances(kind: Long, template: Long, need: Long, owned: Owned, excludedHeroes: Collection<JValue> = emptyList(),
+                      taken: Collection<Long> = emptyList()): List<Long> {
+        val takenSet = taken.toSet()
+        val pool = ArrayList<Pair<List<BigInteger>, Long>>()
+        when (kind) {
+            HERO_KIND -> {
+                val protectedMap = protectedHeroes(owned, excludedHeroes)
+                for (f in owned.state.arr("heroes")) {
+                    val v = Acquisition.heroValues(f.asArr)
+                    val uid = PyDocs.int(values0(v)).toLong()
+                    if (v[1L] == JInt(template) && uid !in protectedMap && uid !in takenSet)
+                        pool.add((heroInvestment(v) + BigInteger.valueOf(uid)) to uid)
+                }
+            }
+            EQUIP_KIND -> {
+                val bag = owned.state.arr("bag_equipment_uids").map { it.long }.toSet()
+                for (r in owned.state.arr("equipment")) {
+                    val wire = r.asObj.arr("wire_values")
+                    val uid = wire[0].long
+                    if (wire[1] == JInt(template) && uid in bag && uid !in takenSet)
+                        pool.add((recordInvestment(wire) + BigInteger.valueOf(uid)) to uid)
+                }
+            }
+            JEWEL_KIND -> {
+                val entries = owned.current.jewelEntriesView
+                    ?: throw Acquisition.Rejected("No unequipped-jewelry list to take jewels from", ERROR_NO_JEWEL_LIST)
+                for (e in entries) {
+                    val rec = e.asObj.arr("record")
+                    val uid = rec[0].long
+                    if (rec[1] == JInt(template) && uid !in takenSet)
+                        pool.add((recordInvestment(rec) + BigInteger.valueOf(uid)) to uid)
+                }
+            }
+            else -> throw Acquisition.Rejected("Not a card material kind", ERROR_EXCHANGE_EVENT)
+        }
+        if (pool.size < need) throw Acquisition.Rejected("Not enough cards outside the protected ones", Acquisition.ERROR_NOT_ENOUGH)
+        return pool.sortedWith(compareBy(KEY_ORDER) { it.first }).take(need.toInt()).map { it.second }
+    }
+
+    private fun values0(v: Map<Long, JValue?>): JValue = v[0L] ?: throw PyDocs.KeyError(0)
+
+    /** `_remove_cards(kind, uids, owned, jewels)`: removal frames of the existing paths; mutates `jewels` for jewel kind. */
+    private fun removeCards(kind: Long, uids: List<Long>, owned: Owned, jewels: JArr): List<Frame> {
+        val frames = ArrayList<Frame>()
+        when (kind) {
+            HERO_KIND -> {
+                for (uid in uids) owned.removeHero(uid)
+                for (part in chunks(uids)) { frames.add(S_HERO_BENCH_REMOVE to counted(part)); frames.add(S_HERO_REMOVE to counted(part)) }
+            }
+            EQUIP_KIND -> {
+                val gone = uids.toSet()
+                owned.state["equipment"] = JArr(owned.state.arr("equipment").filter { it.asObj.arr("wire_values")[0].long !in gone }.toMutableList())
+                owned.state["bag_equipment_uids"] = JArr(owned.state.arr("bag_equipment_uids").filter { it.long !in gone }.toMutableList())
+                for (part in chunks(uids)) { frames.add(S_BAG_REMOVE to counted(part)); frames.add(S_EQUIP_REMOVE to counted(part)) }
+            }
+            else -> {
+                val gone = uids.toSet()
+                val kept = jewels.filter { it.asObj.arr("record")[0].long !in gone }
+                jewels.clear(); jewels.addAll(kept)
+                for (part in chunks(uids)) frames.add(S_JEWEL_LIST_REMOVE to counted(part))
+            }
+        }
+        owned.log.add(jobj("op" to "exchange_consume_cards", "kind" to kind, "uids" to uids, "policy" to INSTANCE_POLICY))
+        return frames
+    }
 
     /**
      * `plan_exchange(request, owned, exchanges, document, now, served_time, excluded_heroes)`: C1665 → consume the
@@ -347,13 +667,131 @@ object EventHall {
      * grant its result × amount, S1762 `09`+Reward, S1760 `09`.
      */
     fun planExchange(request: JObj, owned: Owned, exchanges: List<JValue>, document: JValue?, now: Long,
-                     servedTime: Long, excludedHeroes: Set<JValue> = emptySet()): Plan =
-        throw NotPorted("event_hall.plan_exchange (C1665)")
+                     servedTime: Long, excludedHeroes: Collection<JValue> = emptySet()): Plan {
+        val event = exchanges.map { it.asObj }.firstOrNull { PyDocs.at(it, "id") == request["event"] }
+        if (event == null || request.long("formula") >= event.arr("formulas").size ||
+            BigInteger.valueOf(servedTime) >= PyDocs.int(event["end"] ?: JInt(0x7fffffffL)))
+            throw Acquisition.Rejected("No such exchange", ERROR_EXCHANGE_EVENT)
+        val formula = event.arr("formulas")[request.long("formula").toInt()].asObj
+        val amount = request.long("amount")
+        val doc = exchangeRoll(document, exchanges, now)
+        val used = exchangeUsed(doc, PyDocs.at(event, "id"), request.long("formula").toInt())
+        if (amount < 1L || used + BigInteger.valueOf(amount) > PyDocs.int(PyDocs.at(formula, "limit")))
+            throw Acquisition.Rejected("Exchange limit exceeded", ERROR_EXCHANGE_LIMIT)
+        val materials = formula.arr("materials")
+        val resultTriple = formula.arr("result")
+        if (materials.any { it.asArr[0].long !in MATERIAL_KINDS } || resultTriple[0].long !in RESULT_KINDS)
+            throw Acquisition.Rejected("This exchange kind is not served offline yet", ERROR_EXCHANGE_EVENT)
+        val touchesJewels = resultTriple[0].long == JEWEL_KIND || materials.any { it.asArr[0].long == JEWEL_KIND }
+        if (touchesJewels && owned.current.jewelEntriesView == null)
+            throw Acquisition.Rejected("No unequipped-jewelry list for this exchange", ERROR_NO_JEWEL_LIST)
+        val jewels = JArr((owned.current.jewelEntriesView ?: JArr()).toMutableList())
+        // Every card is picked before anything changes, so a shortage refuses the whole request.
+        val picked = ArrayList<List<Long>?>()
+        val taken = LinkedHashSet<Long>()
+        for (m in materials) {
+            val mm = m.asArr
+            val kind = mm[0].long
+            if (kind == HERO_KIND || kind == EQUIP_KIND || kind == JEWEL_KIND) {
+                val uids = pickInstances(kind, mm[1].long, mm[2].long * amount, owned, excludedHeroes, taken)
+                taken.addAll(uids)
+                picked.add(uids)
+            } else picked.add(null)
+        }
+        val frames = ArrayList<Frame>()
+        val afterReward = ArrayList<Frame>()
+        for (i in materials.indices) {
+            val mm = materials[i].asArr
+            val kind = mm[0].long; val item = mm[1].long
+            val total = mm[2].long * amount
+            val uids = picked[i]
+            when {
+                uids != null -> frames.addAll(removeCards(kind, uids, owned, jewels))
+                item == PAIR_DIAMOND -> { frames.add(owned.roleAdd(Acquisition.DIAMOND, -total)); afterReward.addAll(Shops.diamondAchievement(owned, total, servedTime)) }
+                item == PAIR_GOLD -> frames.add(owned.roleAdd(Acquisition.GOLD, -total))
+                else -> frames.addAll(owned.consumeTemplate(item, total))
+            }
+        }
+        val rKind = resultTriple[0].long; val rItem = resultTriple[1].long; val rTotal = resultTriple[2].long * amount
+        val reward = Acquisition.emptyReward()
+        when {
+            rKind == EQUIP_KIND -> for (n in 0 until rTotal) {
+                val (_, groups) = owned.grantEquipment(rItem)
+                frames.addAll(groups["add"] ?: emptyList()); frames.addAll(groups["book"] ?: emptyList())
+                reward.arr("equips").add(jarr(rItem))
+            }
+            rKind == JEWEL_KIND -> {
+                frames.addAll(grantJewels(owned, rItem, rTotal, jewels))
+                reward["jewels"] = JArr((0 until rTotal).mapTo(ArrayList()) { jarr(rItem) })
+            }
+            rItem == PAIR_DIAMOND -> { frames.add(owned.roleAdd(Acquisition.DIAMOND, rTotal)); reward["diamond"] = JInt(rTotal) }
+            rItem == PAIR_GOLD -> { frames.add(owned.roleAdd(Acquisition.GOLD, rTotal)); reward["gold"] = JInt(rTotal) }
+            else -> { frames.add(owned.grantItem(rItem, rTotal)); reward.arr("items").add(jarr(rItem, rTotal)) }
+        }
+        doc.obj("used")["${PyDocs.str(PyDocs.at(event, "id"))}:${request.long("formula")}"] = JInt(used + BigInteger.valueOf(amount))
+        frames.add(S_EVENT_REWARD to (byteArrayOf(T_EXCHANGE.toByte()) + BattleReport.encodeReward(reward)))
+        frames.add(s1760(T_EXCHANGE, exchangeBody(exchanges, doc, servedTime, now)))
+        frames.addAll(afterReward)
+        val plan = Plan(jobj("event" to PyDocs.at(event, "id"), "formula" to request.long("formula"), "amount" to amount,
+            "exchange_state_after" to doc, "evidence_class" to "native_use_structural_candidate_policy"), frames)
+        val cards = JArr()
+        for (i in materials.indices) {
+            val uids = picked[i]
+            if (uids != null && uids.isNotEmpty()) cards.add(jobj("kind" to materials[i].asArr[0].long, "template" to materials[i].asArr[1].long, "uids" to uids))
+        }
+        if (cards.isNotEmpty()) { plan["cards_consumed"] = cards; plan["instance_policy"] = INSTANCE_POLICY }
+        if (touchesJewels) plan["jewel_entries_after"] = JArr(jewels.sortedBy { it.asObj.arr("record")[0].long }.toMutableList())
+        return plan
+    }
+
+    // --- Great Offer (SGXJ) ---
+
+    /** `_diamond_spend_frames(owned, amount)`: the Diamond-spending achievement (needs achievements + game_activities). */
+    private fun diamondSpendFrames(owned: Owned, amount: Long): List<Frame> {
+        val subsystems = owned.state["subsystems"] as? JObj ?: JObj()
+        if (PyDocs.get(subsystems, "achievements") == null || PyDocs.get(subsystems, "game_activities") == null) return emptyList()
+        return Shops.diamondAchievement(owned, amount, null)
+    }
 
     /**
      * `plan_great_offer(owned, document, inputs, now, seed)`: one Great Offer spin (the caller refused closed /
      * exhausted): S128 Diamond, S1762 `07`+Reward{diamond}, S1760 `07`, then the Diamond-spend achievement.
      */
-    fun planGreatOffer(owned: Owned, document: JValue?, inputs: DailyInputs, now: Long, seed: BigInteger): Plan =
-        throw NotPorted("event_hall.plan_great_offer (C1649)")
+    fun planGreatOffer(owned: Owned, document: JValue?, inputs: DailyInputs, now: Long, seed: BigInteger): Plan {
+        val view = greatOfferView(document, inputs, now)
+        if (view == null || PyDocs.int(PyDocs.at(view, "remaining")) == BigInteger.ZERO)
+            throw Acquisition.Rejected("Offer is not currently available", ERROR_OFFER)
+        val row = view.obj("row")
+        val diamonds = owned.roleBits(Acquisition.DIAMOND)
+        val cost = row.long("cost")
+        if (diamonds < BigInteger.valueOf(cost)) throw Acquisition.Rejected("Not enough Diamonds for the offer", Acquisition.ERROR_RESOURCES)
+        val prizes = row.arr("prizes")
+        val total = prizes.sumOf { it.asArr[1].long }
+        val roll = PyRandom.seeded(seed).randrange(total)
+        var cumulative = 0L
+        var index = 0
+        var prize = 0L
+        for (i in prizes.indices) {
+            val p = prizes[i].asArr
+            index = i; prize = p[0].long
+            cumulative += p[1].long
+            if (roll < cumulative) break
+        }
+        val frames = ArrayList<Frame>()
+        frames.add(owned.roleAdd(Acquisition.DIAMOND, prize - cost))
+        val reward = Acquisition.emptyReward()
+        reward["diamond"] = JInt(prize)
+        val after = greatOfferRoll(document, view.str("window"))
+        val draw = jobj("attempt" to PyDocs.at(row, "id"), "cost" to cost, "prize" to prize, "prize_index" to index, "roll" to roll,
+            "weights_total" to total, "seed" to seed.toString(), "at" to now)
+        after["spins"] = JInt(PyDocs.int(PyDocs.at(view, "spins")) + BigInteger.ONE)
+        after["draws"] = JArr((after.arr("draws").toList() + draw).toMutableList())
+        frames.add(S_EVENT_REWARD to (byteArrayOf(T_GREAT_OFFER.toByte()) + BattleReport.encodeReward(reward)))
+        frames.add(s1760(T_GREAT_OFFER, greatOfferBody(after, inputs, now)))
+        frames.addAll(diamondSpendFrames(owned, cost))
+        return Plan(jobj("window" to view["window"], "attempt" to PyDocs.at(row, "id"), "cost" to cost, "prize" to prize,
+            "diamonds_before" to diamonds, "diamonds_after" to (diamonds - BigInteger.valueOf(cost) + BigInteger.valueOf(prize)),
+            "draw" to draw, "draw_policy" to GREAT_OFFER_DRAW, "sgxj_state_after" to after,
+            "evidence_class" to "native_use_table_weights_policy_window_seeded_draw"), frames)
+    }
 }
