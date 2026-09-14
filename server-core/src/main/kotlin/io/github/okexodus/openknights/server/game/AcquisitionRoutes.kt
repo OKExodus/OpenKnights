@@ -63,7 +63,7 @@ object AcquisitionRoutes {
     }
 
     /** One committed acquisition request's (action, request, planner) — the reference's `planner_for` result. */
-    class Routed(val action: String, val request: JObj, val planner: (Owned, StateStore.Current) -> Plan)
+    class Routed(val action: String, val request: io.github.okexodus.openknights.exact.JValue, val planner: (Owned, StateStore.Current) -> Plan)
 
     /**
      * `planner_for(opcode, payload, inputs, catalog, rng_policy, deployment_policy, now, served_time)`: the action, the
@@ -75,7 +75,7 @@ object AcquisitionRoutes {
                    deploymentPolicy: FreshProfile.DeploymentPolicy, now: Long, servedTime: (StateStore.Current) -> Long): Routed {
         if (opcode in CATALOG_OPCODES && catalog == null) throw Acquisition.Rejected("Shops need the captured server catalog (--acquisition-catalog)")
         val used = JObj()
-        val request: JObj
+        val request: io.github.okexodus.openknights.exact.JValue
         val planner: (Owned, StateStore.Current) -> Plan
         when (opcode) {
             // item use, choose box, merge, summons, hero refine, compose / refine / fuse (acquisition, summon, compose)

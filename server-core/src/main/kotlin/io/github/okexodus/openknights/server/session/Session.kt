@@ -1021,7 +1021,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         val catalog = service.acquisitionCatalog
         var action = AcquisitionRoutes.ACTIONS[opcode]
         var servedJewels: Pair<ByteArray?, String?> = null to null
-        val request: JObj
+        val request: io.github.okexodus.openknights.exact.JValue
         val result: JObj
         val plan: io.github.okexodus.openknights.server.game.Plan
         try {
