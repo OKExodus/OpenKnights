@@ -115,7 +115,7 @@ object Arena {
         if (!Py.truthy(created)) return 0
         if (created !is JStr) throw PyDocs.TypeError("fromisoformat: argument must be str")
         return try {
-            Summon.isoTimestamp(created.value)
+            Summon.isoTimestamp(created.value, naiveAsUtc = true)      // a stamp without a zone is UTC (fix 2026-09-14)
         } catch (e: PyValues.ValueError) {
             0
         }
