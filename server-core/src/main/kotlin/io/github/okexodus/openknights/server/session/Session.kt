@@ -850,7 +850,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             }
         }
         if (opcode in Routes.SWEEP) group(opcode, "sweep feature")
-        if (opcode in Routes.GOALS) group(opcode, "goals")
+        if (opcode in Routes.GOALS) return goalsRoute(opcode, payload)
         if (opcode in Routes.CAMPAIGN) group(opcode, "campaign")
         if (opcode == 3809) group(opcode, "lineup view")
         Routes.IGNORED[opcode]?.let { feature ->
@@ -1327,23 +1327,34 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return plan.packets.toList()
     }
 
-    /** Daily requests: commit first, then the live reply order. Only the query replies are ported so far. */
+    /** Daily requests (`_daily_route`, daily_routes.py): commit first, then the live reply order. */
     private fun dailyRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val routed: DailyRoutes.Routed
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
         try {
             if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
-            deploymentPolicy() ?: throw Acquisition.Rejected("Daily systems need a store-backed character with a deployment policy")
-        } catch (e: IllegalArgumentException) {
-            val code = (e as? Acquisition.Rejected)?.code ?: 102
-            log("rejected_daily", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
-            return listOf(6 to TransactionPackets.errorPayload(code))
-        }
-        if (opcode !in DailyRoutes.QUERIES) group(opcode, "daily system")
-        val packets = try {
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Daily systems need a store-backed character with a deployment policy")
             val now = service.clock.now()
             val current = stateStore!!.read()
-            DailyRoutes.queryReply(opcode, payload, current, seeds(current), service.inputs, now, worldContext(), characterId!!)
+            if (opcode in DailyRoutes.QUERIES) {
+                val packets = DailyRoutes.queryReply(opcode, payload, current, seeds(current), inputs, now, worldContext(), characterId!!)
+                log("daily_query_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first })
+                return packets
+            }
+            if (opcode in DailyRoutes.REFUSALS) throw Acquisition.Rejected("Not available offline", DailyRoutes.refusal(opcode))
+            routed = DailyRoutes.plannerFor(opcode, payload, inputs, seeds(current), now, { cur -> servedTime(cur, now) }, worldContext(), characterId!!)
+            // Crafting / jewelry Sacrifice may touch an unequipped jewel: the opcode-3072 list this session served.
+            val served = if (opcode in DailyRoutes.JEWEL_OPCODES) servedJewelList() else null to null
+            val committed = stateStore!!.acquisitionTransaction(routed.action, characterId!!, policy, inputs, "authenticated-client",
+                "Native opcode$opcode daily system",
+                detailExtra = jobj("opcode" to opcode, "request" to routed.request, "contract" to "docs/DAILY_CONTRACT.md"),
+                servedJewelList = served.first, servedJewelSource = served.second, planner = routed.planner)
+            result = committed.first
+            plan = committed.second
         } catch (e: IllegalArgumentException) {
-            val code = (e as? Acquisition.Rejected)?.code ?: 102
+            val code = ItemFortify.codeOf(e)
             log("rejected_daily", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
             return listOf(6 to TransactionPackets.errorPayload(code))
         } catch (e: Exception) {      // a local defect must not drop the authenticated session
@@ -1351,8 +1362,51 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             log("daily_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
             return listOf(6 to TransactionPackets.errorPayload(102))
         }
-        log("daily_query_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first })
-        return packets
+        log("transaction_committed", "action" to routed.action, "character_id" to characterId, "revision" to result["revision"],
+            "request" to routed.request, "reply_opcodes" to plan.packets.map { it.first }, "evidence_class" to plan["evidence_class"])
+        if (io.github.okexodus.openknights.server.game.Py.truthy(plan["door_exp"])) {
+            // Royal Door donation: the world's Door EXP after the character's commit (as the daily counters do).
+            try {
+                val levels = worldContext().raiseDoorExp(plan.data.long("door_exp"), inputs)
+                log("royal_door_exp_raised", "character_id" to characterId, "added" to plan["door_exp"], "levels" to listOf(levels.first, levels.second))
+            } catch (e: Exception) {
+                guard(e)
+                log("royal_door_exp_error", "character_id" to characterId, "error" to described(e))
+            }
+        }
+        // Castle actions feed quests / Daily Mission / Royal Door tasks / local ladders (daily_hooks.py).
+        return plan.packets.toList() + dailyCounters(routed.action, plan.data, plan.packets)
+    }
+
+    /** C2657 goal claim (`_goals_route`): commit first, then grants → S3104 Reward → S3106, then the follow-up counters. */
+    private fun goalsRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent || stateStore == null) throw Acquisition.Rejected("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Goals need a store-backed character with a deployment policy")
+            val now = service.clock.now()
+            val power = service.powerOf
+            val seeds = seeds(stateStore!!.read())
+            val committed = stateStore!!.acquisitionTransaction("goal_claim", characterId!!, policy, inputs, "authenticated-client",
+                "Native opcode$opcode goal claim", detailExtra = jobj("opcode" to opcode, "contract" to "docs/GOALS_CONTRACT.md")) { owned, cur ->
+                Goals.planClaim(payload, owned, cur, seeds, inputs, now, power)
+            }
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_goal_claim", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("goals_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "goal_claim", "character_id" to characterId, "revision" to result["revision"],
+            "goal" to plan["goal"], "rewards" to plan["rewards"], "reply_opcodes" to plan.packets.map { it.first })
+        return plan.packets.toList() + dailyCounters("goal_claim", plan.data, plan.packets)
     }
 
     /** Social requests (guild, friends, chat, mail); only the three initialization queries are ported yet. */

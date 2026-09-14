@@ -6,6 +6,7 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireWriter
@@ -479,6 +480,95 @@ object DailyRoutes {
         data["evidence_class"] = JStr("preservation_policy_daily_reset")
         return Plan(data, emptyList())
     }
+
+    // --- transactions -----------------------------------------------------------------------------------------------------
+
+    /** One committed daily request's (action, request, planner) — the reference's `planner_for` result. */
+    class Routed(val action: String, val request: JObj, val planner: (Owned, StateStore.Current) -> Plan)
+
+    /**
+     * `planner_for(opcode, payload, inputs, seeds, now, served_time, world_ctx, owner_key)`: the action, the decoded
+     * request and the planner of one committed daily request; the planner records `now_epoch` (and the `served_time` it
+     * used). Event Hall (group 8), Castle / Hidden Training / Card Sacrifice (group 6) and the arena reward (group 7) are
+     * ported with their groups.
+     */
+    fun plannerFor(opcode: Int, payload: ByteArray, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?, now: Long,
+                   servedTime: (StateStore.Current) -> Long, worldCtx: WorldContext = WorldContext(), ownerKey: String = "char"): Routed {
+        val used = JObj()
+        val request: JObj
+        val planner: (Owned, StateStore.Current) -> Plan
+        when (opcode) {
+            // the daily systems: check-in, time gifts, salary, Daily Mission gifts, Royal Door (daily.py)
+            Daily.C_SIGN_MONTH, Daily.C_SIGN_GIFT, Daily.C_SALARY -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                request = JObj()
+                planner = when (opcode) {
+                    Daily.C_SALARY -> { owned, current -> Daily.planSalary(owned, inputs, PyDocs.get(current, "salary_state"), now) }
+                    Daily.C_SIGN_MONTH -> { owned, current -> Daily.planMonthSign(owned, inputs, signDocument(current, seeds, now), now) }
+                    else -> { owned, current -> Daily.planTimeGift(owned, inputs, signDocument(current, seeds, now), now) }
+                }
+            }
+            Daily.C_MISSION_GIFT -> {
+                request = Daily.decodeMissionGift(payload)
+                planner = { owned, current -> Daily.planMissionGift(request, owned, inputs, PyDocs.get(current, "daily_mission_state"), now) }
+            }
+            Daily.C_DOOR_DAILY, Daily.C_DOOR_LEVEL_UP -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                request = jobj("kind" to if (opcode == Daily.C_DOOR_DAILY) "daily" else "level_up")
+                val (_, door) = worldCtx.document("royal_door")
+                planner = { owned, current ->
+                    Daily.planDoorClaim(request.str("kind"), owned, inputs, PyDocs.get(current, "royal_door_state"), door, now, door["born_at_utc"])
+                }
+            }
+            Daily.C_DOOR_DONATE -> {
+                request = Daily.decodeDonate(payload)
+                val (_, door) = worldCtx.document("royal_door")
+                planner = { owned, current ->
+                    Daily.planDoorDonate(request, owned, inputs, PyDocs.get(current, "royal_door_state"), door, now, door["born_at_utc"])
+                }
+            }
+            // quests: story claims and the bounty board (quests.py)
+            Quests.C_QUEST_CLAIM, Quests.C_BOUNTY_ACCEPT, Quests.C_BOUNTY_QUIT, Quests.C_BOUNTY_EXPEDITE, Quests.C_BOUNTY_STARS,
+            Quests.C_BOUNTY_AUTO, Quests.C_BOUNTY_TIMER, Quests.C_BOUNTY_REFRESH -> {
+                val bare = opcode == Quests.C_BOUNTY_TIMER || opcode == Quests.C_BOUNTY_REFRESH
+                request = if (bare) JObj() else Quests.decodeTask(payload, opcode)
+                if (bare && payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                planner = { owned, current ->
+                    val board = boardDocument(current, seeds, now)
+                    val quests = questDocument(current, seeds)
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    var story: Plan? = null
+                    if (opcode == Quests.C_QUEST_CLAIM) {
+                        val (rolled, _) = Quests.boardRoll(board, inputs, now, ownerKey)
+                        if (rolled.arr("rows").none { it.asArr[0] == request["quest"] }) {
+                            story = Quests.planStoryClaim(request, owned, inputs, quests, level(current.state))
+                        }
+                    }
+                    if (opcode == Quests.C_BOUNTY_TIMER) {
+                        val (rolled, _) = Quests.boardRoll(board, inputs, now, ownerKey)
+                        request["quest"] = rolled["auto_id"] ?: JNull
+                    }
+                    story ?: Quests.planBounty(opcode, request, owned, inputs, quests, board, now, ownerKey, serverTime = served)
+                }
+            }
+            in EVENT_HALL_OPCODES -> throw NotPorted("Event Hall action (opcode $opcode)")
+            in CASTLE_OPCODES -> throw NotPorted("Castle / Hidden Training / Card Sacrifice action (opcode $opcode)")
+            C_ARENA_REWARD -> throw NotPorted("arena reward (opcode $opcode)")
+            else -> throw Acquisition.Rejected("Not a daily opcode")
+        }
+        val recorded = { owned: Owned, current: StateStore.Current ->
+            val plan = planner(owned, current)
+            plan["now_epoch"] = now
+            for ((k, v) in used) plan[k] = v
+            plan
+        }
+        return Routed(ACTIONS.getValue(opcode), request, recorded)
+    }
+
+    private const val C_ARENA_REWARD = 423
+    private val EVENT_HALL_OPCODES = setOf(1635, 1637, 1641, 3077, 1665)
+    private val CASTLE_OPCODES = ACTIONS.filterValues { a -> listOf("castle", "training", "forge", "explore", "card_").any { a.startsWith(it) } }.keys
 
     /** The S6 code of a refused daily request. */
     fun refusal(opcode: Int): Int = REFUSALS.getValue(opcode)

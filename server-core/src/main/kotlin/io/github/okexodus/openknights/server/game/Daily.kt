@@ -41,6 +41,7 @@ object Daily {
     val COMEBACK_INACTIVE = byteArrayOf(0)
 
     const val C_MISSION_INFO = 2539
+    const val C_MISSION_GIFT = 2541
     const val S_MISSION_INFO = 2912
     const val MISSION_PROFILE = "daily_mission_state_v1"
 
@@ -226,4 +227,33 @@ object Daily {
         for ((k, v) in donated) w.number('I', k).number('I', v)
         return w.number('I', PyDocs.at(document, "gold_donated")).bytes()
     }
+
+    // --- the daily actions (C1091, C1093, C481, C2541, C2371, C2373, C2375) ------------------------------------------
+
+    /** C1091 month check-in (`plan_month_sign`). */
+    fun planMonthSign(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan = throw NotPorted("daily.plan_month_sign")
+
+    /** C1093 time-based gift (`plan_time_gift`). */
+    fun planTimeGift(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan = throw NotPorted("daily.plan_time_gift")
+
+    /** C481 title salary (`plan_salary`); `document` = the stored `salary_state` or null. */
+    fun planSalary(owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan = throw NotPorted("daily.plan_salary")
+
+    /** C2541 `u32 gift` (`decode_mission_gift`). */
+    fun decodeMissionGift(payload: ByteArray): JObj = throw NotPorted("daily.decode_mission_gift")
+
+    /** C2541 Daily Mission gift (`plan_mission_gift`); `document` = the stored `daily_mission_state` or null. */
+    fun planMissionGift(request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, now: Long): Plan =
+        throw NotPorted("daily.plan_mission_gift")
+
+    /** C2371 / C2373 Royal Door claims (`plan_door_claim`, kind "daily" / "level_up"). */
+    fun planDoorClaim(kind: String, owned: Owned, inputs: DailyInputs, document: JValue?, worldDoor: JObj, now: Long,
+                      worldBirth: JValue?): Plan = throw NotPorted("daily.plan_door_claim")
+
+    /** C2375 donation request (`decode_donate`). */
+    fun decodeDonate(payload: ByteArray): JObj = throw NotPorted("daily.decode_donate")
+
+    /** C2375 Royal Door donation (`plan_door_donate`). */
+    fun planDoorDonate(request: JObj, owned: Owned, inputs: DailyInputs, document: JValue?, worldDoor: JObj, now: Long,
+                       worldBirth: JValue?): Plan = throw NotPorted("daily.plan_door_donate")
 }

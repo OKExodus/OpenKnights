@@ -322,6 +322,13 @@ object Goals {
 
     fun listFrame(document: JObj): Frame = S_LIST to listPayload(document.arr("rows"))
 
+    /** C2657 `u32 goal` (`decode_claim`). */
+    fun decodeClaim(payload: ByteArray): Long = throw NotPorted("goals.decode_claim")
+
+    /** C2657 on a wire-3 row (`plan_claim`): grants → S3104 Reward → S3106 rows. */
+    fun planClaim(payload: ByteArray, owned: Owned, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, inputs: DailyInputs,
+                  now: Long, power: ((StateStore.Current) -> BigInteger?)? = null): Plan = throw NotPorted("goals.plan_claim")
+
     /** One S3106 per id, in the given order (`_frames`). */
     fun frames(document: JObj, ids: List<Long>): List<Frame> {
         val rows = LinkedHashMap<Long, JArr>()

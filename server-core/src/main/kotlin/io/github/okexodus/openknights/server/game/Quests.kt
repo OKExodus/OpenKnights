@@ -23,6 +23,13 @@ import java.security.MessageDigest
  */
 object Quests {
     const val C_QUEST_CLAIM = 261
+    const val C_BOUNTY_ACCEPT = 259
+    const val C_BOUNTY_QUIT = 263
+    const val C_BOUNTY_REFRESH = 265
+    const val C_BOUNTY_EXPEDITE = 269
+    const val C_BOUNTY_STARS = 271
+    const val C_BOUNTY_AUTO = 273
+    const val C_BOUNTY_TIMER = 275
     const val S_QUESTS = 320
     const val S_BOARD = 322
     const val S_BOARD_ROW = 326
@@ -392,4 +399,17 @@ object Quests {
         return w.number('I', used).number('I', limit).number('i', PyDocs.int(PyDocs.at(document, "board_until")) - BigInteger.valueOf(now))
             .number('I', autoId).number('I', left).number('I', free).bytes()
     }
+
+    // --- the quest actions (C261 story claims, the bounty board C259 … C275) -----------------------------------------
+
+    /** `u32 quest` of C259 / C261 / C263 / C269 / C271 / C273 (`decode_task`). */
+    fun decodeTask(payload: ByteArray, opcode: Int): JObj = throw NotPorted("quests.decode_task")
+
+    /** C261 on a claimable story quest (`plan_story_claim`). */
+    fun planStoryClaim(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj?, level: Long): Plan =
+        throw NotPorted("quests.plan_story_claim")
+
+    /** The bounty board requests and C261 on a board task (`plan_bounty`). */
+    fun planBounty(opcode: Int, request: JObj, owned: Owned, inputs: DailyInputs, questsDoc: JObj?, boardDoc: JObj?, now: Long,
+                   ownerKey: String, serverTime: Long? = null, forcedStars: JValue? = null): Plan = throw NotPorted("quests.plan_bounty")
 }
