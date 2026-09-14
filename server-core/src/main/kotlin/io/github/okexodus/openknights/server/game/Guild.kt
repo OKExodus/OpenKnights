@@ -430,15 +430,29 @@ object Guild {
         return text.toByteArray(Charsets.UTF_8)
     }
 
-    /** C2153 `cstr name, cstr notice`: the creator leads a new Lv 1 guild (the requirements are charged by the route). */
-    fun create(document: JObj, role: Long, nameRaw: ByteArray, noticeRaw: ByteArray, inputs: DailyInputs, now: Long): Long {
+    /** Notice bytes: C2181 refuses longer ones, C2153 too. */
+    const val NOTICE_MAX = 120
+
+    /**
+     * The world checks of C2153: the route runs them before the character pays, [create] again at the world write. Not
+     * in a guild (52003), no rejoin cooldown (52037), the name (102 / 52042), a notice of at most [NOTICE_MAX] bytes
+     * (52042, as C2181 refuses it). Returns the validated name.
+     */
+    fun checkCreate(document: JObj, role: Long, nameRaw: ByteArray, noticeRaw: ByteArray, inputs: DailyInputs, now: Long): ByteArray {
         if (guildOf(document, role).second != null) throw Acquisition.Rejected("Already in a guild", ERR_OTHER_GUILD)
         if (PyDocs.compare(rejoin(document, role), JInt(now)) > 0) throw Acquisition.Rejected("Cannot apply Guild yet", ERR_REJOIN)
         val name = validateName(nameRaw, document, inputs)
+        if (noticeRaw.size > NOTICE_MAX) throw Acquisition.Rejected("Inappropriate words", ERR_WORDS)
+        return name
+    }
+
+    /** C2153 `cstr name, cstr notice`: the creator leads a new Lv 1 guild (the requirements are charged by the route). */
+    fun create(document: JObj, role: Long, nameRaw: ByteArray, noticeRaw: ByteArray, inputs: DailyInputs, now: Long): Long {
+        val name = checkCreate(document, role, nameRaw, noticeRaw, inputs, now)
         val notice = if (noticeRaw.isNotEmpty()) noticeRaw else inputs.text(0x1285).toByteArray(Charsets.UTF_8)
         val gid = document.long("next_id")
         document["next_id"] = JInt(gid + 1)
-        document.obj("guilds")[gid.toString()] = newGuild(gid, name, notice.copyOfRange(0, minOf(120, notice.size)), role, now)
+        document.obj("guilds")[gid.toString()] = newGuild(gid, name, notice.copyOfRange(0, minOf(NOTICE_MAX, notice.size)), role, now)
         for (guild in document.obj("guilds").values) {          // a founder's open applications elsewhere lapse
             val g = guild as JObj
             g["applications"] = JArr(g.arr("applications").filter { (it as JObj).long("role") != role }.toMutableList())
@@ -530,7 +544,7 @@ object Guild {
         val (gid, guild) = guildOf(document, role)
         if (guild == null) throw Acquisition.Rejected("Not in a Guild yet", ERR_NOT_IN_GUILD)
         require(guild, role, "notice", inputs)
-        if (stripBytes(noticeRaw).isEmpty() || noticeRaw.size > 120) throw Acquisition.Rejected("Inappropriate words", ERR_WORDS)
+        if (stripBytes(noticeRaw).isEmpty() || noticeRaw.size > NOTICE_MAX) throw Acquisition.Rejected("Inappropriate words", ERR_WORDS)
         guild["notice_hex"] = JStr(noticeRaw.toHexString())
         return gid
     }
@@ -610,10 +624,13 @@ object Guild {
     // === personal actions (character state + the guild document) =========================================================
 
     /**
-     * C2157 `u32 gold, u32 diamonds` → S2314 `u8 result, Reward`. Labeled policy rates: 10,000 Gold = 1 contribution (whole
-     * 10,000s), 1 Diamond = 1 contribution and 1 guild Diamond. Returns (points, reward, diamonds).
+     * C2157 `u32 gold, u32 diamonds` → S2314 `u8 result, Reward`. Labeled policy rates: 10,000 Gold = 1 contribution, 1
+     * Diamond = 1 contribution and 1 guild Diamond. Only whole [GOLD_UNIT] units of the Gold sent are taken ([goldTaken]);
+     * the rest stays with the player, and every check and the day's donated Gold use the amount taken. Returns (points,
+     * reward, diamonds).
      */
-    fun donateGold(guild: JObj, role: Long, gold: Long, diamonds: Long, owned: Owned, inputs: DailyInputs, now: Long): Triple<Long, JObj, Long> {
+    fun donateGold(guild: JObj, role: Long, requested: Long, diamonds: Long, owned: Owned, inputs: DailyInputs, now: Long): Triple<Long, JObj, Long> {
+        val gold = goldTaken(requested)
         val member = memberOf(guild, role)
         val today = day(now)
         val donated: BigInteger = if (member["gold_day"] == JStr(today)) PyDocs.int(PyDocs.at(member, "gold")) else BigInteger.ZERO
@@ -623,7 +640,7 @@ object Guild {
         if (owned.roleBits(DIAMOND) < BigInteger.valueOf(diamonds)) throw Acquisition.Rejected("Not enough Diamonds", ERR_DIAMONDS)
         if (gold != 0L) owned.roleAdd(GOLD, -gold)
         if (diamonds != 0L) owned.roleAdd(DIAMOND, -diamonds)
-        val points = Math.floorDiv(gold, 10_000L) + diamonds
+        val points = Math.floorDiv(gold, GOLD_UNIT) + diamonds
         owned.roleAdd(CONTRIBUTION, points)
         member["gold_day"] = JStr(today)
         member["gold"] = JInt(donated + BigInteger.valueOf(gold))
@@ -633,6 +650,12 @@ object Guild {
         reward["donation"] = JInt(points)
         return Triple(points, reward, diamonds)
     }
+
+    /** Gold per contribution point; only whole units are taken. */
+    const val GOLD_UNIT = 10_000L
+
+    /** The Gold a C2157 donation takes: its whole [GOLD_UNIT] units. */
+    fun goldTaken(gold: Long): Long = Math.floorDiv(gold, GOLD_UNIT) * GOLD_UNIT
 
     fun goldCapFor(owned: Owned, inputs: DailyInputs): BigInteger = BigInteger.valueOf(21_000) * owned.roleBits(ROLE_LEVEL)
 
@@ -715,8 +738,9 @@ object Guild {
     private fun entryOf(document: JObj, task: Long): JArr? = document.arr("tasks").firstOrNull { it.asArr[0] == JInt(task) } as JArr?
 
     /**
-     * C2435 `u8 1, u32 task, u8 n, n × (u32 item template, u32 qty)` → one S68 per listed template with the stack's
-     * absolute count, request order; the task's state becomes 2 (ready) when the summed quantity reaches quest.108.
+     * C2435 `u8 1, u32 task, u8 n, n × (u32 item template, u32 qty)` → per listed template (request order) one frame per
+     * stack it consumes, in consumption order: S68 with the stack's new count, S66 for an emptied stack (the owned view's
+     * own frames); the task's state becomes 2 (ready) when the summed quantity reaches quest.108.
      */
     fun donateToTask(document: JObj, request: JObj, owned: Owned, inputs: DailyInputs): List<Frame> {
         val taskId = request.long("task")
@@ -731,12 +755,8 @@ object Guild {
             val qty = pair.asArr[1].long
             val item = inputs.item(template)
             if (item == null || inputs.itemCategory(template) != task.long("category")) throw Acquisition.Rejected("Wrong donation item", ERR_INVALID)
-            if (qty != 0L) owned.consumeTemplate(template, qty)
+            if (qty != 0L) frames.addAll(owned.consumeTemplate(template, qty))
             total += qty
-            val stacks = owned.items.filter { it.value.template == template }.keys.sorted()
-            if (stacks.isNotEmpty()) {
-                frames.add(Acquisition.S_ITEM_UPDATE to Acquisition.itemUpdatePayload(listOf(stacks[0] to owned.items.getValue(stacks[0]).count)))
-            }
         }
         if (total < task.long("required")) throw Acquisition.Rejected("Not enough donation", ERR_INVALID)
         entry[1] = JInt(PyDocs.int(entry[1]) + BigInteger.ONE)
