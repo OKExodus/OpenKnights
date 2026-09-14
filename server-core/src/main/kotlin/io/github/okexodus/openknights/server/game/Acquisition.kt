@@ -68,6 +68,17 @@ object Acquisition {
     /** A refusal with the native client error-text code (answered S6 `code`). */
     open class Rejected(message: String, val code: Int = ERROR_INVALID) : IllegalArgumentException(message)
 
+    /**
+     * `seed_for(request_bytes, revision, salt)`: the deterministic, recorded seed of a labeled local draw — the first 8
+     * bytes (little-endian) of SHA-256 of `"<revision>:<salt>:"` + the request bytes.
+     */
+    fun seedFor(requestBytes: ByteArray, revision: Long, salt: String = ""): BigInteger {
+        val digest = java.security.MessageDigest.getInstance("SHA-256")
+        digest.update("$revision:$salt:".toByteArray(Charsets.UTF_8))
+        digest.update(requestBytes)
+        return BigInteger(1, digest.digest().copyOfRange(0, 8).reversedArray())
+    }
+
     fun u(value: Long, width: Int, label: String): Long {
         if (value < 0 || (width < 64 && value >= (1L shl width))) throw Rejected("$label must fit uint$width")
         return value
