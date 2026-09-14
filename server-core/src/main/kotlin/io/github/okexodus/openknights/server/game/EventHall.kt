@@ -15,6 +15,7 @@ import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.BattleReport
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.server.DeviceClock
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
 import java.time.Duration
@@ -121,11 +122,24 @@ object EventHall {
 
     // --- Magic Pie ----------------------------------------------------------------------------------------------------
 
-    /** Claimed piece ids of the served day (a UTC day of the served clock). */
+    /**
+     * `_pie_on_device_clock()`: true when a device / service clock is installed (release, or a replay that pinned the
+     * day). Without one (bare tests) the served clock follows raw UTC, as before the device-clock fix (EVENTS_CONTRACT §4.1).
+     */
+    private fun pieOnDeviceClock(): Boolean = DeviceClock.active != null
+
+    /** `_pie_day(served_time)`: the device-local calendar day (a day_of string) when clocked, else the served UTC day. */
+    private fun pieDay(servedTime: Long): JValue =
+        if (pieOnDeviceClock()) JStr(Shops.dayOf(servedTime)) else JInt(Math.floorDiv(servedTime, 86400L))
+
+    /** `_pie_hour(served_time)`: the device-local hour when clocked, else the raw served UTC hour. */
+    private fun pieHour(servedTime: Long): Long =
+        if (pieOnDeviceClock()) Shops.localDatetime(servedTime).hour.toLong() else Math.floorDiv(Math.floorMod(servedTime, 86400L), 3600L)
+
+    /** Claimed piece ids of the served day, keyed on the device-local calendar day (EVENTS_CONTRACT §4.1). */
     fun pieView(document: JValue?, servedTime: Long): List<JValue> {
         val doc = if (Py.truthy(document)) document as JObj else JObj()
-        val day = Math.floorDiv(servedTime, 86400L)
-        if (PyDocs.get(doc, "served_day") != JInt(day)) return emptyList()
+        if (PyDocs.get(doc, "served_day") != pieDay(servedTime)) return emptyList()
         return ((doc["claimed"] ?: JArr()) as JArr).toList()
     }
 
@@ -268,7 +282,8 @@ object EventHall {
         val rows = greatOfferRows(inputs)
         val (window, end) = greatOfferWindow(now) ?: return null
         if (rows.isEmpty()) return null
-        val spins = PyDocs.int(PyDocs.at(greatOfferRoll(document, window), "spins")).min(BigInteger.valueOf(rows.size.toLong()))
+        // Clamp to [0, len(rows)] so a negative stored `spins` can't make remaining exceed the rows or index from the end.
+        val spins = PyDocs.int(PyDocs.at(greatOfferRoll(document, window), "spins")).min(BigInteger.valueOf(rows.size.toLong())).max(BigInteger.ZERO)
         return jobj("window" to window, "end" to end, "spins" to spins, "remaining" to (BigInteger.valueOf(rows.size.toLong()) - spins),
             "row" to PyDocs.index(rows, spins.min(BigInteger.valueOf(rows.size - 1L)).toInt()), "rows" to rows)
     }
@@ -432,11 +447,11 @@ object EventHall {
         val piece = request.long("piece")
         val window = PIE_PIECES[piece] ?: throw Acquisition.Rejected("Unknown Magic Pie piece", ERROR_EVENT)
         val (start, end) = window
-        val hour = Math.floorDiv(Math.floorMod(servedTime, 86400L), 3600L)
+        val hour = pieHour(servedTime)                  // device-local hour (EVENTS_CONTRACT §4.1)
         val claimed = pieView(document, servedTime)
         if (!(start <= hour && hour < end) || claimed.any { it == JInt(piece) })
             throw Acquisition.Rejected("This Magic Pie piece is not claimable now", ERROR_EVENT)
-        val doc = jobj("profile" to PIE_PROFILE, "served_day" to Math.floorDiv(servedTime, 86400L),
+        val doc = jobj("profile" to PIE_PROFILE, "served_day" to pieDay(servedTime),
             "claimed" to JArr((claimed + JInt(piece)).toMutableList()))
         val frames = ArrayList<Frame>()
         frames.add(owned.roleAdd(Acquisition.STAMINA, PIE_STAMINA))
