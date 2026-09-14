@@ -22,6 +22,9 @@ object Claims {
     const val VIP_LEVEL = 27L
     const val BUY_COST = 20L
     const val VIP_PROFILE = "vip_state_v1"
+    const val CARD_PROFILE = "month_cards_v1"
+    const val ERROR_CARD_INACTIVE = 53000
+    const val ERROR_CARD_CLAIMED = 53001
     val YKHD_EVENT_CARDS = "00000000002c01000000b80b0000".hexBytes()
     val YKHD_TAIL = "002c01000000b80b0000".hexBytes()
 
@@ -42,6 +45,16 @@ object Claims {
             enBought = maxOf(PyDocs.long(block[4]) - PyDocs.long(block[3]), 0L)
         }
         return listOf(claimed, maxOf(apMax - apBought, 0L), apMax, maxOf(enMax - enBought, 0L), enMax)
+    }
+
+    /** VIP level-up: the new level's maxima, keeping today's buys (edits the S18 block in place). */
+    fun raiseMaxima(block: JArr, vipLevel: Long, inputs: AcquisitionInputs) {
+        val row = inputs.vipRow(vipLevel)
+        for ((at, maximum) in listOf(1 to row.long("ap_buys_107"), 3 to row.long("energy_buys_108"))) {
+            val bought = maxOf(PyDocs.long(block[at + 1]) - PyDocs.long(block[at]), 0L)
+            block[at] = JInt(maxOf(maximum - bought, 0L))
+            block[at + 1] = JInt(maximum)
+        }
     }
 
     /** Diamonds of the next buy: property 97 (20) + bought × property 108 (AP) / 109 (Energy). */
@@ -109,5 +122,15 @@ object Claims {
         }
         YKHD_TAIL.forEach { body.add(it) }
         return body.toByteArray()
+    }
+
+    /** A recharge card bought: the card owned from `today`, 0 days claimed (refused while it is still active). */
+    fun activateCard(document: JValue?, cardType: Long, today: String): JObj {
+        val doc = (if (Py.truthy(document)) document!! else jobj("profile" to CARD_PROFILE)).deepCopy() as JObj
+        val raw = doc[cardType.toString()]
+        val entry = if (Py.truthy(raw)) raw as JObj else JObj()
+        if (Py.truthy(entry["owned"])) throw Acquisition.Rejected("This monthly card is still active", ERROR_CARD_CLAIMED)
+        doc[cardType.toString()] = jobj("owned" to true, "days" to 0, "claim_day" to null, "activated_day" to today)
+        return doc
     }
 }
