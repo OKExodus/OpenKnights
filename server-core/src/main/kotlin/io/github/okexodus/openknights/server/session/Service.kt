@@ -96,6 +96,12 @@ class Service(
     /** The evolution rows (`snapshot.evolution_inputs` / `leader_inputs`). */
     val evolutionInputs: io.github.okexodus.openknights.server.game.EvolutionInputs by lazy { io.github.okexodus.openknights.server.game.EvolutionInputs(tables) }
 
+    /** The hero-card catalog inputs (`snapshot.hero_card_inputs`: Power Up, Astral Power, Ascension). */
+    val heroCardInputs: io.github.okexodus.openknights.server.game.HeroCardInputs by lazy { io.github.okexodus.openknights.server.game.HeroCardInputs(tables) }
+
+    /** The verified client lineup rules (`snapshot.secondary_rules`): loaded by the first C3779 of the process, then kept. */
+    var secondaryRules: io.github.okexodus.openknights.server.game.SecondaryTeam.NativeLineupRules? = null
+
     /** The universal Power of a character save (`snapshot.power_of` = `battle_stats.participant_power(snapshot)`). */
     var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
 

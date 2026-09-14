@@ -14,6 +14,18 @@ import io.github.okexodus.openknights.server.game.Guild
 import io.github.okexodus.openknights.server.game.Mail
 import io.github.okexodus.openknights.server.game.SocialRoutes
 import io.github.okexodus.openknights.server.game.HeroEvolution
+import io.github.okexodus.openknights.server.game.GodSkills
+import io.github.okexodus.openknights.server.game.HeroAscension
+import io.github.okexodus.openknights.server.game.HeroPowerUp
+import io.github.okexodus.openknights.server.game.HeroStats
+import io.github.okexodus.openknights.server.game.Plan
+import io.github.okexodus.openknights.server.game.PyValues
+import io.github.okexodus.openknights.server.store.ascendHero
+import io.github.okexodus.openknights.server.store.astralUpgrade
+import io.github.okexodus.openknights.server.store.evolveHero
+import io.github.okexodus.openknights.server.store.evolveLeaderHero
+import io.github.okexodus.openknights.server.store.powerUpSave
+import io.github.okexodus.openknights.server.store.powerUpTrain
 import io.github.okexodus.openknights.server.game.LeaderRepair
 import io.github.okexodus.openknights.server.game.Owned
 import io.github.okexodus.openknights.server.game.SecondaryTeam
@@ -931,23 +943,171 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
 
     // --- alternate team, hero evolution, hero cards -------------------------------------------------------------------
 
-    /** C3777 / C3779 of a created character (`_alt_team_route`). */
-    private fun altTeamRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "alternate team")
+    /** `getattr(exc, "code", 102)` of the hero-system refusals. */
+    private fun heroRejectionCode(e: Exception): Int = when (e) {
+        is HeroEvolution.EvolutionRejected -> e.code
+        is HeroPowerUp.PowerUpRejected -> e.code
+        is HeroAscension.AscensionRejected -> e.code
+        is GodSkills.GodSkillRejected -> e.code
+        is HeroStats.ProfileUnsupported -> e.code
+        is Acquisition.Rejected -> e.code
+        is SecondaryTeam.Rejected -> e.code
+        else -> 102
+    }
 
-    /** C3779 of a character without a creation profile (`replace_secondary_hero`). */
+    /** C3777 / C3779 of a created character (`_alt_team_route`): acquisition transactions `alt_team_unlock` / `alt_team_set`. */
+    private fun altTeamRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val action: String
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent) throw PyValues.ValueError("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw PyValues.ValueError("The alternate team needs a store-backed character with a deployment policy")
+            val planner: (Owned, StateStore.Current) -> Plan
+            if (opcode == AltTeam.C_UNLOCK) {
+                action = "alt_team_unlock"
+                planner = { owned, current -> AltTeam.planUnlock(payload, owned, current, inputs) }
+            } else {
+                val rules = service.secondaryRules ?: SecondaryTeam.loadNativeLineupRules(service.tables).also { service.secondaryRules = it }
+                action = "alt_team_set"
+                planner = { owned, current -> AltTeam.planSet(payload, owned, current, inputs, rules = rules) }
+            }
+            val committed = stateStore!!.acquisitionTransaction(action, characterId!!, policy, inputs, "authenticated-client",
+                "Native opcode$opcode alternate team", detailExtra = jobj("opcode" to opcode, "contract" to "server/alt_team.py"), planner = planner)
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {      // only the ValueError family is answered; anything else ends the connection
+            val code = heroRejectionCode(e)
+            log("rejected_alt_team", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        }
+        log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
+            "position" to plan["position"], "hero_uid" to plan["hero_uid"])
+        return plan.packets.toList()
+    }
+
+    /**
+     * C3779 of a character without a creation profile (`replace_secondary_hero`). Unreachable in release mode: every
+     * request re-validates the save first and release serves only created characters (their fresh probe is true).
+     */
     private fun secondaryReplaceRoute(payload: ByteArray): List<Frame> = group(3779, "secondary team (derived characters)")
 
-    /** C3777 of a character without a creation profile (`unlock_secondary_position`). */
+    /** C3777 of a character without a creation profile (`unlock_secondary_position`); unreachable in release mode. */
     private fun secondaryUnlockRoute(payload: ByteArray): List<Frame> = group(3777, "secondary team (derived characters)")
 
-    /** C71 ordinary hero evolution (docs/EVOLUTION_CONTRACT.md). */
-    private fun evolutionRoute(payload: ByteArray): List<Frame> = group(71, "hero evolution")
+    /** C71 ordinary hero evolution (docs/EVOLUTION_CONTRACT.md): commit first; core order 68/66, 50, 128, 1184. */
+    private fun evolutionRoute(payload: ByteArray): List<Frame> {
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent) throw HeroEvolution.EvolutionRejected("Complete initialization queries before evolving")
+            val request = HeroEvolution.decodeOrdinaryRequest(payload)
+            val committed = stateStore!!.evolveHero(request, characterId!!, deploymentPolicy(), service.evolutionInputs,
+                "authenticated-client", "Native opcode71 ordinary hero evolution", testPolicy = evolutionTestPolicy())
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = heroRejectionCode(e)
+            log("rejected_hero_evolution", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("evolution_internal_error", "character_id" to characterId, "kind" to "ordinary", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "evolve_hero", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "new_template" to result["new_template"])
+        return HeroEvolution.ordinaryEvolutionPackets(plan, PlayerSections.encodeSection("game_activities", result.obj("activity_section")),
+            TransactionPackets.goldPropertyPayload(result.int("gold_after"))) + dailyCounters("evolve_hero", jobj())
+    }
 
-    /** C2083 leader hero evolution (docs/EVOLUTION_CONTRACT.md). */
-    private fun leaderEvolutionRoute(payload: ByteArray): List<Frame> = group(2083, "leader evolution")
+    /** C2083 leader hero evolution (docs/EVOLUTION_CONTRACT.md): empty request; core order 66/68, 46, 2240, 2242, 128, 1184. */
+    private fun leaderEvolutionRoute(payload: ByteArray): List<Frame> {
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent) throw HeroEvolution.EvolutionRejected("Complete initialization queries before evolving the leader")
+            val request = HeroEvolution.decodeLeaderRequest(payload)
+            val committed = stateStore!!.evolveLeaderHero(request, characterId!!, deploymentPolicy(), service.evolutionInputs,
+                "authenticated-client", "Native opcode2083 leader hero evolution", testPolicy = evolutionTestPolicy())
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = heroRejectionCode(e)
+            log("rejected_leader_evolution", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {
+            guard(e)
+            log("evolution_internal_error", "character_id" to characterId, "kind" to "leader", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "evolve_leader_hero", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "new_template" to result["new_template"])
+        return HeroEvolution.leaderEvolutionPackets(plan, PlayerSections.encodeSection("game_activities", result.obj("activity_section")),
+            TransactionPackets.goldPropertyPayload(result.int("gold_after"))) + dailyCounters("evolve_leader_hero", jobj())
+    }
 
-    /** Power Up C3693 / C3713 / C3721, Astral Power C2497, Ascension C3907 (`_hero_card_route`). */
-    private fun heroCardRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "hero cards")
+    /**
+     * Power Up C3693 / C3713 / C3721, Astral Power C2497, Ascension C3907 (`_hero_card_route`; docs/POWER_UP_CONTRACT.md,
+     * ASTRAL_POWER_CONTRACT.md, ASCENSION_CONTRACT.md): commit first, then the live reply order.
+     */
+    private fun heroCardRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val kind = mapOf(3693 to "power_up_open", 3713 to "power_up_train", 3721 to "power_up_save", 2497 to "astral_upgrade",
+            3907 to "ascend_hero").getValue(opcode)
+        val inputs = service.heroCardInputs
+        val policy = deploymentPolicy()      // outside the guarded part, as the reference
+        val actor = "authenticated-client"
+        try {
+            if (!queriesSent) throw PyValues.ValueError("Complete initialization queries before using hero-card systems")
+            if (opcode == 3693) {
+                // Live: the client sends this when the dialog opens and does not wait.
+                val request = HeroPowerUp.decodeOpenRequest(payload)
+                log("power_up_open", "character_id" to characterId, "target_uid" to request["target_uid"])
+                return emptyList()
+            }
+            if (opcode == 3713) {
+                val request = HeroPowerUp.decodeTrainRequest(payload)
+                val (result, plan) = stateStore!!.powerUpTrain(request, characterId!!, policy, inputs, powerUpPolicy(), actor,
+                    "Native opcode3713 Power Up train")
+                log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                    "target_uid" to plan["target_uid"], "way" to plan["way"], "count" to plan["count"], "pending" to plan["pending"],
+                    "rng_seed" to plan["rng_seed"], "stones" to plan.data.obj("item_change")["quantity"])
+                return HeroPowerUp.trainPackets(plan) + dailyCounters("power_up_train", jobj("count" to plan["count"]))
+            }
+            if (opcode == 3721) {
+                val request = HeroPowerUp.decodeSaveRequest(payload)
+                val (result, plan) = stateStore!!.powerUpSave(request, characterId!!, policy, inputs, actor, "Native opcode3721 Power Up save")
+                log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                    "target_uid" to plan["target_uid"], "deltas" to plan["deltas"], "dev_after" to plan["dev_after"],
+                    "train_revision" to plan["train_revision"])
+                return HeroPowerUp.savePackets(plan)
+            }
+            if (opcode == 2497) {
+                val request = GodSkills.decodeUpgradeRequest(payload)
+                val (result, plan) = stateStore!!.astralUpgrade(request, characterId!!, policy, inputs, actor, "Native opcode2497 Astral Power press")
+                log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                    "hero_uid" to plan["hero_uid"], "skill_before" to plan["skill_before"], "skill_after" to plan["skill_after"],
+                    "progress_after" to plan["progress_after"], "presses" to plan["presses"], "stopped" to plan["stopped"])
+                return GodSkills.upgradePackets(plan)
+            }
+            val request = HeroAscension.decodeRequest(payload)
+            val (result, plan) = stateStore!!.ascendHero(request, characterId!!, policy, inputs, actor, "Native opcode3907 Hero Ascension",
+                materialPolicy = ascensionPolicy())
+            log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                "target_uid" to plan["target_uid"], "awaken_after" to plan["awaken_after"], "stats_after" to plan["stats_after"],
+                "gold_cost" to plan["gold_cost"])
+            return HeroAscension.ascensionPackets(plan, TransactionPackets.goldPropertyPayload(plan.data.int("gold_after")))
+        } catch (e: IllegalArgumentException) {
+            val code = heroRejectionCode(e)
+            log("rejected_$kind", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("hero_card_internal_error", "character_id" to characterId, "kind" to kind, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+    }
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */
     private fun legacyHandle(opcode: Int, payload: ByteArray): List<Frame> {

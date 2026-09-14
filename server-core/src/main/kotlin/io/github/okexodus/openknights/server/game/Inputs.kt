@@ -286,7 +286,13 @@ open class AcquisitionInputs(val tables: GameTables) {
     fun property(key: Any): String? = propertyCache.getOrPut(key.toString()) { single("property", key)?.field("102") }
 
     open fun freshHeroFields(uid: Long, template: Long): JArr = throw NotPorted("pk_test_fixture_inject_hero.fresh_hero_fields")
-    open fun astralInitialSkills(template: Long): JArr = throw NotPorted("pk_hero_card_inputs.astral_initial_skills")
+    private var astralGroups: JObj? = null
+
+    /** The initial god-skill list of a hero template (`pk_hero_card_inputs.astral_initial_skills`, groups cached). */
+    open fun astralInitialSkills(template: Long): JArr {
+        val groups = astralGroups ?: PkHeroCardInputs.astralGroups(tables).also { astralGroups = it }
+        return PkHeroCardInputs.astralInitialSkills(tables, template, groups)
+    }
 
     val BATTLE_TABLES = setOf("stage", "monster", "monsterability", "hero", "skill", "effect", "gift", "text", "herojuexing")
     private val battleRows = HashMap<Pair<String, String>, Map<String, String>?>()
