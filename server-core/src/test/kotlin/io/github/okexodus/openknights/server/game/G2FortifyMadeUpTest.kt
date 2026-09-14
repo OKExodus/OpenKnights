@@ -148,7 +148,8 @@ class G2FortifyMadeUpTest {
         assertThrows<Acquisition.Rejected> { Rebirth.decodeEvolveRequest(byteArrayOf(1)) }
         assertEquals(jobj("uid" to 7, "target_base" to 9), Reborn.decodeRequest("0700000009000000".hexBytes()))
         assertTrue(AcquisitionRoutes.isReadOnly(89, ByteArray(0)))
-        assertTrue(AcquisitionRoutes.isReadOnly(2725, byteArrayOf(1, 0, 0, 0, 0)))
+        assertTrue(AcquisitionRoutes.isReadOnly(2725, byteArrayOf(2, 0, 0, 0, 0)))
+        assertTrue(!AcquisitionRoutes.isReadOnly(2725, byteArrayOf(1, 0, 0, 0, 0)))     // only the exact mode-0 form
         assertTrue(!AcquisitionRoutes.isReadOnly(2725, byteArrayOf(0, 0, 0)))
         assertEquals("rebirth_evolve", AcquisitionRoutes.ACTIONS[95])
         val row = jobj("materials" to jarr(jarr(11, 2), jarr(0, 5), jarr(12, 0), jarr(13, 1)), "stone_type0_210" to 14, "stone_count_211" to 3, "gold_213" to 250)
