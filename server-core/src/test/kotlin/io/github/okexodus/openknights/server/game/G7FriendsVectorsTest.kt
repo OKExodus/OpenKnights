@@ -453,7 +453,7 @@ class G7FriendsVectorsTest {
             val commits = JArr()
             val ctx = SocialRoutes.SocialContext(world, registry, inputs, emptyList(), { role, frames ->
                 pushes.add(jarr(role, JArr(framesOf(frames(offsets[role] ?: 0L)).mapTo(ArrayList()) { JStr(it) })))
-            }, "local-service", vector.long("clock_offset")) { c -> powers[SocialRoutes.roleOf(c)] }
+            }, "local-service", vector.long("clock_offset"), powerOf = { c -> powers[SocialRoutes.roleOf(c)] })
             val commit = SocialRoutes.Commit { action, planner ->
                 val cur = PyDocs.deepCopy(current)
                 val owned = Owned(cur, inputs)

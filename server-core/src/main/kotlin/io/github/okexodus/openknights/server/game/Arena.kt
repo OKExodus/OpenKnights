@@ -202,26 +202,6 @@ object Arena {
     const val ERROR_CLAIMED = 15000
     /** "New player can only claim Arena rewards from the second play day". */
     const val ERROR_NEW_PLAYER = 15006
-    private val U32_MAX: BigInteger = BigInteger.valueOf(0xFFFFFFFFL)
-
-    /**
-     * The reference's `prestige.achievement_frame`: S578 [31, step, Reputation] (the captured form after the Arena
-     * reward); null without the kind-31 row.
-     */
-    private fun achievementFrame(owned: Owned): Frame? {
-        val subsystems = owned.state["subsystems"] as? JObj ?: JObj()
-        val achievements = subsystems["achievements"] as? JObj ?: JObj()
-        for (entry in (achievements["entries"] as? JArr) ?: JArr()) {
-            val wire = entry.asObj.arr("wire_values")
-            if (wire[0] == JInt(ACH_REPUTATION)) {
-                val reputation = try { owned.roleBits(ROLE_REPUTATION) } catch (e: Exception) { BigInteger.ZERO }
-                wire[2] = JInt(reputation.min(U32_MAX))
-                if (wire.size != 3) throw IllegalArgumentException("pack expected 3 items for packing (got ${wire.size})")
-                return Acquisition.S_ACHIEVEMENT to WireWriter().number('B', wire[0]).number('B', wire[1]).number('I', wire[2]).bytes()
-            }
-        }
-        return null
-    }
 
     /**
      * C423 → S578 [31, 9, reputation], S64 / S68 item, S128 Gold + Reputation, S452 Reward, S448 (capture observed;
@@ -239,7 +219,7 @@ object Arena {
         reward["gold"] = tier["gold"]!!
         reward["reputation"] = tier["reputation"]!!
         val frames = ArrayList<Frame>()
-        achievementFrame(owned)?.let { frames.add(it) }                 // S578 [31, step, Reputation] (captured first)
+        Prestige.achievementFrame(owned)?.let { frames.add(it) }                 // S578 [31, step, Reputation] (captured first)
         if (tier.long("item") != 0L && tier.long("count") != 0L) {
             frames.add(owned.grantItem(tier.long("item"), tier.long("count")))
             reward.arr("items").add(jarr(tier["item"], tier["count"]))

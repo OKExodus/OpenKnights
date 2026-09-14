@@ -227,14 +227,9 @@ class G7GuildVectorsTest {
         "role_changes" to JArr(owned.roleChanges.entries.mapTo(ArrayList()) { (f, c) -> jarr(f, c.first, c.second) }),
         "log" to owned.log)
 
-    /** The session's participant list, given (the reference's `ctx._people`). */
-    private fun givePeople(ctx: SocialRoutes.SocialContext, people: List<Participant>) {
-        val field = SocialRoutes.SocialContext::class.java.getDeclaredField("people")
-        field.isAccessible = true
-        val map = LinkedHashMap<Long, Participant>()
-        for (p in people) map[p.participantId] = p
-        field.set(ctx, map)
-    }
+    /** The session's participant list (the reference's `ctx._people`), by role. */
+    private fun peopleMap(people: List<Participant>): Map<Long, Participant> =
+        LinkedHashMap<Long, Participant>().also { m -> for (p in people) m[p.participantId] = p }
 
     private val pushOffsets = listOf(0L, 3600L, -5000L)
     private val worldNames = listOf("guilds", "mail", "presence")
@@ -261,8 +256,7 @@ class G7GuildVectorsTest {
             val sequence = world.connect(readOnly = true).use { it.queryOne("SELECT MAX(sequence) AS m FROM world_history")!!.long("m") }
             val pushes = ArrayList<Pair<Long, List<List<Frame>>>>()
             val ctx = SocialRoutes.SocialContext(world, null, inputs, pushFn = { role, builder -> pushes.add(role to pushOffsets.map { builder(it) }) },
-                clockOffset = vector.long("offset"))
-            givePeople(ctx, peoples.getValue(vector.str("people")))
+                clockOffset = vector.long("offset"), people = peopleMap(peoples.getValue(vector.str("people"))))
             val commits = ArrayList<JObj>()
             val commit = SocialRoutes.Commit { action, planner ->
                 val cur = currentOf(save)

@@ -176,10 +176,8 @@ class G7GuildMadeUpTest {
         for ((k, step) in steps.withIndex()) {
             val sequence = world.connect(readOnly = true).use { it.queryOne("SELECT MAX(sequence) AS m FROM world_history")!!.long("m") }
             val pushes = JArr()
-            val ctx = SocialRoutes.SocialContext(world, null, inputs, pushFn = { role, builder -> pushes.add(jarr(role, framesJson(builder(0)))) })
-            val field = SocialRoutes.SocialContext::class.java.getDeclaredField("people")
-            field.isAccessible = true
-            field.set(ctx, LinkedHashMap<Long, Participant>().also { m -> people.forEach { m[it.participantId] = it } })
+            val ctx = SocialRoutes.SocialContext(world, null, inputs, pushFn = { role, builder -> pushes.add(jarr(role, framesJson(builder(0)))) },
+                people = LinkedHashMap<Long, Participant>().also { m -> people.forEach { m[it.participantId] = it } })
             val commits = JArr()
             val commit = SocialRoutes.Commit { action, planner ->
                 val cur = current(step.role, step.roles, step.docs)

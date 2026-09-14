@@ -40,8 +40,9 @@ object SocialRoutes {
         /** The requester's clock: S14 at login − service time at login (0 once the release runs on the device clock). */
         val clockOffset: Long = 0,
         private val powerOf: ((StateStore.Current) -> BigInteger?)? = null,
+        /** The participant list, when already known (the reference's `_people`; vector replays pass a recorded one). */
+        private var people: Map<Long, Participant>? = null,
     ) {
-        private var people: Map<Long, Participant>? = null
 
         fun document(name: String): JObj? {
             if (world == null) {
@@ -319,8 +320,7 @@ object SocialRoutes {
                 return warSign(current, ctx, role, now)
             }
             Guild.C_GUILD_MAIL -> {
-                // `mail.decode_strings`: the same codec (and messages) as the guild's cstring decoder
-                val (title, body) = Guild.decodeCstrings(payload, 2, opcode)
+                val (title, body) = Mail.decodeStrings(payload, 2, opcode)
                 return guildMail(current, ctx, role, title, body, now)
             }
         }
@@ -396,7 +396,7 @@ object SocialRoutes {
     private fun guildMail(current: StateStore.Current, ctx: SocialContext, role: Long, title: ByteArray, body: ByteArray, now: Long): List<Frame> {
         val (gid, guild) = guildRequired(ctx, role)
         val member = Guild.memberOf(guild, role)
-        if (!Guild.can(member.long("position"), "mail", ctx.inputs!!)) return listOf(Guild.S_GUILD_SEND_RESULT to byteArrayOf(1))
+        if (!Guild.can(member.long("position"), "mail", ctx.inputs!!)) return listOf(Mail.S_GUILD_SEND_RESULT to byteArrayOf(1))
         val me = ctx.people(current)[role]
         val sent: List<Pair<Long, JObj>> = ctx.update("mail", "mail_guild") { document ->
             val mails = ArrayList<Pair<Long, JObj>>()
@@ -407,7 +407,7 @@ object SocialRoutes {
             mails to jobj("role" to role, "guild" to gid, "sent" to mails.size)
         }
         for ((recipient, mail) in sent) ctx.push(recipient) { offset -> listOf(Mail.S_ADD to Mail.brief(mail, offset)) }
-        return listOf(Guild.S_GUILD_SEND_RESULT to byteArrayOf(0))
+        return listOf(Mail.S_GUILD_SEND_RESULT to byteArrayOf(0))
     }
 
     /** The guild actions that change the character (`guild_character`): `commit` runs the character transaction. */

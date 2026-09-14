@@ -75,8 +75,6 @@ object Guild {
     const val S_CREATE = 2310
     const val S_APPLY = 2312
     const val S_DONATE = 2314
-    /** The guild mail's send result (`mail.S_GUILD_SEND_RESULT`). */
-    const val S_GUILD_SEND_RESULT = 2316
     const val S_TECH_LIST = 2318
     const val S_APPLICANTS = 2320
     const val S_APPROVE = 2322
