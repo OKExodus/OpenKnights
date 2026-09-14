@@ -1191,8 +1191,9 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             val today = Shops.dayOf(now)
             val yesterday = Shops.dayOf(now - 86400)
             val values = (roulette as JObj).arr("wire_values")
+            // a world revision only when the counters changed (`record_change`)
             world.updateDocument("roulette_rank", "local-service", "roulette_score") { d ->
-                io.github.okexodus.openknights.server.game.RouletteRank.record(d, SocialRoutes.roleOf(cur), values[3], values[4], today, yesterday) to jobj("role" to SocialRoutes.roleOf(cur))
+                io.github.okexodus.openknights.server.game.RouletteRank.recordChange(d, SocialRoutes.roleOf(cur), values[3], values[4], today, yesterday)
             }
             world.document("roulette_rank")!!.second
         } catch (e: Exception) {
@@ -1224,7 +1225,6 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                     throw Acquisition.Rejected("C643 carries one tab byte 1-3")
                 }
                 val tab = payload[0].toInt()
-                rouletteTab = tab
                 val rows = io.github.okexodus.openknights.server.game.RouletteRank.listing(document, tab, today, yesterday, threshold)
                 val flags = LinkedHashMap<Long, Int>()
                 if (tab == io.github.okexodus.openknights.server.game.RouletteRank.YESTERDAY) flags[role] = io.github.okexodus.openknights.server.game.RouletteRank.ownFlag(rows, role, claimed).first
@@ -1233,8 +1233,10 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                     val participant = p as WorldParticipants.Participant
                     names[participant.participantId] = participant.nameRaw
                 }
+                val reply = listOf(io.github.okexodus.openknights.server.game.RouletteRank.S_RANK to io.github.okexodus.openknights.server.game.RouletteRank.rankPayload(tab, rows, names, flags))
+                rouletteTab = tab          // only a list actually served arms C645
                 log("roulette_rank_served", "character_id" to characterId, "tab" to tab, "rows" to rows.size)
-                return listOf(io.github.okexodus.openknights.server.game.RouletteRank.S_RANK to io.github.okexodus.openknights.server.game.RouletteRank.rankPayload(tab, rows, names, flags))
+                return reply
             }
             // C645: the own Yesterday row, claimable once
             if (payload.isNotEmpty() || rouletteTab != io.github.okexodus.openknights.server.game.RouletteRank.YESTERDAY) throw Acquisition.Rejected("The rank reward is claimed from the Yesterday list")
@@ -1280,13 +1282,15 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                 log("rejected_rename", "character_id" to characterId, "reason" to e.message, "reply" to io.github.okexodus.openknights.server.game.Rename.REFUSED)
                 return io.github.okexodus.openknights.server.game.Rename.result(io.github.okexodus.openknights.server.game.Rename.REFUSED)
             }
-            if (!io.github.okexodus.openknights.server.game.Rename.ownsCard(stateStore!!.read())) throw PyValues.ValueError("No Rename Card")
+            if (!io.github.okexodus.openknights.server.game.Rename.ownsCard(stateStore!!.read())) throw io.github.okexodus.openknights.server.game.Rename.NoRenameCard()     // the only 1731
             val reason = "Native opcode1569 Rename Card"
+            val stored = world.member(characterId!!)          // the name and key the undo puts back as they are
             try {
                 old = world.rename(characterId!!, name, "authenticated-client", reason)
             } catch (e: FreshProfile.CreationRejected) {
-                log("rejected_rename", "character_id" to characterId, "reason" to e.message, "reply" to io.github.okexodus.openknights.server.game.Rename.TAKEN)
-                return io.github.okexodus.openknights.server.game.Rename.result(if ("taken" in (e.message ?: "")) io.github.okexodus.openknights.server.game.Rename.TAKEN else io.github.okexodus.openknights.server.game.Rename.REFUSED)
+                val reply = if ("taken" in (e.message ?: "")) io.github.okexodus.openknights.server.game.Rename.TAKEN else io.github.okexodus.openknights.server.game.Rename.REFUSED
+                log("rejected_rename", "character_id" to characterId, "reason" to e.message, "reply" to reply)
+                return io.github.okexodus.openknights.server.game.Rename.result(reply)
             }
             try {
                 val committed = stateStore!!.acquisitionTransaction("rename_character", characterId!!, policy, inputs, "authenticated-client",
@@ -1294,7 +1298,13 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                 result = committed.first
                 plan = committed.second
             } catch (e: Exception) {
-                world.rename(characterId!!, old, "local-service", "Rename undone: the save refused it")
+                try {
+                    world.restoreName(characterId!!, stored!!.str("name"), stored.str("name_key"), "local-service",
+                        "Rename undone: the save refused it")
+                } catch (undo: Exception) {        // never hides the save's own error
+                    guard(undo)
+                    log("rename_undo_error", "character_id" to characterId, "error" to described(undo))
+                }
                 throw e
             }
             try {
@@ -1304,7 +1314,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                 log("rename_registry_error", "character_id" to characterId, "error" to described(e))
             }
         } catch (e: IllegalArgumentException) {
-            val code = if ("Card" in (e.message ?: "")) io.github.okexodus.openknights.server.game.Rename.ERROR_NO_CARD else ItemFortify.codeOf(e)
+            val code = ItemFortify.codeOf(e)
             log("rejected_rename", "character_id" to characterId, "reason" to e.message, "error_code" to code)
             return listOf(6 to TransactionPackets.errorPayload(code))
         } catch (e: Exception) {

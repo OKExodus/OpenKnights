@@ -89,20 +89,28 @@ object Claims {
         return jobj("activity" to WireReader(payload).u32())
     }
 
-    /** C1121 (live order): grant S68 (+ S128), S1186 (empty string + Reward), S1188 (the activity's rows). */
+    /**
+     * C1121 (live order): grant S68 (+ S128), S1186 (empty string + Reward), S1188 (the activity's rows); before them the
+     * S1188 of every other activity whose VIP-level ladder the current VIP level moved.
+     */
     fun planActivityClaim(request: JObj, owned: Owned, serverTime: Long?): Plan {
         val activity = findActivity(owned.state, PyDocs.at(request, "activity"))
         if (activity == null || serverTime == null || PyDocs.compare(JInt(serverTime), PyDocs.at(activity, "wire_u32_after_strings")) >= 0) {
             throw Acquisition.Rejected("No such active event", ERROR_EVENT_REWARD)
         }
-        ActivityProgress.setVipLevel(owned.state, owned.roleBits(VIP_LEVEL), serverTime)
+        // the S1188 of every OTHER activity whose VIP-level ladder moved goes first (the free top-up's order); the claimed
+        // activity's own rows go out once, in its final S1188
+        val claimedId = PyDocs.long(PyDocs.at(activity, "wire_u32_1"))
+        val levelFrames = ActivityProgress.setVipLevel(owned.state, owned.roleBits(VIP_LEVEL), serverTime)
+            .filter { (_, data) -> WireReader(data).u32() != claimedId }
         val definition = Events.defined(PyDocs.at(activity, "wire_u32_1"))
         // Local event ladders regenerate their rows from the definition file.
         val claimed = (if (definition != null) Events.claim(definition, activity) else ActivityProgress.claimRow(activity))
             ?: throw Acquisition.Rejected("No claimable row in this event", ERROR_EVENT_REWARD)
         val (index, pairs) = claimed
         val reward = BattleReport.emptyReward()
-        val frames = ArrayList(grantPairs(owned, pairs.map { (it as JArr).toList() }, reward))
+        val frames = ArrayList(levelFrames)
+        frames.addAll(grantPairs(owned, pairs.map { (it as JArr).toList() }, reward))
         frames.add(S_ACTIVITY_CLAIM to (byteArrayOf(0) + BattleReport.encodeReward(reward)))
         frames.add(S_ACTIVITY_UPDATE to PlayerSections.encodeActivityUpdate(PyDocs.long(PyDocs.at(activity, "wire_u32_1")), activity.obj("rows")))
         return Plan(jobj("activity" to request["activity"], "row" to index, "pairs" to pairs, "reward" to reward,

@@ -253,8 +253,17 @@ object Shops {
             }
             val storeType = PyDocs.at(lucky, "store_type")
             val (itemKey, countKey) = if (storeType == JInt(1)) 402 to 403 else 405 to 407
-            val item = PyDocs.int(inputs.property(itemKey)?.let { JStr(it) }).longValueExact()
-            val count = PyDocs.int(inputs.property(countKey)?.let { JStr(it) }).longValueExact()
+            // a missing or non-numeric voucher row is a labelled refusal (it was an internal error)
+            val (itemValue, countValue) = try {
+                PyValues.parseInt(inputs.property(itemKey) ?: throw PyDocs.TypeError("no property $itemKey")) to
+                    PyValues.parseInt(inputs.property(countKey) ?: throw PyDocs.TypeError("no property $countKey"))
+            } catch (e: PyDocs.TypeError) {
+                throw Acquisition.Rejected("The Lucky Shop refresh voucher is not configured (property $itemKey / $countKey)", Acquisition.ERROR_WRONG_TYPE)
+            } catch (e: PyValues.ValueError) {
+                throw Acquisition.Rejected("The Lucky Shop refresh voucher is not configured (property $itemKey / $countKey)", Acquisition.ERROR_WRONG_TYPE)
+            }
+            val item = itemValue.longValueExact()
+            val count = countValue.longValueExact()
             packets.addAll(owned.consumeTemplate(item, count))
             pools = forcedPools?.toList() ?: drawLuckyPools(lucky, seed!!)
             doc["bought"] = JArr()
@@ -427,7 +436,9 @@ object Shops {
             throw Acquisition.Rejected("The roulette event is outside its window", Acquisition.ERROR_INVALID)
         }
         val classIndex = PyDocs.int(classByte).subtract(BigInteger.ONE)
-        val (coupon, perSpin) = ROULETTE_COUPON[classIndex.toLong()] ?: throw PyDocs.KeyError(classIndex)
+        // a served wheel of class 0 or above 3 is a labelled refusal (it was an internal error)
+        val (coupon, perSpin) = (if (classIndex.bitLength() < 63) ROULETTE_COUPON[classIndex.toLong()] else null)
+            ?: throw Acquisition.Rejected("The served wheel's class byte has no coupon (1..3)", Acquisition.ERROR_INVALID)
         val quantities = LinkedHashMap<BigInteger, JValue>()
         for ((k, v) in catalog.obj("roulette").obj("slot_quantities")) quantities[PyValues.parseInt(k)] = v
         val slotItems = catalog.obj("roulette").arr("slot_items")

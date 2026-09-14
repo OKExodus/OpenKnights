@@ -28,6 +28,9 @@ object Rename {
     const val TEXT_TAG = 0x61
     const val ERROR_NO_CARD = 1731                   // "Not enough items" (the panel only opens from an owned card)
 
+    /** The one refusal answered with 1731 (the route no longer matches error texts). */
+    class NoRenameCard : Acquisition.Rejected("No Rename Card", ERROR_NO_CARD)
+
     /** Thrown where the reference's strict UTF-8 decode raises UnicodeDecodeError (a ValueError). */
     class UnicodeDecodeError(message: String) : IllegalArgumentException(message)
 

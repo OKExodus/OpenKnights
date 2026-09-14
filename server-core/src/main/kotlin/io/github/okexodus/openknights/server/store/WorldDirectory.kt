@@ -250,6 +250,27 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
         }
     }
 
+    /**
+     * Undo of a Rename Card rename the save refused (`restore_name`): the name and name key the character had, put back
+     * exactly as stored — no creation rules, no bot check — unless another entry holds that key meanwhile (never a
+     * duplicate name).
+     */
+    fun restoreName(characterId: String, name: String, nameKey: String, actor: String, reason: String) {
+        connect().use { db ->
+            db.immediate {
+                val row = db.queryOne("SELECT entry_id,name FROM world_characters WHERE character_id=? AND status='active'", characterId)
+                    ?: throw IllegalArgumentException("Only an active world character can be renamed")
+                if (db.queryOne("SELECT 1 FROM world_characters WHERE name_key=? AND entry_id<>?", nameKey, row.string("entry_id")) != null) {
+                    throw IllegalArgumentException("The old name is held by another world entry; the rename cannot be undone")
+                }
+                db.execute("UPDATE world_characters SET name=?,name_key=?,updated_at_utc=? WHERE entry_id=?", name, nameKey,
+                    PyTime.nowIsoMillis(), row.string("entry_id"))
+                audit(db, actor, "rename_character", row.string("entry_id"), characterId,
+                    jobj("name_before" to row.string("name"), "name_after" to name, "reason" to reason))
+            }
+        }
+    }
+
     fun activate(entryId: String, characterId: String, statePath: Path, actor: String) {
         connect().use { db ->
             db.immediate {

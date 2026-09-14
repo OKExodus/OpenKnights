@@ -49,6 +49,17 @@ object RouletteRank {
         return document
     }
 
+    /**
+     * The `update_document` change of a record: (document, audit detail), the detail null — no world revision — when the
+     * counters and kept days are what the world already holds.
+     */
+    fun recordChange(document: JObj, role: Long, todayScore: JValue, totalScore: JValue, today: String, yesterday: String): Pair<JObj, JObj?> {
+        val before = io.github.okexodus.openknights.exact.Json.dumps(document, sortKeys = true)
+        record(document, role, todayScore, totalScore, today, yesterday)
+        val changed = io.github.okexodus.openknights.exact.Json.dumps(document, sortKeys = true) != before
+        return document to (if (changed) jobj("role" to role) else null)
+    }
+
     /** The top [LISTED] (role, score) rows of a tab at or above the threshold, by score descending, then role. */
     fun listing(document: JObj, tab: Int, today: String, yesterday: String, threshold: Long): List<Pair<Long, JValue>> {
         val scores = if (tab == TOTAL) (document["total"] ?: JObj()) as JObj

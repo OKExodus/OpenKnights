@@ -43,9 +43,15 @@ object AcquisitionRoutes {
         return deployed to excluded
     }
 
-    /** `is_read_only(opcode, payload)`: the queries that change nothing (buy-back list, fuse luck, shop list, Lucky info). */
+    /** C2725 as LuckyStoresSystem::sendMessage sends it: `u8 store type 2, u32 mode`; mode 0 is the info query. */
+    val LUCKY_INFO_QUERY = byteArrayOf(2, 0, 0, 0, 0)
+
+    /**
+     * `is_read_only(opcode, payload)`: the queries that change nothing (buy-back list, fuse luck, shop list, Lucky info).
+     * C2725 is a query only in its exact mode-0 form; every other C2725 takes the committed path and its validation.
+     */
     fun isReadOnly(opcode: Int, payload: ByteArray): Boolean =
-        opcode in setOf(1057, 89, 1253) || (opcode == 2725 && payload.size >= 4 && payload.copyOfRange(payload.size - 4, payload.size).all { it == 0.toByte() })
+        opcode in setOf(1057, 89, 1253) || (opcode == 2725 && payload.contentEquals(LUCKY_INFO_QUERY))
 
     /** The fuse luck query C1253 (`read_only_reply`, compose). */
     fun fuseLuckReply(payload: ByteArray, current: StateStore.Current): Pair<List<Frame>, JObj> {
