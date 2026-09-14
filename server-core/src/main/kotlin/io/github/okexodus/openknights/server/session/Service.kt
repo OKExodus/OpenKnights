@@ -195,10 +195,10 @@ class Service(
             }
             val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
             service.acquisitionPolicy = checkAcquisitionPolicy(data.document("policies/acquisition-rng.json"))
-            service.evolutionTestPolicy = data.policy("evolution")
+            service.evolutionTestPolicy = io.github.okexodus.openknights.server.game.HeroEvolution.checkTestPolicy(data.policy("evolution")) as JObj?
             service.fortifyBonusPolicy = data.policy("fortify-bonus")
-            service.powerUpPolicy = data.policy("power-up")
-            service.ascensionPolicy = data.policy("ascension")
+            service.powerUpPolicy = io.github.okexodus.openknights.server.game.HeroPowerUp.checkPolicy(data.policy("power-up")) as JObj?
+            service.ascensionPolicy = io.github.okexodus.openknights.server.game.HeroAscension.checkMaterialPolicy(data.policy("ascension")) as JObj?
             io.github.okexodus.openknights.server.game.Events.setActive(io.github.okexodus.openknights.server.game.Events.releaseEvents(data))
             service.acquisitionCatalog
             service.freshSystems
