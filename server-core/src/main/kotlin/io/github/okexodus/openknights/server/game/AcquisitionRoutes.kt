@@ -8,8 +8,8 @@ import io.github.okexodus.openknights.server.store.StateStore
  * Request → planner dispatch of the acquisition routes (`acquisition_routes.py`, docs/ACQUISITION_CONTRACT.md). Every
  * plan records `now_epoch` and, when an event window or ladder was judged, the `served_time` it used.
  *
- * Ported so far: the Rebirth Evolve / Fortify (C101 / C99) and Reborn (C95) branches; every other opcode's planner is
- * [NotPorted] (the acquisition group).
+ * Every opcode of [ACTIONS] has its planner here, and the read-only replies (C1057, C89, C1253, the Lucky Shop
+ * info query) are answered by [readOnlyReply].
  */
 object AcquisitionRoutes {
     val ACTIONS: Map<Int, String> = linkedMapOf(73 to "acquire_item_use", 4099 to "acquire_choose_box", 803 to "acquire_merge",
