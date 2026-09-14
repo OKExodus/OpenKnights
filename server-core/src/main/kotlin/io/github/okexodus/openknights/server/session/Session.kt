@@ -1280,6 +1280,16 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
 
     // --- gear / jewelry evolve, formation ------------------------------------------------------------------------------
 
+    /**
+     * (payload, source) of the opcode-3072 unequipped-jewelry list this session served at login (`_served_jewel_list`);
+     * (null, null) when none was served (a release service has no captured snapshot to fall back on).
+     */
+    private fun servedJewelList(): Pair<ByteArray?, String?> {
+        val payloads = (jewelryFrames ?: emptyList()).filter { it.first == 3072 }.map { it.second }
+        val source = if (jewelryFrames != null) "session_login_s3072" else "captured_snapshot_s3072"
+        return if (payloads.isNotEmpty()) payloads.last() to source else null to null
+    }
+
     /** Gear C2049 / jewelry C2629 evolve; the excluded up-star C2593 / C2817 (`_equip_evolve_route`). */
     private fun equipEvolveRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "gear / jewelry evolve")
 
