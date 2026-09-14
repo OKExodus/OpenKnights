@@ -3,17 +3,25 @@ package io.github.okexodus.openknights.server.game
 import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JObj
+import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.PyText
+import io.github.okexodus.openknights.exact.Utf8Lenient
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.jvalue
 import io.github.okexodus.openknights.exact.toHexString
+import io.github.okexodus.openknights.protocol.BattleReport
+import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.server.game.WorldParticipants.Participant
 
 /**
- * Mail (`mail.py`), the parts entering the game reads: the mailbox list (S256) and the brief of one mail, and putting
- * a mail in a box (the guild war result at login). Mailboxes live in the world document `mail` per wire role id.
+ * Mail (`mail.py`): system / personal / guild mail, rewards, the mail blacklist. Mailboxes live in the world document
+ * `mail` per wire role id; a reward is claimed into the owner's save by one audited transaction whose per-character
+ * ledger (`mail_state.claimed`) makes a claim idempotent even if the world write after it has to be retried. Mail ids
+ * come from one world counter.
  */
 object Mail {
     const val C_LIST = 257
@@ -24,12 +32,36 @@ object Mail {
     const val C_BLACKLIST = 203
     const val C_BLOCK = 205
     const val C_UNBLOCK = 207
+    const val C_ATTACK = 209
+    const val C_GUILD_MAIL = 2169
     const val S_LIST = 256
     const val S_ADD = 258
+    const val S_STATE = 260
+    const val S_REMOVE = 262
+    const val S_CONTENT = 264
+    const val S_REWARD = 266
+    const val S_SEND_RESULT = 268
+    const val S_BLACKLIST = 270
+    const val S_REMOVED = 272
+    const val S_GUILD_SEND_RESULT = 2316
     const val SYSTEM_REWARD = 0L
+    const val PERSONAL = 1L
+    const val ATTACK = 2L
+    const val ABSOLVE = 3L
     const val PRAISE = 4L
+    const val NOTE = 5L
     const val GUILD = 6L
     const val UNREAD = 0L
+    const val READ = 1L
+    const val CLAIMED = 2L
+    const val MAIL_PROFILE = "mail_state_v1"
+    const val ERR_NOT_FOUND = 9000
+    const val ERR_CLAIMED = 9002
+    const val ERR_BAG_FULL = 9003
+    const val ERR_CLAIM_FIRST = 9004
+    /** The write panel's own limits ("Up to 20 characters" / "…140 characters"). */
+    const val TITLE_MAX = 20L
+    const val BODY_MAX = 140L
     /** "kept for a maximum of 30 days". */
     const val KEEP_SECONDS = 30 * 86_400L
     /** S256 carries the 50 oldest unclaimed type-0 mails and all others. */
@@ -135,35 +167,136 @@ object Mail {
         document.obj("boxes")[recipient.toString()] = JArr(mails.toMutableList<JValue>())
         return mail
     }
-}
 
-/** Chat (`chat.py`), the part entering the game reads: the history replayed after the mail list. */
-object Chat {
-    const val C_CHAT = 449
-    const val S_CHAT = 480
-    const val PRIVATE = 2L
+    private fun boxOf(document: JObj, role: Long): JArr = (document.obj("boxes")[role.toString()] as? JArr) ?: JArr()
 
-    fun linePayload(channel: Long, outgoing: Boolean, senderId: Long, senderRaw: ByteArray, textRaw: ByteArray, gm: Boolean = false): ByteArray =
-        WireWriter().u8(channel.toInt()).u8(if (outgoing) 1 else 0).u32(senderId).raw(senderRaw).raw(byteArrayOf(0))
-            .raw(textRaw).raw(byteArrayOf(0)).u8(if (gm) 1 else 0).bytes()
+    fun find(document: JObj, role: Long, mailId: Long): JObj? = boxOf(document, role).map { it as JObj }.firstOrNull { it["id"] == JInt(mailId) }
 
-    /** S480 of a stored line for a viewer (private lines: outgoing from the viewer's side shows the partner). */
-    fun replay(line: JObj, viewer: Long): Frame {
-        val gm = Py.truthy(line["gm"])
-        if (line.long("channel") == PRIVATE && line.long("sender") == viewer) {
-            val target = line.obj("target")
-            return S_CHAT to linePayload(PRIVATE, true, target.long("id"), target.str("name_hex").hexBytes(), line.str("text_hex").hexBytes(), gm)
-        }
-        return S_CHAT to linePayload(line.long("channel"), false, line.long("sender"), line.str("name_hex").hexBytes(), line.str("text_hex").hexBytes(), gm)
+    /** S264 `u32 id, cstr body, Reward` (the Reward the claim will pay). */
+    fun contentPayload(mail: JObj, hideReward: Boolean = false): ByteArray {
+        val stored = mail["reward"]
+        val reward = if (hideReward) Acquisition.emptyReward() else if (Py.truthy(stored)) stored as JObj else Acquisition.emptyReward()
+        return WireWriter().u32(mail.long("id")).raw(mail.str("body_hex").hexBytes()).raw(byteArrayOf(0)).raw(BattleReport.encodeReward(reward)).bytes()
     }
 
-    /** Lines replayed after the mail list at login: the world history, the guild's history, the private lines to the viewer. */
-    fun loginHistory(chatDoc: JObj, viewer: Long, guildId: Long): List<Frame> {
-        val frames = ArrayList<Frame>()
-        chatDoc.arr("world").forEach { frames.add(replay(it as JObj, viewer)) }
-        if (guildId != 0L) ((chatDoc.obj("guild")[guildId.toString()] as? JArr) ?: JArr()).forEach { frames.add(replay(it as JObj, viewer)) }
-        ((chatDoc.obj("private")[viewer.toString()] as? JArr) ?: JArr()).forEach { frames.add(replay(it as JObj, viewer)) }
-        return frames
+    /** C195 `u32 id` → S260 `id, 1` then S264. Unknown id → 9000. */
+    fun read(document: JObj, role: Long, mailId: Long, hideReward: Boolean = false): List<Frame> {
+        val mail = find(document, role, mailId) ?: throw Acquisition.Rejected("That specific Mail can't be found", ERR_NOT_FOUND)
+        if (mail["state"] == JInt(UNREAD)) mail["state"] = JInt(READ)
+        return listOf(S_STATE to WireWriter().u32(mailId).number('B', mail["state"]!!).bytes(), S_CONTENT to contentPayload(mail, hideReward))
+    }
+
+    private fun ledgerIds(ledger: JObj, key: String): JArr = PyDocs.at(ledger, key) as? JArr ?: throw PyDocs.TypeError("'${key}' is not a list")
+
+    /** `sorted(set(ids) | {id})[-2000:]`. */
+    private fun withId(ids: JArr, mailId: JValue): JArr {
+        val all = LinkedHashSet<JValue>(ids)
+        all.add(mailId)
+        val sorted = PyDocs.sorted(all)
+        return JArr(sorted.subList(maxOf(0, sorted.size - 2000), sorted.size).toMutableList())
+    }
+
+    /** A "Praise from a Friend" mail (type 4) whose Pal Points were not paid yet. */
+    fun praiseUnpaid(mail: JObj?, ledger: JValue?): Boolean {
+        if (mail == null || mail["type"] != JInt(PRAISE) || !hasReward(mail["reward"])) return false
+        val paid = if (Py.truthy(ledger)) ((ledger as JObj)["praise_paid"] ?: JArr()) else JArr()
+        return mail["id"] !in (paid as JArr).toSet()
+    }
+
+    /** `dict(ledger or {"profile": MAIL_PROFILE, "claimed": []})`. */
+    private fun ledgerCopy(ledger: JValue?): JObj = if (Py.truthy(ledger)) PyDocs.shallow(ledger as JObj) else jobj("profile" to MAIL_PROFILE, "claimed" to JArr())
+
+    /**
+     * POLICY (the Personal tab has no Claim button): a praise mail's Pal Points are paid when it is opened (S128 only);
+     * its content then shows no Reward and Praise back / Delete remove it plainly. Plan members: mail, reward,
+     * mail_state_after.
+     */
+    fun planPraiseRead(mail: JObj, owned: Owned, inputs: AcquisitionInputs, ledger: JValue?): Plan {
+        val after = ledgerCopy(ledger)
+        val frames = grant(owned, mail["reward"] as JObj, inputs)
+        after["praise_paid"] = withId((after["praise_paid"] ?: JArr()) as? JArr ?: throw PyDocs.TypeError("praise_paid is not a list"), mail["id"]!!)
+        return Plan(jobj("mail" to mail["id"], "reward" to mail["reward"], "mail_state_after" to after), frames)
+    }
+
+    /** C197 `u32 id` → [S68 item] [S128 props] → S266 Reward → S262 id. The ledger records the claim. */
+    fun planClaim(mail: JObj, owned: Owned, inputs: AcquisitionInputs, ledger: JValue?): Plan {
+        val after = ledgerCopy(ledger)
+        if (mail["id"] in ledgerIds(after, "claimed")) throw Acquisition.Rejected("The Mail Reward has been claimed", ERR_CLAIMED)
+        val stored = mail["reward"]
+        val reward = if (Py.truthy(stored)) stored as JObj else Acquisition.emptyReward()
+        val frames = if (hasReward(reward)) grant(owned, reward, inputs) else emptyList()
+        after["claimed"] = withId(ledgerIds(after, "claimed"), mail["id"]!!)
+        return Plan(jobj("mail" to mail["id"], "reward" to reward, "mail_state_after" to after),
+            frames + listOf(S_REWARD to BattleReport.encodeReward(reward), S_REMOVE to WireWriter().u32(mail.long("id")).bytes()))
+    }
+
+    fun remove(document: JObj, role: Long, mailId: Long) {
+        document.obj("boxes")[role.toString()] = JArr(boxOf(document, role).filterTo(ArrayList()) { (it as JObj)["id"] != JInt(mailId) })
+    }
+
+    /** C199 `u32 id` → S262 (9004 for an unclaimed reward mail; 9000 unknown). */
+    fun delete(document: JObj, role: Long, mailId: Long, claimed: Collection<Long> = emptyList()): List<Frame> {
+        val mail = find(document, role, mailId) ?: throw Acquisition.Rejected("That specific Mail can't be found", ERR_NOT_FOUND)
+        if (hasReward(mail["reward"]) && mail["id"] !in claimed.mapTo(HashSet<JValue>()) { JInt(it) }) {
+            throw Acquisition.Rejected("You have to claim the Reward first", ERR_CLAIM_FIRST)
+        }
+        remove(document, role, mailId)
+        return listOf(S_REMOVE to WireWriter().u32(mailId).bytes())
+    }
+
+    private fun blacklistOf(document: JObj, role: Long): JArr = (document.obj("blacklist")[role.toString()] as? JArr) ?: JArr()
+
+    /** S270 `u8 n, n × cstr`. */
+    fun blacklistPayload(document: JObj, role: Long): ByteArray {
+        val names = blacklistOf(document, role)
+        val w = WireWriter().raw(PyDocs.bytes(listOf(names.size.toLong())))
+        for (n in names) w.raw((n as JStr).value.hexBytes()).raw(byteArrayOf(0))
+        return w.bytes()
+    }
+
+    /** A blacklist entry: the name bytes as hex. */
+    fun nameHex(nameRaw: ByteArray): JStr = JStr(nameRaw.toHexString())
+
+    fun blocked(document: JObj, role: Long, nameRaw: ByteArray): Boolean = nameHex(nameRaw) in blacklistOf(document, role)
+
+    /**
+     * C201 `cstr to, cstr title, cstr body` → S268 result: 0 delivered, 1 receiver not found, 2 title too long, 3 too
+     * much content, 4 on their blacklist. Limits: the write panel's 20 / 140 characters (POLICY). Returns (code, mail).
+     */
+    fun write(document: JObj, sender: Participant?, recipient: Participant?, title: ByteArray, body: ByteArray, inputs: DailyInputs,
+              now: Long): Pair<Int, JObj?> {
+        if (recipient == null) return 1 to null
+        if (PyText.length(Utf8Lenient.decodeReplace(title)) > maxOf(TITLE_MAX, inputs.prop(700, 10))) return 2 to null
+        if (PyText.length(Utf8Lenient.decodeReplace(body)) > maxOf(BODY_MAX, inputs.prop(701, 50))) return 3 to null
+        if (blocked(document, recipient.participantId, sender!!.nameRaw)) return 4 to null
+        val mail = newMail(document, recipient.participantId, PERSONAL, sender.participantId, sender.nameRaw, title, body, now = now)
+        return 0 to mail
+    }
+
+    fun decodeId(payload: ByteArray, opcode: Int): Long {
+        if (payload.size != 4) throw Acquisition.Rejected("C$opcode is u32 mail id")
+        return WireReader(payload).u32()
+    }
+
+    /** `payload.split(b"\0")`. */
+    fun splitBytes(payload: ByteArray): List<ByteArray> {
+        val parts = ArrayList<ByteArray>()
+        var start = 0
+        for (i in payload.indices) {
+            if (payload[i] == 0.toByte()) {
+                parts.add(payload.copyOfRange(start, i))
+                start = i + 1
+            }
+        }
+        parts.add(payload.copyOfRange(start, payload.size))
+        return parts
+    }
+
+    /** [count] NUL-terminated strings, nothing after the last NUL. */
+    fun decodeStrings(payload: ByteArray, count: Int, opcode: Int): List<ByteArray> {
+        val parts = splitBytes(payload)
+        if (parts.size != count + 1 || parts.last().isNotEmpty()) throw Acquisition.Rejected("C$opcode is $count cstring(s)")
+        return parts.subList(0, count)
     }
 }
 

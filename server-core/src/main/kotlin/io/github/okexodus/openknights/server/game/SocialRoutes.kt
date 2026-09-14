@@ -172,30 +172,227 @@ object SocialRoutes {
 
     // --- friends, mail, chat (agent B: friends, mail, chat and their helpers) -------------------------------------------
 
-    /** The friend requests (`friends`). */
+    /** `SocialContext.by_name`: {casefolded name: participant} (a later equal name wins). */
+    private fun byName(ctx: SocialContext, current: StateStore.Current?): Map<String, Participant> {
+        val out = LinkedHashMap<String, Participant>()
+        for (p in ctx.people(current).values) out[Chat.nameKey(p.nameRaw)] = p
+        return out
+    }
+
+    private fun u32(value: Long): ByteArray = io.github.okexodus.openknights.protocol.WireWriter().u32(value).bytes()
+
+    /** Raised inside the praise planner when nothing is praised: the transaction is abandoned (not a refusal). */
+    private class NoPraise : RuntimeException()
+
+    /** `_friend_point_reward`: an empty Reward with Pal Points. */
+    private fun friendPointReward(points: Long): JObj {
+        val reward = Acquisition.emptyReward()
+        reward["friend_point"] = JInt(points)
+        return reward
+    }
+
+    /** The friend requests (`friends`): C353 pending, C385 player card, C355 recommendations, C359 / C361 add, C363 reply, C365 remove, C387 praise. */
     fun friends(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long): List<Frame> {
         val role = roleOf(current)
+        val inputs = ctx.inputs
+        val people = ctx.people(current)
+        val presence = ctx.presence()
+        val vip = role(current, Friends.ROLE_VIP)
         if (opcode == Friends.C_PENDING) {
-            val people = ctx.people(current)
-            val presence = ctx.presence()
             return listOf(Friends.S_PENDING to Friends.pendingPayload(ctx.document("social")!!, role, people, presence, now, ctx.clockOffset))
         }
-        throw NotPorted("social_routes.friends (opcode $opcode)")
+        if (opcode == Friends.C_INFO) {
+            val target = people[Friends.decodeId(payload, opcode)] ?: throw Acquisition.Rejected("Can't find the player", Friends.ERR_NO_PLAYER)
+            var state: JObj? = null
+            if (target.participantId == role) state = current.state
+            else if (!target.characterId.isNullOrEmpty() && ctx.registry != null) state = ctx.registry.resolveStateStore(target.characterId).read().state
+            return listOf(Friends.S_INFO to Friends.playerInfoPayload(target, state, presence, now, ctx.clockOffset))
+        }
+        if (opcode == Friends.C_RECOMMEND) {
+            val request = Friends.decodeRecommend(payload)
+            return listOf(Friends.S_RECOMMEND to Friends.recommendPayload(ctx.document("social")!!, role, people, presence, now,
+                request.long("count"), request.long("kind"), role(current, 3, 1), ctx.clockOffset, ctx.inputs))
+        }
+        if (opcode == Friends.C_ADD || opcode == Friends.C_ADD_NAME) {
+            val target = if (opcode == Friends.C_ADD) people[Friends.decodeId(payload, opcode)]
+            else byName(ctx, current)[Chat.nameKey(Friends.decodeName(payload, opcode))]
+            if (target == null) return listOf(Friends.S_ADD_RESULT to byteArrayOf(1))             // "Can't find the player"
+            ctx.update<Unit>("social", "friend_add") { d ->
+                Friends.add(d, role, target.participantId, Friends.maxFriends(vip, inputs!!), now)
+                Unit to jobj("role" to role, "target" to target.participantId)
+            }
+            return listOf(Friends.S_ADD_RESULT to byteArrayOf(0), Friends.S_FRIEND_ADD to Friends.record(target, presence, now, offset = ctx.clockOffset))
+        }
+        if (opcode == Friends.C_REPLY) {
+            val request = Friends.decodeReply(payload)
+            val requesterId = request.long("id")
+            val requester = people[requesterId]
+            val theirVip = requester?.vip ?: 0L
+            val result: Int = ctx.update("social", "friend_reply") { d ->
+                val r = Friends.reply(d, role, requesterId, request.bool("accept"), Friends.maxFriends(vip, inputs!!), Friends.maxFriends(theirVip, inputs))
+                r to jobj("role" to role, "requester" to requesterId, "result" to r)
+            }
+            val frames = arrayListOf<Frame>(Friends.S_REPLY_RESULT to PyDocs.bytes(listOf(result.toLong())))
+            if (result == 0 && requester != null) {
+                frames.add(Friends.S_FRIEND_ADD to Friends.record(requester, presence, now, offset = ctx.clockOffset))
+                val me = people[role]
+                if (me != null) ctx.push(requester.participantId) { offset -> listOf(Friends.S_FRIEND_ADD to Friends.record(me, presence, now, offset = offset)) }
+            }
+            return frames
+        }
+        if (opcode == Friends.C_REMOVE) {
+            val target = Friends.decodeId(payload, opcode)
+            ctx.update<Unit>("social", "friend_remove") { d ->
+                Friends.remove(d, role, target)
+                Unit to jobj("role" to role, "target" to target)
+            }
+            ctx.push(target) { listOf(Friends.S_FRIEND_REMOVE to u32(role)) }
+            return listOf(Friends.S_FRIEND_REMOVE to u32(target))
+        }
+        if (opcode == Friends.C_PRAISE) {
+            val request = Friends.decodePraise(payload)
+            val target = request.long("target")
+            val social = ctx.document("social")!!
+            var result: Friends.Praise? = null
+            val plan = try {
+                commit("friend_praise") { owned, _ ->
+                    val praise = Friends.planPraise(social, role, target, request.long("kind"), owned, inputs!!, now)
+                    result = praise
+                    if (!praise.praised) throw NoPraise()
+                    Plan(jobj("target" to target, "evidence_class" to "capture_observed_policy_mail"), praise.packets)
+                }
+            } catch (e: NoPraise) {
+                return result!!.packets
+            }
+            ctx.update<Unit>("social", "friend_praise") { d ->
+                d.obj("praise")["$role:$target"] = JInt(now)
+                Unit to jobj("role" to role, "target" to target)
+            }
+            val me = people[role]
+            val mail: JObj = ctx.update("mail", "mail_praise") { d ->
+                val m = Mail.newMail(d, target, Mail.PRAISE, role, me?.nameRaw ?: ByteArray(0), inputs!!.text(1115).toByteArray(Charsets.UTF_8),
+                    inputs.text(1113).toByteArray(Charsets.UTF_8), friendPointReward(Friends.PRAISE_NOTE_POINTS), now)
+                m to jobj("to" to target, "mail" to m["id"])
+            }
+            ctx.push(target) { offset -> listOf(Mail.S_ADD to Mail.brief(mail, offset)) }
+            return plan.packets
+        }
+        throw Acquisition.Rejected("Not a friend action")
     }
 
-    /** The mail requests (`mail`). */
+    /** The mail requests (`mail`): C257 list, C195 read, C197 claim, C199 delete, C201 write, C203 / C205 / C207 blacklist. */
     fun mail(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long): List<Frame> {
         val role = roleOf(current)
+        val claimed = claimedMail(current)
         if (opcode == Mail.C_LIST) {
-            val claimed = claimedMail(current)
             return listOf(Mail.S_LIST to Mail.listPayload(ctx.document("mail")!!, role, now, claimed, ctx.clockOffset))
         }
-        throw NotPorted("social_routes.mail (opcode $opcode)")
+        val ledger = PyDocs.get(current, "mail_state")
+        if (opcode == Mail.C_READ) {
+            val mailId = Mail.decodeId(payload, opcode)
+            val found = Mail.find(ctx.document("mail")!!, role, mailId)
+            var paid: List<Frame> = emptyList()
+            if (Mail.praiseUnpaid(found, ledger)) {
+                paid = commit("mail_claim") { owned, cur ->
+                    Mail.planPraiseRead(found!!, owned, ctx.inputs!!, PyDocs.get(cur, "mail_state")).also { it["evidence_class"] = "native_use_policy" }
+                }.packets
+            }
+            val hide = found != null && found["type"] == JInt(Mail.PRAISE)
+            val frames: List<Frame> = ctx.update("mail", "mail_read") { d -> Mail.read(d, role, mailId, hide) to jobj("role" to role, "mail" to mailId) }
+            return frames + paid
+        }
+        if (opcode == Mail.C_CLAIM) {
+            val mailId = Mail.decodeId(payload, opcode)
+            val found = Mail.find(ctx.document("mail")!!, role, mailId)
+            if (found == null || mailId in claimed) {
+                if (found != null) {                     // claimed before, the world removal still pending
+                    ctx.update<Unit>("mail", "mail_remove") { d -> Mail.remove(d, role, mailId); Unit to jobj("role" to role, "mail" to mailId) }
+                }
+                return listOf(Mail.S_REMOVED to u32(mailId))          // live: a repeated C197 → S272
+            }
+            val plan = commit("mail_claim") { owned, cur ->
+                Mail.planClaim(found, owned, ctx.inputs!!, PyDocs.get(cur, "mail_state")).also { it["evidence_class"] = "capture_observed" }
+            }
+            ctx.update<Unit>("mail", "mail_claimed") { d -> Mail.remove(d, role, mailId); Unit to jobj("role" to role, "mail" to mailId) }
+            return plan.packets
+        }
+        if (opcode == Mail.C_DELETE) {
+            val mailId = Mail.decodeId(payload, opcode)
+            val found = Mail.find(ctx.document("mail")!!, role, mailId)
+            var paid: List<Frame> = emptyList()
+            if (Mail.praiseUnpaid(found, ledger)) {
+                // removed before it was opened (Praise back / Delete both send C199): its Pal Points are paid now
+                paid = commit("mail_claim") { owned, cur ->
+                    Mail.planPraiseRead(found!!, owned, ctx.inputs!!, PyDocs.get(cur, "mail_state")).also { it["evidence_class"] = "native_use_policy" }
+                }.packets
+            }
+            val settled = if (found != null && found["type"] == JInt(Mail.PRAISE)) claimed + mailId else claimed
+            val frames: List<Frame> = ctx.update("mail", "mail_delete") { d -> Mail.delete(d, role, mailId, settled) to jobj("role" to role, "mail" to mailId) }
+            return paid + frames
+        }
+        if (opcode == Mail.C_WRITE) {
+            val (to, title, body) = Mail.decodeStrings(payload, 3, opcode)
+            val people = ctx.people(current)
+            val sender = people[role]
+            var recipient = byName(ctx, current)[Chat.nameKey(to)]
+            if (recipient != null && recipient.participantId == role) recipient = null
+            var code = 0
+            var written: JObj? = null
+            ctx.update<Unit>("mail", "mail_write") { d ->
+                val (c, m) = Mail.write(d, sender, recipient, title, body, ctx.inputs!!, now)
+                code = c
+                written = m
+                Unit to (if (m != null) jobj("role" to role, "to" to recipient!!.participantId) else null)
+            }
+            val delivered = written
+            if (delivered != null) ctx.push(recipient!!.participantId) { offset -> listOf(Mail.S_ADD to Mail.brief(delivered, offset)) }
+            return listOf(Mail.S_SEND_RESULT to PyDocs.bytes(listOf(code.toLong())))
+        }
+        if (opcode == Mail.C_BLACKLIST) return listOf(Mail.S_BLACKLIST to Mail.blacklistPayload(ctx.document("mail")!!, role))
+        if (opcode == Mail.C_BLOCK || opcode == Mail.C_UNBLOCK) {
+            val name = Friends.decodeName(payload, opcode)
+            ctx.update<Unit>("mail", "mail_blacklist") { d ->
+                val lists = d.obj("blacklist")
+                val names = (lists[role.toString()] as? JArr) ?: JArr().also { lists[role.toString()] = it }
+                val hex = Mail.nameHex(name)
+                if (opcode == Mail.C_BLOCK && hex !in names && names.size < 50) names.add(hex)
+                else if (opcode == Mail.C_UNBLOCK && hex in names) names.remove(hex)
+                Unit to jobj("role" to role, "block" to (opcode == Mail.C_BLOCK))
+            }
+            return if (opcode == Mail.C_BLOCK) emptyList() else listOf(Mail.S_BLACKLIST to Mail.blacklistPayload(ctx.document("mail")!!, role))
+        }
+        throw Acquisition.Rejected("Not a mail action")
     }
 
-    /** C449 a chat line (`chat`). */
-    fun chat(payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long, onlineRoles: List<Long>): List<Frame> =
-        throw NotPorted("social_routes.chat")
+    /** C449 a chat line (`chat`) → the sender's frames; other recipients get pushes. World lines reach every online player. */
+    fun chat(payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long, onlineRoles: List<Long>): List<Frame> {
+        val request = Chat.decodeChat(payload)
+        val role = roleOf(current)
+        val people = ctx.people(current)
+        val sender = people[role]
+        val (gid, guild) = myGuild(ctx, role)
+        val members = if (guild != null && Py.truthy(guild)) guild.arr("members").map { (it as JObj).long("role") } else emptyList()
+        var deliveries: List<Chat.Delivery> = emptyList()
+        ctx.update<Unit>("chat", "chat_line") { document ->
+            val (sent, line) = Chat.send(document, request, sender, gid, members, byName(ctx, current), ctx.inputs!!, now)
+            deliveries = sent
+            Unit to (if (line != null) jobj("role" to role, "channel" to request.channel) else null)
+        }
+        val blacklists = ctx.document("mail")!!
+        val own = ArrayList<Frame>()
+        for (delivery in deliveries) {
+            val frame = delivery.frame
+            val recipient = delivery.recipient
+            if (delivery.world) {
+                own.add(frame)
+                for (other in onlineRoles) {
+                    if (other != role && !Mail.blocked(blacklists, other, sender!!.nameRaw)) ctx.push(other) { listOf(frame) }
+                }
+            } else if (recipient == null || recipient == role) own.add(frame)
+            else if (!Mail.blocked(blacklists, recipient, sender!!.nameRaw)) ctx.push(recipient) { listOf(frame) }
+        }
+        return own
+    }
 
     // --- shared helpers -------------------------------------------------------------------------------------------------
 
