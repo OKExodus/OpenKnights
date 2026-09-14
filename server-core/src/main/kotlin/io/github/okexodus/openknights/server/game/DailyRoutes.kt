@@ -199,7 +199,10 @@ object DailyRoutes {
 
     // --- queries (no state change) -----------------------------------------------------------------------------------------
 
-    /** Training room queries: C1761 list (u16 page, whose value the list ignores), C1771 invite (no reply). */
+    /**
+     * Training room queries (no state change): C1761 list (u16 page, whose value the list ignores), C1765 enter / Train
+     * Now, C1771 invite (no reply), C1773 remove (nobody else sits offline), C1775 results preview.
+     */
     fun trainingQuery(opcode: Int, payload: ByteArray, current: StateStore.Current, inputs: DailyInputs, now: Long): List<Frame> {
         val state = current.state
         val document = PyDocs.get(current, "training_state")
@@ -208,18 +211,19 @@ object DailyRoutes {
                 if (payload.size != 2) throw Acquisition.Rejected("C1761 is u16 page")
                 return HiddenTraining.roomListReply(document, state, inputs, now)
             }
-            HiddenTraining.C_ROOM_ENTER -> throw NotPorted("hidden_training.enter_reply (C1765)")
+            HiddenTraining.C_ROOM_ENTER ->
+                return HiddenTraining.enterReply(HiddenTraining.decodeRoomPassword(payload, opcode), document, state, inputs, now)
             HiddenTraining.C_ROOM_INVITE -> {
                 if (payload.size != 4) throw Acquisition.Rejected("C1771 is u32 room")
                 return emptyList()
             }
             HiddenTraining.C_ROOM_KICK -> {
                 if (payload.size != 8) throw Acquisition.Rejected("C1773 is u32 room + u32 player")
-                throw NotPorted("hidden_training.kick_reply (C1773)")
+                return HiddenTraining.kickReply(io.github.okexodus.openknights.protocol.WireReader(payload).number('I'), document, state, inputs, now)
             }
         }
         if (payload.isNotEmpty()) throw Acquisition.Rejected("C1775 has no payload")
-        throw NotPorted("hidden_training.preview_reply (C1775)")
+        return HiddenTraining.previewReply(document, state, inputs, now)
     }
 
     fun queryReply(opcode: Int, payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, inputs: DailyInputs,
