@@ -264,11 +264,17 @@ class G5QuestsVectorsTest {
         }
         for ((i, v) in doc.arr("held_outside").withIndex()) {
             val vector = v.asObj
-            val state = saves.getValue(vector.str("save")).obj("state").deepCopy()
-            state["items"] = vector.arr("items").deepCopy()
+            val save = saves.getValue(vector.str("save")).deepCopy()
+            save.obj("state")["items"] = vector.arr("items").deepCopy()
+            save["inventory_items"] = vector.arr("inventory_items").deepCopy()
+            save["acquired_items"] = vector.arr("acquired_items").deepCopy()
+            val cur = currentOf(save)
             val document = vector.obj("document").deepCopy()
-            replay("held_outside $i", vector["result"], { Quests.refreshOwned(document, inputs, state) }) { rec, changed ->
-                check("held_outside $i ${vector.str("variant")}", compact(rec), compact(jobj("changed" to changed, "document" to document)))
+            val withOwned = (vector["with_owned"] as JBool).value
+            replay("held_outside $i", vector["result"], {
+                Quests.refreshOwned(document, inputs, cur.state, if (withOwned) Owned(cur, inputs) else null)
+            }) { rec, changed ->
+                check("held_outside $i ${vector.str("variant")} $withOwned", compact(rec), compact(jobj("changed" to changed, "document" to document)))
             }
         }
         report("rules")

@@ -88,8 +88,8 @@ class G5QuestsMadeUpTest {
         "story PLAN" to "{\"quest\":9001,\"points\":10,\"quest_state_after\":{\"profile\":\"quest_state_v1\",\"quests\":[[9003,2,1],[9002,2,0]],\"points\":15,\"seed\":null,\"claimed\":[9001]},\"evidence_class\":\"capture_observed_csv_calculation\"}",
         "story FRAMES" to "[[128, \"020304040004049600\"], [578, \"010104000000\"], [128, \"0206082e0400000000000007040300\"], [64, \"01010000001d2500000200000000\"], [324, \"292300000e000000f401000000000000030000004600000000000000000000000000000000000000000000000000000000000000011d2500000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"], [320, \"022a23000002000000002b23000002010000000f000000\"], [578, \"040101000000\"]]",
         "story ROLES" to "{\"4\": 150, \"3\": 4, \"6\": 1070, \"7\": 3}",
-        "story_old PLAN" to "{\"quest\":9001,\"points\":10,\"quest_state_after\":{\"profile\":\"quest_state_v1\",\"quests\":[[9003,2,1]],\"points\":15,\"seed\":null},\"evidence_class\":\"capture_observed_csv_calculation\"}",
-        "story_old FRAMES" to "[[128, \"020304040004049600\"], [578, \"010104000000\"], [128, \"0206082e0400000000000007040300\"], [64, \"01010000001d2500000200000000\"], [324, \"292300000e000000f401000000000000030000004600000000000000000000000000000000000000000000000000000000000000011d2500000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"], [320, \"012b23000002010000000f000000\"], [578, \"040101000000\"]]",
+        "story_old PLAN" to "{\"quest\":9001,\"points\":10,\"quest_state_after\":{\"profile\":\"quest_state_v1\",\"quests\":[[9003,2,1],[9002,2,0]],\"points\":15,\"seed\":null},\"evidence_class\":\"capture_observed_csv_calculation\"}",
+        "story_old FRAMES" to "[[128, \"020304040004049600\"], [578, \"010104000000\"], [128, \"0206082e0400000000000007040300\"], [64, \"01010000001d2500000200000000\"], [324, \"292300000e000000f401000000000000030000004600000000000000000000000000000000000000000000000000000000000000011d2500000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"], [320, \"022a23000002000000002b23000002010000000f000000\"], [578, \"040101000000\"]]",
         "story_old ROLES" to "{\"4\": 150, \"3\": 4, \"6\": 1070, \"7\": 3}",
         "story_running REFUSED" to "[\"The quest is not claimable\", 70107]",
         "accept PLAN" to "{\"opcode\":259,\"quest\":700105,\"bounty_board_after\":{\"profile\":\"bounty_board_v1\",\"day\":\"2030-03-17\",\"rows\":[[700101,2,0,2],[700102,2,0,3],[700103,3,0,4],[700104,4,0,5],[700105,2,0,1],[700106,1,0,2],[700107,1,0,3],[700108,1,0,4],[700109,1,0,5],[700110,1,0,1],[700111,1,0,2],[700112,1,0,3],[700113,1,0,4],[700114,1,0,5],[700115,1,0,1]],\"used\":1,\"limit\":25,\"board_until\":1900000600,\"auto_id\":0,\"auto_until\":0,\"free\":1},\"evidence_class\":\"capture_observed\"}",
@@ -131,6 +131,12 @@ class G5QuestsMadeUpTest {
         "refresh_free FRAMES" to "[[322, \"0fc5ae0a00010000000001c6ae0a00010000000005c7ae0a00010000000003c8ae0a00010000000002c9ae0a00010000000001caae0a00010000000001cbae0a00010000000001ccae0a00010000000003cdae0a00010000000001ceae0a00010000000001cfae0a00010000000001d0ae0a00010000000004d1ae0a00010000000003d2ae0a00010000000002d3ae0a00010000000003070000001900000080510100000000000000000001000000\"]]",
         "refresh_free ROLES" to "{}",
         "missing REFUSED" to "[\"Cannot find related bounty quest\", 70100]",
+        "refresh_auto REFUSED" to "[\"There are still bounty quests being auto completing, please wait.\", 70102]",
+        "stars_auto REFUSED" to "[\"Stars cannot be refreshed now\", 70109]",
+        "timer_none REFUSED" to "[\"No finished auto completion\", 70104]",
+        "story_old_low PLAN" to "{\"quest\":9001,\"points\":10,\"quest_state_after\":{\"profile\":\"quest_state_v1\",\"quests\":[[9002,2,0],[9003,2,0]],\"points\":15,\"seed\":null},\"evidence_class\":\"capture_observed_csv_calculation\"}",
+        "story_old_low FRAMES" to "[[128, \"020304040004049600\"], [578, \"010104000000\"], [128, \"0206082e0400000000000007040300\"], [64, \"01010000001d2500000200000000\"], [324, \"292300000e000000f401000000000000030000004600000000000000000000000000000000000000000000000000000000000000011d2500000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"], [320, \"022a23000002000000002b23000002000000000f000000\"], [578, \"040101000000\"]]",
+        "story_old_low ROLES" to "{\"4\": 150, \"3\": 4, \"6\": 1070, \"7\": 3}",
         "goal PLAN" to "{\"goal\":5101,\"kind\":16,\"rewards\":[[1,20003,5],[1,9501,2]],\"reward\":{\"version\":14,\"exp\":0,\"exploit\":0,\"gold\":0,\"diamond\":5,\"stamina\":0,\"energy\":0,\"friend_point\":0,\"reputation\":0,\"arena_chance\":0,\"items\":[[9501,2]],\"heroes\":[],\"equips\":[],\"hero_grow\":[],\"equip_grow\":[],\"partner_friend_point\":0,\"vip_exp\":0,\"buffs\":[],\"gems\":[],\"courage\":0,\"hero_levels\":[],\"equip_levels\":[],\"double_charge_raw\":0,\"flag_17d_raw\":0,\"donation\":0,\"equip_grades\":[],\"jewels\":[],\"jewel_grow\":[],\"kind_door_score\":0,\"soul_hero\":0,\"soul_equip\":0,\"soul_jewel\":0,\"vip_pt\":0},\"goal_state_after\":{\"profile\":\"goal_state_v1\",\"rows\":[[5101,4,1],[5102,2,1]],\"start_day\":\"2030-03-17\",\"level_seen\":2,\"seed\":null},\"evidence_class\":\"native_use_load_rewards_candidate_order\"}",
         "goal FRAMES" to "[[64, \"01010000001d2500000200000000\"], [128, \"0108042300\"], [3104, \"0e0000000000000000000000000000000000000000000000050000000000000000000000000000000000000000000000011d2500000200000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000000\"], [3106, \"ed1300000401000000\"]]",
         "goal ROLES" to "{\"8\": 35}",
@@ -210,6 +216,8 @@ class G5QuestsMadeUpTest {
         show("story") { owned, _ -> Quests.planStoryClaim(jobj("quest" to 9001), owned, inputs, quests.deepCopy(), 2) }
         val old = quests.deepCopy().also { it.remove("claimed") }
         show("story_old") { owned, _ -> Quests.planStoryClaim(jobj("quest" to 9001), owned, inputs, old.deepCopy(), 2) }
+        val oldLow = old.deepCopy().also { it["quests"] = jarr(jarr(9001, 3, 0)) }
+        show("story_old_low") { owned, _ -> Quests.planStoryClaim(jobj("quest" to 9001), owned, inputs, oldLow.deepCopy(), 2) }
         show("story_running") { owned, _ -> Quests.planStoryClaim(jobj("quest" to 9003), owned, inputs, quests.deepCopy(), 2) }
         // mode 2 x level 6 x 4000 / 10000 x (1 + the 4-star bonus); points x (1 + the points bonus)
         val reward = Quests.questReward(inputs.quest(700103)!!, BigInteger.valueOf(6), inputs, JInt(4))
@@ -237,6 +245,10 @@ class G5QuestsMadeUpTest {
         bounty("refresh_paid", 265, null, board())
         bounty("refresh_free", 265, null, board("board_until" to now, "used" to 7))
         bounty("missing", 259, 700199, board())
+        // a running auto completion: no board refresh (70102), no star refresh of that task (70109); no timer end without one
+        bounty("refresh_auto", 265, null, board("auto_id" to 700101, "auto_until" to now + 100))
+        bounty("stars_auto", 271, 700101, board("auto_id" to 700101, "auto_until" to now + 100))
+        bounty("timer_none", 275, 0, board())
     }
 
     @Test
