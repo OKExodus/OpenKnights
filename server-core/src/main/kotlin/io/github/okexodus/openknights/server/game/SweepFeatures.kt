@@ -380,10 +380,9 @@ object SweepFeatures {
         return plan
     }
 
-    // === state-changing / stateless sweep requests (group 8, owned by the sweep-features slice) ======================
-    // Lead-written dispatcher + stubs with fixed signatures so `Session.sweepRoute` wires in without conflicts; the
-    // sweep-features slice replaces each stub body with the port of the matching `sweep_features.py` / `rebirth_shop.py`
-    // function. Until then a NotPorted keeps the step waiting in the harness (the request's first cause moves here).
+    // === state-changing / stateless sweep requests (group 8) ========================================================
+    // The `sweep_features.py` (+ `rebirth_shop.py`) request planners and the stateless replies, dispatched from
+    // `Session.sweepRoute` (= `_sweep_route`) through `plannerFor` / `statelessReply`.
 
     /** (action, planner) of a state-changing sweep request; the returned pair mirrors `sweep_features.planner_for`. */
     class SweepRouted(val action: String, val planner: (Owned, StateStore.Current) -> Plan)
