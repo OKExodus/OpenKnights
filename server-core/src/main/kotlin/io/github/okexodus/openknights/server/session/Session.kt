@@ -1115,8 +1115,33 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
      * After a summon: every 5★+ hero joins the world's Summon Report; S672 n = 1 + the S768 marquee per hero, the same
      * frames pushed to every other online player (`_summon_report`). A world write after the commit; never fails.
      */
-    @Suppress("UNUSED_PARAMETER")
-    private fun summonReport(plan: io.github.okexodus.openknights.server.game.Plan): List<Frame> = group(321, "summon report")
+    private fun summonReport(plan: io.github.okexodus.openknights.server.game.Plan): List<Frame> {
+        val reports = io.github.okexodus.openknights.server.game.SummonReports
+        val inputs = service.inputs
+        return try {
+            val shown = plan["shown"]
+            val drawn = if (io.github.okexodus.openknights.server.game.Py.truthy(shown)) {
+                (shown as io.github.okexodus.openknights.exact.JArr).map { (it as io.github.okexodus.openknights.exact.JInt).value.toLong() }
+            } else emptyList()
+            val heroes = reports.qualifying(drawn, inputs)
+            if (heroes.isEmpty()) return emptyList()
+            val current = stateStore!!.read()
+            val role = SocialRoutes.roleOf(current)
+            val name = current.state.arr("role_properties").map { it as JObj }.firstOrNull { it.long("id") == 2L }
+                ?.let { (it.obj("value")["text"] ?: io.github.okexodus.openknights.exact.JStr("")) as io.github.okexodus.openknights.exact.JStr }?.value ?: ""
+            val entries = reports.record(service.world, role, name.toByteArray(Charsets.UTF_8), heroes, service.clock.now())
+            val ctx = socialContext()
+            for (other in service.onlineRoles()) {
+                if (other != role) ctx.push(other) { offset -> reports.summonFrames(entries, inputs, offset) }
+            }
+            log("summon_report_recorded", "character_id" to characterId, "role" to role, "heroes" to heroes)
+            reports.summonFrames(entries, inputs, ctx.clockOffset)
+        } catch (e: Exception) {
+            guard(e)
+            log("summon_report_error", "character_id" to characterId, "error" to described(e))
+            emptyList()
+        }
+    }
 
     // --- shops, warehouse, claims, Fate Store ranking, rename --------------------------------------------------------------
 

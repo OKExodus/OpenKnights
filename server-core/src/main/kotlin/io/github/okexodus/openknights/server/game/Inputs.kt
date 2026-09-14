@@ -285,7 +285,8 @@ open class AcquisitionInputs(val tables: GameTables) {
     /** property.csv col 102 of a key (raw text), or null. */
     fun property(key: Any): String? = propertyCache.getOrPut(key.toString()) { single("property", key)?.field("102") }
 
-    open fun freshHeroFields(uid: Long, template: Long): JArr = throw NotPorted("pk_test_fixture_inject_hero.fresh_hero_fields")
+    /** The live S32 fresh-hero map (21 fields) — `pk_test_fixture_inject_hero.fresh_hero_fields`. */
+    open fun freshHeroFields(uid: Long, template: Long): JArr = PkTestFixtureInjectHero.freshHeroFields(tables, uid, template)
     private var astralGroups: JObj? = null
 
     /** The initial god-skill list of a hero template (`pk_hero_card_inputs.astral_initial_skills`, groups cached). */

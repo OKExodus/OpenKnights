@@ -274,4 +274,37 @@ object EventHall {
     }
 
     fun exchanges(): List<JValue> = (Events.ACTIVE["exchanges"] as? JArr) ?: emptyList()
+
+    const val S_JEWEL_LIST_ADD = 3076
+    /** Level, EXP, grade, flag, extra of a granted jewel (U6 policy, as card_reset). */
+    val FRESH_JEWEL = listOf(1L, 0L, 1L, 0L, 0L)
+
+    /** `_chunks(values, size)`: consecutive slices of at most `size`. */
+    fun <T> chunks(values: List<T>, size: Int = 255): List<List<T>> = values.chunked(size)
+
+    /**
+     * `_grant_jewels(owned, template, count, jewels)`: new jewels into the unequipped list `jewels` (entries appended):
+     * record `(uid, template, 1, 0, 1, 0, 0)`, uid = max(equipped ∪ listed before this transaction ∪ added) + 1;
+     * S3076 `u8 n, n x 22-byte record` per 255.
+     */
+    fun grantJewels(owned: Owned, template: Long, count: Long, jewels: JArr): List<Frame> {
+        if (!owned.inputs.exists("jewelry", template)) throw Acquisition.Rejected("Unknown jewelry template $template")
+        val known = HashSet<Long>(ItemFortify.jewelryView(owned.state.arr("formation")).keys)
+        for (e in owned.current.jewelEntriesView!!) known.add(e.asObj.arr("record")[0].long)
+        for (e in jewels) known.add(e.asObj.arr("record")[0].long)
+        val added = ArrayList<List<Long>>()
+        for (n in 0 until count) {
+            val uid = (known.maxOrNull() ?: 0L) + 1
+            known.add(uid)
+            val record = listOf(uid, template) + FRESH_JEWEL
+            jewels.add(jobj("record" to record, "tail" to null))
+            added.add(record)
+        }
+        owned.log.add(jobj("op" to "new_jewels", "template" to template, "uids" to added.map { it[0] }))
+        return chunks(added).map { part ->
+            val w = WireWriter().u8(part.size)
+            for (r in part) w.u32(r[0]).u32(r[1]).u32(r[2]).u32(r[3]).u8(r[4].toInt()).u8(r[5].toInt()).u32(r[6])
+            S_JEWEL_LIST_ADD to w.bytes()
+        }
+    }
 }

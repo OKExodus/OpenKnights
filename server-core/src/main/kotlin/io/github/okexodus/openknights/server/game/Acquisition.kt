@@ -1,17 +1,21 @@
 package io.github.okexodus.openknights.server.game
 
 import io.github.okexodus.openknights.exact.JArr
+import io.github.okexodus.openknights.exact.JBool
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.PyRandom
 import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
+import io.github.okexodus.openknights.protocol.BattleReport
 import io.github.okexodus.openknights.protocol.Inventory
 import io.github.okexodus.openknights.protocol.PlayerSections
 import io.github.okexodus.openknights.protocol.TypedValues
+import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
@@ -143,6 +147,493 @@ object Acquisition {
     fun buffsSection(document: JValue?, now: Long): JObj {
         val entries = buffView(document, now).map { (b, left) -> jobj("wire_values" to listOf(b, left)) }
         return jobj("count" to entries.size, "entries" to entries)
+    }
+
+    /** S1056: `u8 n, n x (u32 buff, u32 seconds left)` (the seconds capped at u32). */
+    fun buffsPayload(document: JValue?, now: Long): ByteArray {
+        val view = buffView(document, now)
+        val w = WireWriter().u8(view.size)
+        val cap = BigInteger.valueOf(0xFFFFFFFFL)
+        for ((b, left) in view) w.number('I', b).number('I', left.min(cap))
+        return w.bytes()
+    }
+
+    // --- item use, choose box, merge (C73 / C4099 / C803 / C801) -------------------------------------------------
+
+    const val USE_OPCODE = 73
+    const val CHOOSE_OPCODE = 4099
+    const val MERGE_OPCODE = 803
+    const val MERGE_SINGLE_OPCODE = 801
+    const val S_CHOOSE = 4130
+    const val S_MERGE = 820
+    const val S_SINGLE_MERGE = 818
+    /** Resource codes whose Reward member and role property are both evidenced. */
+    val RESOURCES = linkedMapOf(90001L to ("gold" to GOLD), 91001L to ("stamina" to STAMINA), 91002L to ("energy" to ENERGY))
+    /** Boost Scrolls: item 106 = 90014, 107 = the buff, 207 = its duration (S1056 replaces the buff list). */
+    const val BUFF_USE = 90014L
+    const val S_BUFFS = 1056
+    const val BUFF_PROFILE = "buff_state_v1"
+    val BOX_CONTENT = mapOf("f111" to "item", "f113" to "equipment", "f114" to "hero")
+    val BOX_UNRESOLVED_COLUMNS = listOf("f108", "f109", "f110", "f201", "f202", "f203")
+    /** An empty draw (item column with count 0). */
+    const val NOTHING = "nothing"
+    /** Operator decision 2026-09-12: the Magic Bead boxes' next-tier chance per 10,000 (box template → (bead, chance)). */
+    val BEAD_UPGRADE_ODDS = mapOf(370439L to (370440L to 3300L), 370440L to (370441L to 2500L), 370441L to (370442L to 2000L),
+        370442L to (370443L to 1500L), 370443L to (370444L to 1000L), 370444L to (370445L to 600L), 370445L to (370446L to 300L))
+    val BOX_ROLE_COLUMNS = mapOf("f105" to "gold", "f106" to "exploit", "f107" to "courage")
+    const val ROLE_EXPLOIT_ID = 7L
+    const val ROLE_COURAGE = 29L
+    /** Leader class items per class (Warrior, Mage, Hunter): a box gives the item of the player's own leader class. */
+    val CLASS_ITEM_SETS = listOf(listOf(30225L, 30226L, 30227L), listOf(30228L, 30229L, 30230L))
+    val CHOOSE_KIND = mapOf(81000L to "item", 81001L to "hero", 81002L to "equipment")
+    val MERGE_KIND = mapOf(81000L to "item", 81001L to "hero", 81002L to "equipment")
+    /** The 11 material ids the client treats as currencies → role property (null = not implemented, refused). */
+    val MERGE_CURRENCIES: Map<Long, Long?> = linkedMapOf(90001L to GOLD, 90002L to 7L, 90003L to DIAMOND, 90004L to 11L, 90005L to 12L,
+        90006L to null, 90013L to null, 91001L to STAMINA, 91002L to ENERGY, 91003L to null, 91004L to null)
+    const val POLICY_PROFILE = "acquisition_rng_policy_v1"
+    /** Draws added after the first policy document; a route needing one refuses when its policy lacks it. */
+    val OPTIONAL_POLICY_DRAWS = mapOf("lucky_refresh" to "uniform_over_observed_pools", "fuse_roll" to "displayed_rate_plus_luck_v1")
+
+    /** `policy_allows(loaded, key)` on the policy document as the service holds it. */
+    fun policyAllows(policy: JObj?, key: String): Boolean =
+        policy != null && policy.isNotEmpty() && policy[key] == io.github.okexodus.openknights.exact.JStr(OPTIONAL_POLICY_DRAWS.getValue(key))
+
+    fun decodeUseRequest(payload: ByteArray): JObj {
+        if (payload.size != 8) throw Rejected("C73 is u32 uid, u32 count")
+        val r = WireReader(payload)
+        return jobj("uid" to r.u32(), "count" to r.u32())
+    }
+
+    fun decodeChooseRequest(payload: ByteArray): JObj {
+        if (payload.size != 9) throw Rejected("C4099 is u32 uid, u32 count, u8 option")
+        val r = WireReader(payload)
+        return jobj("uid" to r.u32(), "count" to r.u32(), "option" to r.u8())
+    }
+
+    fun decodeMergeRequest(payload: ByteArray): JObj {
+        if (payload.size != 6) throw Rejected("C803 is u32 uid, u16 count")
+        val r = WireReader(payload)
+        return jobj("uid" to r.u32(), "count" to r.number('H').long)
+    }
+
+    /** C801 `u32 uid`: sent instead of C803 when the selected stack holds one piece. */
+    fun decodeSingleMergeRequest(payload: ByteArray): JObj {
+        if (payload.size != 4) throw Rejected("C801 is u32 uid")
+        return jobj("uid" to WireReader(payload).u32(), "count" to 1, "single" to true)
+    }
+
+    /** S818 `u8 status (0), Reward, u8 kind`. */
+    fun singleMergeResultPayload(reward: JObj): ByteArray = byteArrayOf(0) + BattleReport.encodeReward(reward) + byteArrayOf(0)
+
+    /** S820 `u16 times, Reward, u16 x3`. */
+    fun mergeResultPayload(times: Long, reward: JObj, bonuses: List<Long> = listOf(0, 0, 0)): ByteArray =
+        WireWriter().number('H', times).raw(BattleReport.encodeReward(reward)).number('H', bonuses[0]).number('H', bonuses[1]).number('H', bonuses[2]).bytes()
+
+    fun emptyReward(): JObj = BattleReport.emptyReward(14)
+
+    /** `int(inputs.property(key) or default)`. */
+    fun propertyInt(inputs: AcquisitionInputs, key: Long, default: Long): Long {
+        val raw = inputs.property(key)
+        return if (raw.isNullOrEmpty()) default else PyValues.parseLong(raw)
+    }
+
+    /** `classify_use(row, inputs)`: how item use resolves for a template (a dict with "family"). */
+    fun classifyUse(row: JObj?, inputs: AcquisitionInputs): JObj {
+        if (row == null) return jobj("family" to "unknown")
+        if (row.long("type_104") == 4L) return jobj("family" to "merge_only")
+        if (row.long("type_104") != 1L) return jobj("family" to "not_usable")
+        val use = row.long("use_106")
+        val value = row.long("value_107")
+        if (use == 80003L) return jobj("family" to "choose_box")
+        if (use in RESOURCES) return jobj("family" to "resource", "code" to use, "amount" to value)
+        if (use == 81000L) return jobj("family" to "grant", "kind" to "item", "id" to value)
+        if (use == 81001L) return jobj("family" to "grant", "kind" to "hero", "id" to value)
+        if (use == 81002L) return jobj("family" to "grant", "kind" to "equipment", "id" to value)
+        if (use == 80001L) {
+            val rows = inputs.boxGroup(value)
+            if (rows.isEmpty()) return jobj("family" to "box_unresolved", "group" to value)
+            return jobj("family" to "box", "group" to value).also { it.putAll(boxProfile(rows)) }
+        }
+        if (use == BUFF_USE) {
+            val seconds = buffSeconds(row, inputs)
+            if (seconds != 0L && inputs.single("buff", value) != null) return jobj("family" to "buff", "buff" to value, "seconds" to seconds)
+        }
+        return jobj("family" to "unsupported_effect", "code" to use)
+    }
+
+    /** `buff_seconds(row, inputs)`: item column 207 when it is all digits, else 0. */
+    fun buffSeconds(row: JObj, inputs: AcquisitionInputs): Long {
+        val raw = PyValues.strip(inputs.single("item", row.long("template"))?.field("207") ?: "")
+        return if (PyValues.isDigit(raw)) PyValues.parseLong(raw) else 0L
+    }
+
+    /** One box outcome `(kind, id, count)`. */
+    data class Outcome(val kind: String, val id: Long, val count: Long)
+
+    private fun f(row: JObj, column: String): Long = row.long(column)
+
+    /** `bead_rows(template, rows)`: the operator's upgrade chance on the next-tier bead slot (copies; other boxes unchanged). */
+    fun beadRows(template: Long, rows: List<JObj>): List<JObj> {
+        val (bead, chance) = BEAD_UPGRADE_ODDS[template] ?: return rows
+        return rows.map { row ->
+            if (row["f111"] == JInt(bead)) JObj(LinkedHashMap(row.map)).also {
+                it["weight_104"] = JInt(if ((row.longOrNull("f112") ?: 0L) > 0) chance else 10000 - chance)
+            } else row
+        }
+    }
+
+    /** `box_outcome(row)`: one box row → one grant, or null when its columns are outside the supported set. */
+    fun boxOutcome(row: JObj): Outcome? {
+        if (BOX_UNRESOLVED_COLUMNS.any { f(row, it) != 0L }) return null
+        val kinds = listOf("f105", "f106", "f107", "f111", "f113", "f114", "f115", "f117").filter { f(row, it) != 0L }
+        if (kinds.size != 1) return null
+        val k = kinds[0]
+        if (k == "f117") return Outcome("jewelry", f(row, "f117"), 1)
+        BOX_ROLE_COLUMNS[k]?.let { name -> return if (f(row, k) > 0) Outcome(name, 0, f(row, k)) else null }
+        if (k == "f115") return if (f(row, "f116") > 0) Outcome("gem", f(row, "f115"), f(row, "f116")) else Outcome(NOTHING, 0, 0)
+        if (k == "f111") return if (f(row, "f112") > 0) Outcome("item", f(row, "f111"), f(row, "f112")) else Outcome(NOTHING, 0, 0)
+        return Outcome(BOX_CONTENT.getValue(k), f(row, k), 1)
+    }
+
+    private fun positiveWeight(row: JObj): Boolean = row["slot_103"] != JNull && row["slot_103"] != null &&
+        (row["weight_104"] as? JInt)?.value?.signum() == 1
+
+    /** `box_profile(rows)`: slots → candidate rows with positive weight; supported / fixed / excluded rows. */
+    fun boxProfile(rows: List<JObj>): JObj {
+        val slots = LinkedHashMap<Long, MutableList<JObj>>()
+        for (row in rows) {
+            if (!positiveWeight(row)) continue
+            slots.getOrPut(row.long("slot_103")) { ArrayList() }.add(row)
+        }
+        val outcomes = slots.mapValues { (_, c) -> c.map { boxOutcome(it) } }
+        val supported = slots.isNotEmpty() && outcomes.values.all { v -> v.any { it != null } }
+        val complete = outcomes.values.all { v -> v.all { it != null } }
+        val fixed = supported && complete && outcomes.values.all { v -> v.toSet().size == 1 }
+        val excluded = slots.flatMap { (s, c) -> c.zip(outcomes.getValue(s)).filter { it.second == null }.map { it.first.long("row") } }.sorted()
+        val slotRows = JObj(intKeys = true)
+        for (s in slots.keys.sorted()) slotRows[s.toString()] = JArr(slots.getValue(s).mapTo(ArrayList()) { it.getValue("row") })
+        return jobj("slots" to slotRows, "supported" to supported, "fixed" to fixed, "excluded_rows" to excluded)
+    }
+
+    /** `draw_box(rows, rng)`: one opening — per slot (ascending) one positive-weight drawable row; fixed slots have one outcome. */
+    fun drawBox(rows: List<JObj>, rng: PyRandom?): List<Triple<Long, Long, Outcome>> {
+        val slots = LinkedHashMap<Long, MutableList<JObj>>()
+        for (row in rows) {
+            if (positiveWeight(row) && boxOutcome(row) != null) slots.getOrPut(row.long("slot_103")) { ArrayList() }.add(row)
+        }
+        val picked = ArrayList<Triple<Long, Long, Outcome>>()
+        for (slot in slots.keys.sorted()) {
+            val candidates = slots.getValue(slot)
+            if (candidates.map { boxOutcome(it) }.toSet().size == 1) {
+                picked.add(Triple(slot, candidates[0].long("row"), boxOutcome(candidates[0])!!))
+                continue
+            }
+            val total = candidates.sumOf { it.long("weight_104") }
+            var roll = rng!!.randrange(total)
+            for (row in candidates) {
+                roll -= row.long("weight_104")
+                if (roll < 0) {
+                    picked.add(Triple(slot, row.long("row"), boxOutcome(row)!!))
+                    break
+                }
+            }
+        }
+        return picked
+    }
+
+    /** `leader_class(owned, inputs)`: hero.csv col 103 (1 Warrior, 2 Mage, 3 Hunter) of the owned leader-class hero, else null. */
+    fun leaderClass(owned: Owned, inputs: AcquisitionInputs): Long? {
+        fun number(row: io.github.okexodus.openknights.gamedata.GameTable.Row, key: String): Long {
+            val raw = PyValues.strip(row.field(key) ?: "")
+            return if (PyValues.isDigit(raw.trimStart('-'))) PyValues.parseLong(raw) else 0L
+        }
+        for (fields in (owned.state["heroes"] as? JArr) ?: JArr()) {
+            val template = heroValues(fields.asArr)[1L]
+            val row = if (Py.truthy(template)) inputs.single("hero", Math.floorDiv(template!!.long, 1000L)) else null
+            if (row != null && number(row, "143") != 0L) return number(row, "103").takeIf { it != 0L }
+        }
+        return null
+    }
+
+    /** `class_item(template, owned, inputs)`: the player's own class variant of a leader class item. */
+    fun classItem(template: Long, owned: Owned, inputs: AcquisitionInputs): Long {
+        for (group in CLASS_ITEM_SETS) {
+            if (template in group) {
+                val cls = leaderClass(owned, inputs)
+                return if (cls != null && cls in 1L..3L) group[(cls - 1).toInt()] else template
+            }
+        }
+        return template
+    }
+
+    /** `_apply_grant(owned, kind, ident, count, reward, frames, hero_frames)`. */
+    fun applyGrant(owned: Owned, kind: String, ident: Long, count: Long, reward: JObj, frames: MutableList<Frame>,
+                   heroFrames: MutableList<Map<String, List<Frame>>>) {
+        when (kind) {
+            "item" -> {
+                frames.add(owned.grantItem(ident, count))
+                reward.arr("items").add(jarr(ident, count))
+            }
+            "hero" -> for (i in 0 until count) {
+                heroFrames.add(owned.grantHero(ident).second)
+                reward.arr("heroes").add(jarr(ident))
+            }
+            "equipment" -> for (i in 0 until count) {
+                heroFrames.add(owned.grantEquipment(ident).second)
+                reward.arr("equips").add(jarr(ident))
+            }
+            else -> throw Rejected("Unsupported grant kind $kind", ERROR_WRONG_TYPE)
+        }
+    }
+
+    /** `_flatten(groups_list, keys)`. */
+    fun flatten(groupsList: List<Map<String, List<Frame>>>, keys: List<String>): List<Frame> =
+        groupsList.flatMap { groups -> keys.flatMap { groups[it] ?: emptyList() } }
+
+    private val GROUP_KEYS = listOf("add", "book", "god", "activity")
+
+    /**
+     * `plan_use(request, owned, inputs, box_policy, seed, role_level, vip_level, now)`: C73. Live orders: resource S128,
+     * S68, S70; box S68 (grant), S68 (consume), S70.
+     */
+    fun planUse(request: JObj, owned: Owned, inputs: AcquisitionInputs, boxPolicy: JObj? = null, seed: BigInteger? = null,
+                roleLevel: Long? = null, vipLevel: Long? = null, now: Long? = null): Plan {
+        val uid = request.long("uid")
+        val count = request.long("count")
+        var buffAfter: JObj? = null
+        var jewelAfter: List<JValue>? = null
+        if (count <= 0) throw Rejected("Use count must be positive")
+        val entry = owned.item(uid)
+        if (entry.timed != 0L) throw Rejected("Timed items are outside the supported profile", ERROR_WRONG_TYPE)
+        if (count > entry.count) throw Rejected("Use count exceeds the stack", ERROR_NOT_ENOUGH)
+        val cap = propertyInt(inputs, 970, 0)
+        if (cap != 0L && count > cap) throw Rejected("Use count exceeds the client cap (property 970)")
+        val row = inputs.item(entry.template)
+        val resolved = classifyUse(row, inputs)
+        val family = resolved.str("family")
+        if (family in listOf("unknown", "not_usable", "merge_only", "choose_box")) throw Rejected("Item cannot be used this way ($family)", ERROR_WRONG_TYPE)
+        if (family in listOf("box_unresolved", "unsupported_effect") || (family == "box" && !resolved.bool("supported"))) {
+            throw Rejected("Item use not implemented ($family)", ERROR_WRONG_TYPE)
+        }
+        row!!
+        if (row.long("vip_204") != 0L && (vipLevel == null || vipLevel < row.long("vip_204"))) throw Rejected("VIP level too low", ERROR_VIP)
+        if (row.long("level_105") > 1 && (roleLevel == null || roleLevel < row.long("level_105"))) {
+            throw Rejected("You are not a high enough level to use this item", ERROR_LEVEL)
+        }
+        var keyFrames: List<Frame> = emptyList()
+        if (row.long("key_205") != 0L && row.long("key_count_206") != 0L) keyFrames = owned.consumeTemplate(row.long("key_205"), row.long("key_count_206") * count)
+        val reward = emptyReward()
+        val frames = ArrayList<Frame>()
+        val heroFrames = ArrayList<Map<String, List<Frame>>>()
+        val draws = JArr()
+        var evidence = "capture_observed_or_config_fixed"
+        when (family) {
+            "resource" -> {
+                val (name, field) = RESOURCES.getValue(resolved.long("code"))
+                val amount = resolved.long("amount") * count
+                frames.add(owned.roleAdd(field, amount))
+                reward[name] = JInt(amount)
+            }
+            "grant" -> {
+                val kind = resolved.str("kind")
+                val ident = if (kind == "item") classItem(resolved.long("id"), owned, inputs) else resolved.long("id")
+                applyGrant(owned, kind, ident, count, reward, frames, heroFrames)
+            }
+            "buff" -> {
+                if (now == null) throw Rejected("A buff needs the device clock", ERROR_WRONG_TYPE)
+                val stored = owned.current.document("buff_state")
+                val document = (if (Py.truthy(stored)) stored!! else jobj("profile" to BUFF_PROFILE, "ends" to JObj())).deepCopy() as JObj
+                val key = resolved.long("buff").toString()
+                val seconds = resolved.long("seconds") * count
+                val ends = document.obj("ends")
+                val old = ends[key] ?: JInt(0)
+                ends[key] = JInt((if (PyDocs.compare(JInt(now), old) >= 0) BigInteger.valueOf(now) else PyDocs.int(old)) + BigInteger.valueOf(seconds))
+                val kept = JObj()
+                for ((k, v) in ends) if (PyDocs.compare(v, JInt(now)) > 0) kept[k] = v
+                document["ends"] = kept
+                owned.state.obj("subsystems")["buffs"] = buffsSection(document, now)
+                frames.add(S_BUFFS to buffsPayload(document, now))
+                reward.arr("buffs").add(jarr(resolved.long("buff"), seconds))
+                buffAfter = document
+            }
+            else -> {  // box
+                val rows = beadRows(entry.template, inputs.boxGroup(resolved.long("group")))
+                val rng: PyRandom?
+                if (resolved.bool("fixed")) rng = null
+                else {
+                    if (boxPolicy == null) throw Rejected("Random box without the labeled local box policy", ERROR_WRONG_TYPE)
+                    evidence = "preservation_policy_box_draw"
+                    rng = PyRandom.seeded(seed!!)
+                }
+                val items = LinkedHashMap<Long, Long>()
+                var gold = 0L
+                val roles = LinkedHashMap<String, Long>()
+                val gems = LinkedHashMap<Long, Long>()
+                val jewels = ArrayList<Long>()
+                for (i in 0 until count) {
+                    for ((slot, boxRow, outcome) in drawBox(rows, rng)) {
+                        val (kind, drawn, qty) = outcome
+                        draws.add(jobj("slot" to slot, "row" to boxRow, "kind" to kind, "id" to drawn, "count" to qty))
+                        if (kind == NOTHING) continue
+                        when (kind) {
+                            "jewelry" -> repeat(qty.toInt()) { jewels.add(drawn) }
+                            "item" -> {
+                                val ident = classItem(drawn, owned, inputs)
+                                items[ident] = (items[ident] ?: 0L) + qty
+                            }
+                            "gold" -> gold += qty
+                            "gem" -> gems[drawn] = (gems[drawn] ?: 0L) + qty
+                            "exploit", "courage" -> roles[kind] = (roles[kind] ?: 0L) + qty
+                            else -> applyGrant(owned, kind, drawn, qty, reward, frames, heroFrames)
+                        }
+                    }
+                }
+                for ((ident, qty) in items) applyGrant(owned, "item", ident, qty, reward, frames, heroFrames)
+                if (gold != 0L) {
+                    frames.add(owned.roleAdd(GOLD, gold))
+                    reward["gold"] = JInt(gold)
+                }
+                roles["exploit"]?.takeIf { it != 0L }?.let {
+                    frames.add(owned.roleAdd(ROLE_EXPLOIT_ID, it))
+                    reward["exploit"] = JInt(it)
+                }
+                roles["courage"]?.takeIf { it != 0L }?.let { frames.add(owned.roleAdd(ROLE_COURAGE, it)) }
+                if (gems.isNotEmpty()) {
+                    val counts = EquipFormation.gemCounts(owned.state.obj("subsystems").obj("gems"))
+                    for ((rune, qty) in gems) {
+                        counts[rune] = (counts[rune] ?: 0L) + qty
+                        frames.add(EquipFormation.gemBagFrame(rune, counts.getValue(rune)))
+                    }
+                    owned.state.obj("subsystems")["gems"] = EquipFormation.gemsSectionWith(counts)
+                    reward["gems"] = JArr(gems.entries.sortedBy { it.key }.mapTo(ArrayList()) { jarr(it.key, it.value) })
+                }
+                if (jewels.isNotEmpty()) {
+                    val listed = owned.current.jewelEntriesView ?: throw Rejected("The jewelry list was not served this session", ERROR_WRONG_TYPE)
+                    val jewelEntries = JArr(listed.mapTo(ArrayList()) { JObj(LinkedHashMap(it.asObj.map)) })
+                    for (template in LinkedHashSet(jewels)) frames += EventHall.grantJewels(owned, template, jewels.count { it == template }.toLong(), jewelEntries)
+                    reward["jewels"] = JArr(jewels.mapTo(ArrayList()) { jarr(it) })
+                    jewelAfter = jewelEntries.sortedBy { it.asObj.arr("record")[0].long }
+                }
+            }
+        }
+        val consumeFrame = owned.consume(uid, count)
+        val packets = flatten(heroFrames, GROUP_KEYS) + frames + keyFrames + listOf(consumeFrame, S_ITEM_USE to BattleReport.encodeReward(reward))
+        val shown = JObj()
+        for ((k, v) in resolved) if (k != "slots") shown[k] = v
+        val plan = Plan(jobj("uid" to uid, "template" to entry.template, "count" to count, "family" to family, "resolved" to shown,
+            "draws" to draws, "reward" to reward, "evidence_class" to evidence,
+            "seed" to (if (evidence == "preservation_policy_box_draw") seed else null)), packets)
+        if (buffAfter != null) {
+            plan["buff_state_after"] = buffAfter
+            plan["evidence_class"] = "native_use_table_policy_buff"
+        }
+        if (jewelAfter != null) plan["jewel_entries_after"] = jewelAfter
+        return plan
+    }
+
+    /** `plan_choose(request, owned, inputs)`: C4099. Live order (item option): S66/S68 consume, S64/S68 grant, S4130 Reward. */
+    fun planChoose(request: JObj, owned: Owned, inputs: AcquisitionInputs): Plan {
+        val uid = request.long("uid")
+        val count = request.long("count")
+        val option = request.long("option")
+        if (count <= 0) throw Rejected("Choose count must be positive")
+        val entry = owned.item(uid)
+        val row = inputs.item(entry.template)
+        if (row == null || row.long("type_104") != 1L || row.long("use_106") != 80003L) throw Rejected("Item is not a choose box", ERROR_WRONG_TYPE)
+        val options = inputs.chooseBox(row.long("value_107"))
+        if (options.isNullOrEmpty() || option >= options.size) throw Rejected("Choose-box option out of range")
+        val chosen = options[option.toInt()].asObj
+        val kind = CHOOSE_KIND[chosen.long("type")] ?: throw Rejected("Choose-box option type ${chosen.long("type")} not implemented", ERROR_WRONG_TYPE)
+        if (count > entry.count) throw Rejected("Choose count exceeds the stack", ERROR_NOT_ENOUGH)
+        val reward = emptyReward()
+        val frames = ArrayList<Frame>()
+        val heroFrames = ArrayList<Map<String, List<Frame>>>()
+        val consumeFrame = owned.consume(uid, count)
+        val quantity = chosen.long("count") * count
+        applyGrant(owned, kind, chosen.long("id"), quantity, reward, frames, heroFrames)
+        val packets = listOf(consumeFrame) + flatten(heroFrames, GROUP_KEYS) + frames + listOf(S_CHOOSE to BattleReport.encodeReward(reward))
+        return Plan(jobj("uid" to uid, "template" to entry.template, "count" to count, "option" to option, "chosen" to chosen,
+            "reward" to reward, "evidence_class" to (if (kind == "item") "capture_observed" else "structural_candidate")), packets)
+    }
+
+    /**
+     * `plan_merge(request, owned, inputs)`: C803 / C801. Live orders — hero: 32, 38, [546, 578, 128], 2850, 1184, 68/66,
+     * 820, 128 (Gold); gear: 96, 100, [546, 578, 128], 66/68, 820, 128; item / plan: 68|64 (output), materials, plan, 820, 128.
+     */
+    fun planMerge(request: JObj, owned: Owned, inputs: AcquisitionInputs): Plan {
+        val uid = request.long("uid")
+        val times = request.long("count")
+        val cap = propertyInt(inputs, 971, 0)
+        if (times <= 0 || (cap != 0L && times > cap)) throw Rejected("Merge count outside 1..property 971")
+        val entry = owned.item(uid)
+        val row = inputs.item(entry.template)
+        if (row == null || row.long("type_104") != 4L) throw Rejected("Item is not mergeable", ERROR_NOT_MERGEABLE)
+        val recipe = inputs.recipe(row.long("value_107")) ?: throw Rejected("No merge recipe", ERROR_NOT_MERGEABLE)
+        val kind = MERGE_KIND[recipe.long("kind_102")] ?: throw Rejected("Merge target kind ${recipe.long("kind_102")} not implemented", ERROR_NOT_MERGEABLE)
+        if (recipe.arr("bonus_201_203").any { it.long != 0L }) throw Rejected("Merge recipes with bonus chances are not implemented", ERROR_NOT_MERGEABLE)
+        val materials = recipe.arr("materials").map { it.asArr[0].long to it.asArr[1].long }.filter { (m, q) -> m != 0L && q != 0L }
+        if (materials.isEmpty()) throw Rejected("Recipe without materials", ERROR_NOT_MERGEABLE)
+        val mode = recipe.long("mode_113")
+        if (mode == 1L && materials[0].first != entry.template) throw Rejected("Recipe material 1 is not the merged item", ERROR_NOT_MERGEABLE)
+        if (mode != 1L && mode != 2L) throw Rejected("Recipe consumption mode not implemented", ERROR_NOT_MERGEABLE)
+        val currencies = materials.filter { it.first in MERGE_CURRENCIES }
+        if (currencies.any { MERGE_CURRENCIES[it.first] == null }) throw Rejected("This currency material is not implemented", ERROR_NOT_MERGEABLE)
+        val items = materials.filter { it.first !in MERGE_CURRENCIES }
+        val substitute = if (mode == 1L && items.isNotEmpty() && items[0].first == entry.template) recipe.long("substitute_115") else 0L
+        if (times > entry.count && mode == 1L) throw Rejected("Merge count above the selected stack", ERROR_NOT_ENOUGH)
+        val shortfall = LinkedHashMap<Long, Long>()
+        for ((index, material) in items.withIndex()) {
+            val (template, quantity) = material
+            val need = quantity * times
+            val have = owned.countOf(template)
+            if (have < need && index == 0 && substitute != 0L && have + owned.countOf(substitute) >= need) {
+                shortfall[template] = need - have
+                continue
+            }
+            if (have < need) throw Rejected("Not enough materials", ERROR_NOT_ENOUGH)
+        }
+        for ((template, quantity) in currencies) {
+            if (owned.roleBits(MERGE_CURRENCIES.getValue(template)!!) < BigInteger.valueOf(quantity * times)) throw Rejected("Not enough resources", ERROR_RESOURCES)
+        }
+        if (mode == 2L && entry.count < times) throw Rejected("Not enough plans", ERROR_NOT_ENOUGH)
+        val goldCost = recipe.long("gold_104") * times
+        val reward = emptyReward()
+        val grantFrames = ArrayList<Frame>()
+        val heroFrames = ArrayList<Map<String, List<Frame>>>()
+        val target = recipe.long("target_103")
+        if (kind == "item") applyGrant(owned, "item", target, times, reward, grantFrames, heroFrames)
+        else {
+            for (i in 0 until times) applyGrant(owned, kind, target, 1, reward, grantFrames, heroFrames)
+            reward[if (kind == "hero") "hero_levels" else "equip_levels"] = JArr((0 until times).mapTo(ArrayList()) { jarr(0) })
+            if (kind == "equipment") reward["equip_grades"] = JArr((0 until times).mapTo(ArrayList()) { jarr(0) })
+        }
+        val consumeFrames = ArrayList<Frame>()
+        var substituteUsed = 0L
+        for ((template, quantity) in items) {
+            val need = quantity * times
+            if (template == entry.template) {
+                // The selected stack first, then other stacks of the piece (ascending uid), then the universal piece.
+                val first = minOf(need, owned.item(uid).count)
+                consumeFrames.add(owned.consume(uid, first))
+                val rest = need - first - (shortfall[template] ?: 0L)
+                if (rest != 0L) consumeFrames.addAll(owned.consumeTemplate(template, rest))
+                if ((shortfall[template] ?: 0L) != 0L) {
+                    substituteUsed = shortfall.getValue(template)
+                    consumeFrames.addAll(owned.consumeTemplate(substitute, substituteUsed))
+                }
+            } else consumeFrames.addAll(owned.consumeTemplate(template, need))
+        }
+        if (mode == 2L) consumeFrames.add(owned.consume(uid, times))
+        val goldFrame = if (goldCost != 0L) owned.roleAdd(GOLD, -goldCost) else null
+        val currencyFrames = currencies.map { (t, q) -> owned.roleAdd(MERGE_CURRENCIES.getValue(t)!!, -q * times) }
+        val result = if (request["single"] == JBool(true)) S_SINGLE_MERGE to singleMergeResultPayload(reward) else S_MERGE to mergeResultPayload(times, reward)
+        val packets = flatten(heroFrames, GROUP_KEYS) + grantFrames + consumeFrames + listOf(result) + listOfNotNull(goldFrame) + currencyFrames
+        val evidence = if (recipe.long("key") in listOf(60206L, 61098L, 40301L) && substituteUsed == 0L) "capture_observed"
+            else if (substituteUsed != 0L) "native_use_substitute" else "config_deterministic"
+        return Plan(jobj("uid" to uid, "template" to entry.template, "times" to times, "recipe" to recipe["key"], "kind" to kind,
+            "target" to target, "gold_cost" to goldCost, "substitute" to (if (substitute != 0L) substitute else null),
+            "substitute_used" to substituteUsed, "currencies" to currencies.map { jarr(it.first, it.second) }, "reward" to reward,
+            "evidence_class" to evidence), packets)
     }
 }
 

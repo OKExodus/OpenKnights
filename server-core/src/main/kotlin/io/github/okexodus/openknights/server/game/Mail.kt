@@ -139,4 +139,50 @@ object SummonReports {
         val entries = all.takeLast(LOGIN_ENTRIES)
         return if (entries.isNotEmpty()) reportPayload(entries, clockOffset) else null
     }
+
+    const val S_MARQUEE = 768
+    /** hero.csv col 104 (5- and 6-star draws reported, 4-star not). */
+    const val MIN_STAR = 5L
+    /** The LotSystem list size (native). */
+    const val MAX_ENTRIES = 8
+    const val MARQUEE_TEXT = 801L
+    const val PROFILE = "summon_reports_world_v1"
+
+    /** `qualifying(templates, inputs)`: the drawn heroes the report lists, in the S352 order. */
+    fun qualifying(templates: List<Long>, inputs: AcquisitionInputs): List<Long> = templates.filter { (inputs.heroStar(it) ?: 0L) >= MIN_STAR }
+
+    fun entry(role: Long, nameRaw: ByteArray, hero: Long, at: Long): JObj =
+        jobj("role" to role, "name_hex" to nameRaw.toHexString(), "hero" to hero, "at" to at)
+
+    /** World-document change: the new records at the end, the newest [MAX_ENTRIES] kept. */
+    fun append(document: JObj, entries: List<JObj>): JArr {
+        val all = (((document["entries"] as? JArr) ?: JArr()).toList() + entries).takeLast(MAX_ENTRIES)
+        document["entries"] = JArr(all.toMutableList())
+        return document.arr("entries")
+    }
+
+    /** S768: text 801 with the player's name, the hero's star and its name, NUL-terminated. */
+    fun marqueePayload(nameRaw: ByteArray, hero: Long, inputs: DailyInputs): ByteArray {
+        val text = inputs.text(MARQUEE_TEXT).ifEmpty { "##0## summoned a ##1##-Star Hero, ##2##." }
+        val cut = nameRaw.indexOf(0.toByte()).let { if (it < 0) nameRaw else nameRaw.copyOfRange(0, it) }
+        val name = io.github.okexodus.openknights.exact.Utf8Lenient.decodeReplace(cut)
+        val heroName = inputs.heroName(hero)
+        val line = text.replace("##0##", name).replace("##1##", (inputs.heroStar(hero) ?: 0L).toString())
+            .replace("##2##", heroName.ifEmpty { hero.toString() })
+        return line.toByteArray(Charsets.UTF_8) + byteArrayOf(0)
+    }
+
+    /** Per record: S672 n = 1, then its S768 marquee (the live tail after a summon). */
+    fun summonFrames(entries: List<JObj>, inputs: DailyInputs, clockOffset: Long = 0): List<Frame> =
+        entries.flatMap { e -> listOf(S_REPORT to reportPayload(listOf(e), clockOffset), S_MARQUEE to marqueePayload(e.str("name_hex").hexBytes(), e.long("hero"), inputs)) }
+
+    /** Store the summons of one world participant (character or bot); returns the new records. */
+    fun record(world: io.github.okexodus.openknights.server.store.WorldDirectory?, role: Long, nameRaw: ByteArray, heroes: List<Long>, now: Long,
+               actor: String = "local-service"): List<JObj> {
+        val entries = heroes.map { entry(role, nameRaw, it, now) }
+        if (entries.isNotEmpty() && world != null) {
+            world.updateDocument("summon_reports", actor, "summon_report") { d -> append(d, entries) to jobj("role" to role, "heroes" to heroes) }
+        }
+        return entries
+    }
 }
