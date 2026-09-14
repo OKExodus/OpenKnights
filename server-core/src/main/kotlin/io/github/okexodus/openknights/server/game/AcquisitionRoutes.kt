@@ -48,8 +48,12 @@ object AcquisitionRoutes {
         opcode in setOf(1057, 89, 1253) || (opcode == 2725 && payload.size >= 4 && payload.copyOfRange(payload.size - 4, payload.size).all { it == 0.toByte() })
 
     /** The fuse luck query C1253 (`read_only_reply`, compose). */
-    @Suppress("UNUSED_PARAMETER")
-    fun fuseLuckReply(payload: ByteArray, current: StateStore.Current): Pair<List<Frame>, JObj> = throw NotPorted("fuse luck query (opcode 1253)")
+    fun fuseLuckReply(payload: ByteArray, current: StateStore.Current): Pair<List<Frame>, JObj> {
+        if (payload.isNotEmpty()) throw Acquisition.Rejected("C1253 has no payload")
+        val stored = current.document("fuse_luck_state")
+        val document = if (Py.truthy(stored)) stored!!.asObj else Compose.initialLuckDocument(current)
+        return listOf(Compose.S_LUCK to Compose.luckPayload(document.obj("luck"))) to io.github.okexodus.openknights.exact.jobj("luck" to document["luck"])
+    }
 
     /**
      * `read_only_reply(opcode, payload, current, inputs, catalog, rng_policy, now)`: the replies of the queries that change
@@ -102,7 +106,100 @@ object AcquisitionRoutes {
         val planner: (Owned, StateStore.Current) -> Plan
         when (opcode) {
             // item use, choose box, merge, summons, hero refine, compose / refine / fuse (acquisition, summon, compose)
-            73, 4099, 803, 801, 321, 1251, 1249, 2051, 2633, 3137, 2055, 2631 -> throw NotPorted("acquisition planner (opcode $opcode)")
+            73 -> {
+                val decoded = Acquisition.decodeUseRequest(payload)
+                request = decoded
+                planner = { owned, current ->
+                    val props = LinkedHashMap<Long, io.github.okexodus.openknights.exact.JValue?>()
+                    for (f in owned.state.arr("role_properties")) props[f.asObj.long("id")] = f.asObj.obj("value")["bits"]
+                    // item use field 204 reads GetTmpVipLevel
+                    val vipBits = props[Acquisition.VIP_LEVEL]
+                    val vip = SweepFeatures.tmpVipLevel(current, if (Py.truthy(vipBits)) vipBits!!.long else 0L, now)
+                    Acquisition.planUse(decoded, owned, inputs, boxPolicy = rngPolicy,
+                        seed = Acquisition.seedFor(payload, current.revision, "box"),
+                        roleLevel = (props[Acquisition.ROLE_LEVEL] as? io.github.okexodus.openknights.exact.JInt)?.value?.longValueExact(),
+                        vipLevel = vip, now = now)
+                }
+            }
+            4099 -> {
+                val decoded = Acquisition.decodeChooseRequest(payload)
+                request = decoded
+                planner = { owned, _ -> Acquisition.planChoose(decoded, owned, inputs) }
+            }
+            321 -> {
+                val decoded = Summon.decodeSummonRequest(payload)
+                request = decoded
+                if (rngPolicy == null) throw Acquisition.Rejected("Summons need the labeled local acquisition policy", Acquisition.ERROR_WRONG_TYPE)
+                planner = { owned, current ->
+                    val stored = current.document(StateStore.SUMMON_STATE)
+                    val document = if (Py.truthy(stored)) stored!!.asObj else Summon.initialDocument(current, now)
+                    val plan = Summon.planSummon(decoded, owned, inputs, document = document, now = now,
+                        seed = Acquisition.seedFor(payload, current.revision, "summon:$now"))
+                    val after = plan.data.remove("document_after")
+                    plan["summon_state_after"] = after
+                    plan
+                }
+            }
+            1251 -> {
+                val decoded = Summon.decodeRefineRequest(payload)
+                request = decoded
+                planner = { owned, current ->
+                    val (deployed, excluded) = assignedHeroUids(current, deploymentPolicy)
+                    Summon.planRefine(decoded, owned, inputs, excludedUids = excluded, deployedUids = deployed)
+                }
+            }
+            1249 -> {
+                val decoded = Compose.decodeFuseRequest(payload)
+                request = decoded
+                if (!Acquisition.policyAllows(rngPolicy, "fuse_roll")) {
+                    throw Acquisition.Rejected("Hero fusion needs the labeled fuse_roll policy", Acquisition.ERROR_WRONG_TYPE)
+                }
+                planner = { owned, current ->
+                    val (deployed, excluded) = assignedHeroUids(current, deploymentPolicy)
+                    val stored = current.document("fuse_luck_state")
+                    val document = if (Py.truthy(stored)) stored!!.asObj else Compose.initialLuckDocument(current)
+                    val plan = Compose.planFuse(decoded, owned, inputs, luck = document.obj("luck"),
+                        seed = Acquisition.seedFor(payload, current.revision, "fuse"), deployedUids = deployed, excludedUids = excluded)
+                    plan["fuse_luck_state_after"] = JObj(LinkedHashMap(document.map)).also { it["luck"] = plan["luck_after"]!! }
+                    plan
+                }
+            }
+            2051 -> {
+                val uids = Compose.decodeUidList(payload, "C2051")
+                request = io.github.okexodus.openknights.exact.jobj("uids" to uids)
+                planner = { owned, _ -> Compose.planGearRefine(uids, owned, inputs) }
+            }
+            2633 -> {
+                val uids = Compose.decodeUidList(payload, "C2633")
+                request = io.github.okexodus.openknights.exact.jobj("uids" to uids)
+                planner = { owned, current ->
+                    val entries = current.jewelEntriesView ?: throw Acquisition.Rejected("No jewelry list to refine from")
+                    Compose.planJewelRefine(uids, owned, inputs, entries)
+                }
+            }
+            3137 -> {
+                val decoded = Compose.decodeItemRefineRequest(payload)
+                request = decoded
+                planner = { owned, _ -> Compose.planItemRefine(decoded.arr("entries"), owned, inputs) }
+            }
+            803, 801 -> {
+                val decoded = if (opcode == 803) Acquisition.decodeMergeRequest(payload) else Acquisition.decodeSingleMergeRequest(payload)
+                request = decoded
+                planner = { owned, _ -> Acquisition.planMerge(decoded, owned, inputs) }
+            }
+            2055 -> {
+                val decoded = Compose.decodeComposeRequest(payload, "C2055")
+                request = decoded
+                planner = { owned, _ -> Compose.planGearCompose(decoded, owned, inputs) }
+            }
+            2631 -> {
+                val decoded = Compose.decodeComposeRequest(payload, "C2631")
+                request = decoded
+                planner = { owned, current ->
+                    val entries = current.jewelEntriesView ?: throw Acquisition.Rejected("No jewelry list to combine from", Compose.ERROR_JEWEL_TARGET)
+                    Compose.planJewelCompose(decoded, owned, inputs, entries)
+                }
+            }
             101, 99 -> {
                 if (opcode == 101) {
                     request = Rebirth.decodeEvolveRequest(payload)
