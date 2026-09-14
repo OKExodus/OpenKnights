@@ -596,7 +596,42 @@ object DailyRoutes {
                     story ?: Quests.planBounty(opcode, request, owned, inputs, quests, board, now, ownerKey, serverTime = served)
                 }
             }
-            in EVENT_HALL_OPCODES -> throw NotPorted("Event Hall action (opcode $opcode)")
+            // Event Hall actions (event_hall.py): Palace visit / claim, Combine, exchange, Magic Pie
+            EventHall.C_PALACE_VISIT, EventHall.C_PALACE_CLAIM -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                request = JObj()
+                planner = { owned, current ->
+                    val document = palaceDocument(current, seeds)
+                    if (opcode == EventHall.C_PALACE_VISIT) EventHall.planPalaceVisit(owned, inputs, document, now)
+                    else EventHall.planPalaceClaim(owned, inputs, document, now)
+                }
+            }
+            EventHall.C_COMBINE -> {
+                request = EventHall.decodeCombine(payload)
+                planner = { owned, _ -> EventHall.planCombine(request, owned, inputs) }
+            }
+            EventHall.C_EXCHANGE -> {
+                request = EventHall.decodeExchange(payload)
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    val explore = LinkedHashSet<JValue>()
+                    for (s in exploreDocument(current, seeds, now).arr("slots")) {
+                        val hero = s.asObj["hero"]
+                        if (Py.truthy(hero)) explore.add(hero!!)
+                    }
+                    EventHall.planExchange(request, owned, EventHall.exchanges(), PyDocs.get(current, "exchange_state"),
+                        now, served, explore)
+                }
+            }
+            EventHall.C_MAGIC_PIE -> {
+                request = EventHall.decodePieRequest(payload)
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    EventHall.planMagicPie(request, owned, PyDocs.get(current, "magic_pie_state"), served)
+                }
+            }
             // Castle (castle.py)
             Castle.C_COLLECT, Castle.C_BUILDING, Castle.C_TECH, Castle.C_GUILD_TECH, Castle.C_TRANSMUTE, Castle.C_ALCHEMY_REFRESH,
             Castle.C_BUY_SLOT, Castle.C_WORK, Castle.C_RELEASE, Castle.C_GUARD -> {
@@ -739,7 +774,6 @@ object DailyRoutes {
     }
 
     private const val C_ARENA_REWARD = 423
-    private val EVENT_HALL_OPCODES = setOf(1635, 1637, 1641, 3077, 1665)
 
     /** The S6 code of a refused daily request. */
     fun refusal(opcode: Int): Int = REFUSALS.getValue(opcode)
