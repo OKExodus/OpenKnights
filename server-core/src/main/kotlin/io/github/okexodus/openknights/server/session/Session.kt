@@ -26,6 +26,7 @@ import io.github.okexodus.openknights.server.store.evolveHero
 import io.github.okexodus.openknights.server.store.evolveLeaderHero
 import io.github.okexodus.openknights.server.store.powerUpSave
 import io.github.okexodus.openknights.server.store.powerUpTrain
+import io.github.okexodus.openknights.server.store.formationTransaction
 import io.github.okexodus.openknights.server.game.LeaderRepair
 import io.github.okexodus.openknights.server.game.Owned
 import io.github.okexodus.openknights.server.game.SecondaryTeam
@@ -1294,7 +1295,36 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
     private fun equipEvolveRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "gear / jewelry evolve")
 
     /** Gear / jewelry / rune equip, rune combine, lineup, position, captain (`_formation_route`). */
-    private fun formationRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "formation")
+    private fun formationRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val ef = io.github.okexodus.openknights.server.game.EquipFormation
+        val request: JObj
+        val result: io.github.okexodus.openknights.server.store.FormationResult
+        try {
+            if (!queriesSent) throw io.github.okexodus.openknights.server.game.EquipFormation.FormationRejected("Complete initialization queries before changing the formation")
+            request = ef.decodeRequest(opcode, payload)
+            val (served, source) = if (opcode == ef.JEWEL_OPCODE) servedJewelList() else null to null
+            result = stateStore!!.formationTransaction(opcode, request, characterId!!, deploymentPolicy(), service.formationInputs,
+                "authenticated-client", "Native opcode$opcode formation change", servedJewelList = served, servedJewelSource = source)
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? io.github.okexodus.openknights.server.game.EquipFormation.FormationRejected)?.code ?: 102
+            log("rejected_formation_change", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("formation_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val plan = result.plan
+        val fields = mutableListOf<Pair<String, Any?>>("action" to result.action, "character_id" to characterId,
+            "revision" to result["revision"], "request" to request, "reply_opcodes" to plan.packets.map { it.first })
+        for (k in listOf("stripped_runes", "position_assigned", "uid_in", "uid_out", "gem_in", "gem_out", "produced", "times")) {
+            if (k in plan.data) fields.add(k to plan.data[k])
+        }
+        log("transaction_committed", *fields.toTypedArray())
+        // lineup (C67) / gear equip (C79) can meet the owned-state quest kinds (worn 3-star gear); a rune equip (C1217)
+        // the Goals' "Equip 3 runes" (docs/GOALS_CONTRACT.md)
+        return plan.packets + (if (opcode in setOf(67, 79, 1217)) dailyCounters("formation", jobj()) else emptyList())
+    }
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */
     private fun legacyHandle(opcode: Int, payload: ByteArray): List<Frame> {

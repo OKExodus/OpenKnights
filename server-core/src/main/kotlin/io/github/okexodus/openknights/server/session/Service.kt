@@ -89,6 +89,9 @@ class Service(
     /** The EXP-item Fortify catalog inputs (`snapshot.item_fortify_inputs`). */
     val itemFortifyInputs: io.github.okexodus.openknights.server.game.ItemFortifyInputs by lazy { io.github.okexodus.openknights.server.game.ItemFortifyInputs(tables) }
 
+    /** The equipment / jewelry / runes / main-formation catalog inputs (`snapshot.formation_inputs`). */
+    val formationInputs: io.github.okexodus.openknights.server.game.FormationInputs by lazy { io.github.okexodus.openknights.server.game.FormationInputs(tables) }
+
     /** The history label `{path, sha256}` of the loaded acquisition RNG policy (`ReleaseData.policy("acquisition-rng")`). */
     val acquisitionPolicyLabel: JObj? by lazy {
         releaseData?.let { jobj("path" to it.label("policies/acquisition-rng.json"), "sha256" to it.sha256("policies/acquisition-rng.json")) }
