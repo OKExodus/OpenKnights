@@ -49,6 +49,11 @@ import io.github.okexodus.openknights.server.game.Shops
 import io.github.okexodus.openknights.server.game.Summon
 import io.github.okexodus.openknights.server.game.VipQuest
 import io.github.okexodus.openknights.server.game.WorldParticipants
+import io.github.okexodus.openknights.server.game.Campaign
+import io.github.okexodus.openknights.server.game.BattleStats
+import io.github.okexodus.openknights.server.game.deepCopy
+import io.github.okexodus.openknights.exact.JInt
+import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.server.game.NotPorted
 import io.github.okexodus.openknights.server.game.TransactionPackets
 import io.github.okexodus.openknights.server.game.AcquisitionRoutes
@@ -852,8 +857,8 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         }
         if (opcode in Routes.SWEEP) return sweepRoute(opcode, payload)
         if (opcode in Routes.GOALS) return goalsRoute(opcode, payload)
-        if (opcode in Routes.CAMPAIGN) group(opcode, "campaign")
-        if (opcode == 3809) group(opcode, "lineup view")
+        if (opcode in Routes.CAMPAIGN) return campaignRoute(opcode, payload)
+        if (opcode == 3809) return lineupView(payload)
         Routes.IGNORED[opcode]?.let { feature ->
             if (stateStore != null) {
                 log("ignored_request", "character_id" to characterId, "opcode" to opcode, "feature" to feature, "payload_bytes" to payload.size)
@@ -1489,6 +1494,194 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         log("transaction_committed", "action" to "goal_claim", "character_id" to characterId, "revision" to result["revision"],
             "goal" to plan["goal"], "rewards" to plan["rewards"], "reply_opcodes" to plan.packets.map { it.first })
         return plan.packets.toList() + dailyCounters("goal_claim", plan.data, plan.packets)
+    }
+
+    /**
+     * The campaign (`_campaign_route`): C129 battle, C131 Auto-play, C133 first-kill query, C135 Diamond re-entry,
+     * C137 map chest (refused), C2785 star box. Each change is one audited revision (AP / Energy regeneration and the
+     * local-day reset settled inside it); a lost battle (`Campaign.Lost`) sends its S4 and commits nothing. World
+     * writes (first local winner, helper cooldown) follow the character's commit; a win feeds the daily counters.
+     */
+    private fun campaignRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        var helperRole: Long? = null
+        val action: String
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent || stateStore == null) throw Acquisition.Rejected("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("The campaign needs a store-backed character with a deployment policy")
+            val now = service.clock.now()
+            val current = stateStore!!.read()
+            if (opcode == Campaign.C_STAGE_INFO) {
+                val stage = Campaign.decodeStage(payload, opcode).long("stage")
+                val world = worldContext().document("campaign").second
+                val entry = (world["first_kills"] as? JObj)?.get(stage.toString()) as? JObj
+                log("campaign_query_served", "character_id" to characterId, "opcode" to opcode, "stage" to stage, "first_kill" to (entry != null))
+                return listOf(Campaign.S_FIRST_KILL to Campaign.firstKillPayload(stage, entry, clockOffsetOf(current)))
+            }
+            if (opcode == Campaign.C_MAP_CHEST) {
+                throw Acquisition.Rejected("The map three-star chest is not evidenced (POLICY map_chest refused)", Campaign.ERR_REQUIREMENTS)
+            }
+            val seeds = seeds(current)
+            val worldCtx = worldContext()
+            val social = if (service.world != null) socialContext().document("social") ?: JObj() else JObj()
+            val world = statWorld(current)
+            val request: JObj
+            when (opcode) {
+                Campaign.C_BATTLE -> { action = "campaign_battle"; request = Campaign.decodeBattle(payload) }
+                Campaign.C_AUTO -> { action = "campaign_auto"; request = Campaign.decodeAuto(payload) }
+                Campaign.C_REENTRY -> { action = "campaign_reentry"; request = Campaign.decodeStage(payload, opcode) }
+                else -> { action = "campaign_star_box"; request = Campaign.decodeStage(payload, opcode) }
+            }
+            val seed = Campaign.battleSeed(characterId!!, current.revision, request.long("stage"), now,
+                (request["helper"] as? JInt)?.value?.toLong() ?: 0L, (request["slot"] as? JInt)?.value?.toLong() ?: Campaign.NO_HELPER_SLOT.toLong())
+            val committed = try {
+                stateStore!!.acquisitionTransaction(action, characterId!!, policy, inputs, "authenticated-client",
+                    "Native opcode$opcode campaign",
+                    detailExtra = jobj("opcode" to opcode, "request" to request, "seed" to seed, "now_epoch" to now,
+                        "policy" to Campaign.policy(), "contract" to "docs/CAMPAIGN_CONTRACT.md")) { owned, cur ->
+                    val document = DailyRoutes.campaignDocument(cur, seeds).deepCopy()
+                    Campaign.dayRoll(owned.state, document, now)
+                    val regen = Campaign.regen(owned, document, inputs, now)
+                    val p: Plan
+                    when (action) {
+                        "campaign_battle" -> {
+                            val helper = Campaign.helperParticipant(request, owned, worldCtx, social, now, inputs)
+                            helperRole = helper?.participantId
+                            p = Campaign.planBattle(request, owned, cur, inputs, document, now, world, helper, helperState(helper), seed)
+                            if (regen != null) p.packets = listOf(regen) + p.packets
+                            if (!Py.truthy(p["commit"])) throw Campaign.Lost(p)
+                        }
+                        "campaign_auto" -> p = Campaign.planAuto(request, owned, cur, inputs, document, now, Campaign.SplitMix64(seed xor 0xA070L))
+                        "campaign_reentry" -> p = Campaign.planReentry(request, owned, inputs, document, now, servedTime(cur, now))
+                        else -> p = Campaign.planStarBox(request, owned, inputs, document)
+                    }
+                    if (regen != null && action != "campaign_battle") p.packets = listOf(regen) + p.packets
+                    if (!p.data.containsKey("campaign_state_after")) p["campaign_state_after"] = document
+                    p["seed"] = seed
+                    p["now_epoch"] = now
+                    p
+                }
+            } catch (lost: Campaign.Lost) {
+                log("campaign_battle_lost", "character_id" to characterId, "stage" to request["stage"], "seed" to seed,
+                    "helper" to helperRole, "reply_opcodes" to lost.plan.packets.map { it.first })
+                return lost.plan.packets.toList()
+            }
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_campaign", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("campaign_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
+            "stars" to plan["stars"], "helper" to helperRole, "reply_opcodes" to plan.packets.map { it.first },
+            "evidence_class" to plan["evidence_class"])
+        if (action == "campaign_battle" || action == "campaign_auto") {
+            campaignWorldWrites(plan, helperRole, service.clock.now())
+            return plan.packets.toList() + dailyCounters("campaign_win", plan.data, plan.packets)
+        }
+        return plan.packets.toList()
+    }
+
+    /** `_stat_world`: the stat model's world of a character, from its stored state (never stale). */
+    private fun statWorld(current: StateStore.Current): JObj =
+        BattleStats.statWorldOf(service.freshSystems, service.evolutionInputs, current)
+
+    /** `_helper_state`: a character helper's save (read-only) for its own battle stats; null for a bot or no registry. */
+    private fun helperState(helper: WorldParticipants.Participant?): JObj? {
+        val registry = service.auth.registry
+        val cid = helper?.characterId
+        if (helper == null || cid == null || registry == null) return null
+        return try {
+            registry.resolveStateStore(cid).read().state
+        } catch (e: Exception) {      // a missing sibling save must not fail the battle: the helper falls back to POLICY
+            log("campaign_helper_state_error", "character_id" to characterId, "error" to described(e))
+            null
+        }
+    }
+
+    /**
+     * `_campaign_world_writes`: after a won battle the world's first local winner of the stage (C133 → S162) and the
+     * pair's helper cooldown, written through the social context after the character's commit; never fails.
+     */
+    private fun campaignWorldWrites(plan: Plan, helperRole: Long?, now: Long) {
+        if (service.world == null) return
+        try {
+            val current = stateStore!!.read()
+            val nameHex = current.state.arr("role_properties").map { it.asObj }
+                .firstOrNull { (it["id"] as? JInt)?.value?.toLong() == 2L }?.obj("value")?.get("raw_hex")?.let { (it as? JStr)?.value } ?: ""
+            val role = current.state.arr("role_properties").map { it.asObj }
+                .firstOrNull { (it["id"] as? JInt)?.value?.toLong() == 0L }?.obj("value")?.get("bits")?.let { (it as? JInt)?.value?.toLong() }
+            val stage = plan.data.long("stage")
+            val ctx = socialContext()
+            if (plan["result"] == JInt(2) || Py.truthy(plan["auto"])) {
+                ctx.update<Unit>("campaign", "campaign_first_kill") { d ->
+                    val kills = (d["first_kills"] as? JObj) ?: JObj().also { d["first_kills"] = it }
+                    if (kills.containsKey(stage.toString()) || nameHex.isEmpty()) Unit to null
+                    else {
+                        kills[stage.toString()] = jobj("role" to role, "name_hex" to nameHex, "at" to now)
+                        Unit to jobj("stage" to stage, "role" to role)
+                    }
+                }
+            }
+            if (helperRole != null && role != null) {
+                ctx.update<Unit>("social", "campaign_helper") { d ->
+                    val helper = (d["helper"] as? JObj) ?: JObj().also { d["helper"] = it }
+                    helper["$role:$helperRole"] = JInt(now)
+                    Unit to jobj("pair" to listOf(role, helperRole))
+                }
+            }
+        } catch (e: Exception) {
+            log("campaign_world_write_error", "character_id" to characterId, "error" to described(e))
+        }
+    }
+
+    /**
+     * C3809 lineup view (`_lineup_view`): `u32 role id` → S3776 for the viewer's own card or another world character's,
+     * both from the stored state (`battle_stats.stat_world_of`); a bot without hero records → S6 15002.
+     */
+    private fun lineupView(payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        try {
+            if (!queriesSent || stateStore == null || payload.size != 4) throw IllegalArgumentException("C3809 is u32 role id after initialization")
+            val target = WireReader(payload).u32()
+            val current = stateStore!!.read()
+            val own = current.state.arr("role_properties").map { it.asObj }
+                .firstOrNull { (it["id"] as? JInt)?.value?.toLong() == 0L }?.obj("value")?.get("bits")?.let { (it as? JInt)?.value?.toLong() }
+            val state: JObj
+            val world: JObj
+            if (target == own) {
+                state = current.state
+                world = statWorld(current)
+            } else {
+                val person = worldContext().participants(current).map { it as WorldParticipants.Participant }
+                    .firstOrNull { it.participantId == target }
+                val registry = service.auth.registry
+                if (person?.characterId == null || registry == null) {
+                    log("lineup_view_refused", "character_id" to characterId, "target" to target, "reason" to "unknown id or bot without hero records")
+                    return listOf(6 to TransactionPackets.errorPayload(15002))
+                }
+                val targetCurrent = registry.resolveStateStore(person.characterId!!).read()
+                state = targetCurrent.state
+                world = BattleStats.statWorldOf(service.freshSystems, service.evolutionInputs, targetCurrent)
+            }
+            val view = BattleStats.lineupViewPayload(state, inputs, world)
+            log("lineup_view_served", "character_id" to characterId, "target" to target, "own" to (target == own), "bytes" to view.size)
+            return listOf(BattleStats.S_LINEUP_VIEW to view)
+        } catch (e: IllegalArgumentException) {
+            log("rejected_lineup_view", "character_id" to characterId, "reason" to e.message, "error_code" to 102)
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("lineup_view_internal_error", "character_id" to characterId, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
     }
 
     /**

@@ -11,6 +11,7 @@ import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
 import java.util.WeakHashMap
 
@@ -182,4 +183,88 @@ object Campaign {
         return moved
     }
 
+    // === campaign battles (group 9, owned by the campaign slice) =====================================================
+    // Lead-written constants + fixed-signature stubs so Session.campaignRoute wires in without conflicts; the campaign
+    // slice replaces each stub body with the port of the matching `campaign.py` function. A NotPorted keeps the step
+    // waiting until it is ported.
+
+    const val C_BATTLE = 129
+    const val C_AUTO = 131
+    const val C_STAGE_INFO = 133
+    const val C_REENTRY = 135
+    const val C_MAP_CHEST = 137
+    const val C_STAR_BOX = 2785
+    const val S_REPORT = 4
+    const val S_STAR = 160
+    const val S_FIRST_KILL = 162
+    const val S_AUTO = 608
+    const val S_AUTO_HELL = 610
+    const val S_BOX = 3232
+    const val NO_HELPER_SLOT = 6
+    const val ERR_INVALID = 102
+    const val ERR_RESOURCES = 4000
+    const val ERR_UNITS = 5001
+    const val ERR_SUPPORT = 5003
+    const val ERR_HELPER_CD = 5005
+    const val ERR_NO_ATTEMPT = 5006
+    const val ERR_REQUIREMENTS = 5010
+
+    /** `POLICY` (docs/CAMPAIGN_CONTRACT.md §6) — the transaction detail's `policy` block; a fresh copy per call. */
+    fun policy(): JObj = jobj("exp_multiplier" to 1.0, "record_stars" to "max", "normal_auto" to "no_battle",
+        "auto_fuse" to "ignored", "drops" to "stage_groups_v1", "regen_anchor" to "drop_below_max",
+        "first_kill" to "first_local_winner", "map_chest" to "refused")
+
+    /** A lost battle: the S4 is sent and nothing is committed (no AP, no attempt, no record change). */
+    class Lost(val plan: Plan) : Exception("battle lost")
+
+    /** Small deterministic PRNG for the settlement rolls (drops): SplitMix64 (`campaign.SplitMix64`). */
+    class SplitMix64(seed: Long) {
+        var state: ULong = seed.toULong()
+        fun next(): ULong {
+            state += 0x9E3779B97F4A7C15uL
+            var z = state
+            z = (z xor (z shr 30)) * 0xBF58476D1CE4E5B9uL
+            z = (z xor (z shr 27)) * 0x94D049BB133111EBuL
+            return z xor (z shr 31)
+        }
+        fun random(): Double = (next() shr 11).toLong().toDouble() / (1L shl 53).toDouble()
+        fun randint(low: Long, high: Long): Long = low + (next() % (high - low + 1).toULong()).toLong()
+    }
+
+    /** `battle_seed(character_id, revision, stage, now, helper, slot)`: first 8 bytes (LE) of SHA-256 as a raw u64. */
+    fun battleSeed(characterId: String, revision: Long, stage: Long, now: Long, helper: Long, slot: Long): Long =
+        throw NotPorted("campaign.battle_seed")
+
+    fun decodeStage(payload: ByteArray, opcode: Int): JObj = throw NotPorted("campaign.decode_stage (C$opcode)")
+    fun decodeBattle(payload: ByteArray): JObj = throw NotPorted("campaign.decode_battle (C129)")
+    fun decodeAuto(payload: ByteArray): JObj = throw NotPorted("campaign.decode_auto (C131)")
+
+    /** `first_kill_payload(stage, entry, offset)`: S162 `u32 stage, cstring name, u32 epoch`. */
+    fun firstKillPayload(stage: Long, entry: JObj?, offset: Long = 0): ByteArray =
+        throw NotPorted("campaign.first_kill_payload (C133)")
+
+    /** `plan_battle` (C129): checks, the engine battle, then settlement + S4 on a win or the S4 only on a loss. */
+    fun planBattle(request: JObj, owned: Owned, current: StateStore.Current, inputs: DailyInputs, document: JObj,
+                   now: Long, world: JObj?, helper: WorldParticipants.Participant?, helperState: JObj?, seed: Long): Plan =
+        throw NotPorted("campaign.plan_battle (C129)")
+
+    /** `plan_auto` (C131): Auto-play of a won stage — normal ×N (S608) or elite/epic (S610). */
+    fun planAuto(request: JObj, owned: Owned, current: StateStore.Current, inputs: DailyInputs, document: JObj,
+                 now: Long, rng: SplitMix64): Plan = throw NotPorted("campaign.plan_auto (C131)")
+
+    /** `plan_reentry` (C135): Diamond re-entry of an elite/epic stage. */
+    fun planReentry(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj, now: Long, serverTime: Long?): Plan =
+        throw NotPorted("campaign.plan_reentry (C135)")
+
+    /** `plan_star_box` (C2785): claim a three-star treasure chest. */
+    fun planStarBox(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj): Plan =
+        throw NotPorted("campaign.plan_star_box (C2785)")
+
+    /** `helper_participant` (C129 helper): the friend/participant whose captain replaces the own hero of the slot. */
+    fun helperParticipant(request: JObj, owned: Owned, worldCtx: DailyRoutes.WorldContext?, social: JObj?, now: Long,
+                          inputs: DailyInputs): WorldParticipants.Participant? =
+        throw NotPorted("campaign.helper_participant (C129)")
+
+    /** `own_name(state)`: the character's name (role property 2, UTF-8). */
+    fun ownName(state: JObj): String = throw NotPorted("campaign.own_name")
 }

@@ -629,6 +629,23 @@ object BattleStats {
     /** The city bar's final value: the binary32 rounding of the exact Power. */
     fun cityBarDisplay(power: Long): Long = trunc(f32(power.toDouble()))
 
+    const val S_LINEUP_VIEW = 3776
+
+    /**
+     * `battle_actors(state, inputs, world)`: own campaign actors for the battle engine — `{battle position 1..6: slot
+     * stats (mode "battle")}` for the counted main slots (report position = formation flag + 1). Lead-written stub; the
+     * campaign slice ports it (a thin wrapper over `lineupStats(mode = "battle")`).
+     */
+    fun battleActors(state: JObj, inputs: AcquisitionInputs, world: JObj? = null): JObj =
+        throw NotPorted("battle_stats.battle_actors")
+
+    /**
+     * `lineup_view_payload(state, inputs, world)`: S3776 for one character (own card, another local character or a bot
+     * built as a state). Lead-written stub; the campaign slice ports it over the existing `Model`.
+     */
+    fun lineupViewPayload(state: JObj, inputs: AcquisitionInputs, world: JObj? = null): ByteArray =
+        throw NotPorted("battle_stats.lineup_view_payload")
+
     // --- world helpers -----------------------------------------------------------------------------------------------------
 
     /**
