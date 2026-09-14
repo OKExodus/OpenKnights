@@ -123,6 +123,64 @@ object HeroDictionaryProgression {
             byte(row, "102") == category && byte(row, "103") < grade && (leader || n(row, "104") == group)
         }
     }
+
+    private const val INT32_LOW = -(1L shl 31)
+    private const val INT32_HIGH = 1L shl 31
+
+    /** `exp_for_level(base_exp, hero137)` (GetExpOfHeroLevel): unsigned inputs, binary64 product / divide, f32, FCVTZS. */
+    fun expForLevel(baseExp: Long, hero137: Long): Long {
+        val value = f32(((baseExp and U32).toDouble() * (hero137 and U32).toDouble()) / 10000.0)
+        if (!(value >= INT32_LOW && value < INT32_HIGH)) throw PyValues.ValueError("FCVTZS input outside bounded signed 32-bit domain")
+        return value.toLong()
+    }
+
+    /**
+     * `consumed_hero_exp(...)`: the bounded single consumed-instance part of GetAllExpOfHeros (binary32 at every step;
+     * the value doubles when the consumed level is at its configured cap). Returns the reference's dictionary.
+     */
+    fun consumedHeroExp(baseExp: Long, residualExp: Long, level: Long, configuredCap: Long, retention404: Long,
+                        hero137: Long, priorLevelBaseExp: List<Long>): JObj {
+        if (level !in 1..65535 || priorLevelBaseExp.size.toLong() != level - 1) {
+            throw PyValues.ValueError("A consumed hero needs every prior level row and a uint16 level")
+        }
+        if (!(configuredCap > 0 && configuredCap <= U32)) throw PyValues.ValueError("A resolved positive configured cap is required")
+        var invested = residualExp and U32
+        for (raw in priorLevelBaseExp) {
+            val scaled = f32(f32(f32((raw and U32).toDouble()) * f32((hero137 and U32).toDouble())) / f32(10000.0))
+            invested = truncU32(f32(scaled + f32(invested.toDouble())))
+        }
+        val retained = f32(f32(f32(invested.toDouble()) * f32((retention404 and 65535).toDouble())) / f32(10000.0))
+        val multiplier = if (level >= configuredCap) 2L else 1L
+        val value = truncU32(f32(f32(multiplier.toDouble()) * f32(retained + f32((baseExp and U32).toDouble()))))
+        return jobj("value" to value, "invested_exp_u32" to invested, "multiplier" to multiplier,
+            "configured_cap_unchanged" to configuredCap, "scope" to "client consumed hero instance EXP only")
+    }
+
+    /** `consumed_equipment_exp(...)` (GetAllExpOfEquip): unscaled prior equipexp102 rows and equip304. */
+    fun consumedEquipmentExp(baseExp: Long, residualExp: Long, level: Long, configuredCap: Long, retention304: Long,
+                             priorLevelBaseExp: List<Long>): JObj {
+        if (level !in 1..65535 || priorLevelBaseExp.size.toLong() != level - 1) {
+            throw PyValues.ValueError("A consumed equipment instance needs every prior level row")
+        }
+        if (!(configuredCap > 0 && configuredCap <= U32)) throw PyValues.ValueError("A resolved positive configured cap is required")
+        val invested = (BigInteger.valueOf(residualExp) + priorLevelBaseExp.fold(BigInteger.ZERO) { s, v -> s + BigInteger.valueOf(v and U32) })
+            .and(BigInteger.valueOf(U32)).toLong()
+        val retained = f32(f32(f32(invested.toDouble()) * f32((retention304 and U32).toDouble())) / f32(10000.0))
+        val multiplier = if (level >= configuredCap) 2L else 1L
+        val value = truncU32(f32(f32(multiplier.toDouble()) * f32(retained + f32((baseExp and U32).toDouble()))))
+        return jobj("value" to value, "invested_exp_u32" to invested, "multiplier" to multiplier,
+            "configured_cap_unchanged" to configuredCap,
+            "scope" to "client consumed equipment instance EXP only; equip304, not equip305")
+    }
+
+    /** `upgrade_instance_cost(material_exp, target_level, property_raw)` (GetUpgradeCost, binary32; the property via atoi). */
+    fun upgradeInstanceCost(materialExp: Long, targetLevel: Long, propertyRaw: String): Long {
+        if (targetLevel !in 0..65535) throw PyValues.ValueError("This bounded comparison requires a nonnegative uint16 target level")
+        val loadedProperty = nativeInt(propertyRaw)
+        val value = f32(f32(f32(f32(loadedProperty.toDouble()) / f32(10000.0)) * f32((materialExp and U32).toDouble())) * f32(targetLevel.toDouble()))
+        if (!(value >= INT32_LOW && value < INT32_HIGH)) throw PyValues.ValueError("FCVTZS input outside bounded signed 32-bit domain")
+        return value.toLong()
+    }
 }
 
 /**

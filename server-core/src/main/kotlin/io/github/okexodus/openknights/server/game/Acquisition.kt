@@ -327,7 +327,7 @@ class Owned(val current: StateStore.Current, val inputs: AcquisitionInputs, reti
             "book" to collect("equip_collection", template, Acquisition.EQUIP_BOOK))
     }
 
-    private fun collect(section: String, template: Long, bookField: Long): List<Frame> {
+    fun collect(section: String, template: Long, bookField: Long): List<Frame> {
         val collection = state.obj("subsystems").obj(section)
         val present = collection.arr("entries").map { it.asObj.arr("wire_values")[0].long }.toSet()
         if (template in present) return emptyList()

@@ -38,6 +38,31 @@ object Goals {
     const val KIND_ALL = 24L
     const val KIND_TIER = 25L
     val STATE_KINDS = setOf(KIND_LEVEL, KIND_HERO_LEVEL, KIND_RUNES, KIND_POWER, KIND_TIER)
+    const val KIND_SUMMON = 5L
+    const val KIND_HERO_REFINE = 6L
+    const val KIND_EVOLVE = 7L
+    const val KIND_COLLECT = 8L
+    const val KIND_TECH = 9L
+    const val KIND_CHEST = 11L
+    const val KIND_GEAR_REFINE = 12L
+    const val KIND_GEAR_FORTIFY = 13L
+    const val KIND_FRIENDS = 15L
+    const val KIND_CHECK_IN = 16L
+    const val KIND_MARKET = 19L
+
+    /** Counter events (the daily counters' events plus the goal-only ones below) → goal kind. */
+    val EVENT_KINDS = mapOf("summon_lot1" to KIND_SUMMON, "summon_lot2" to KIND_SUMMON, "summon_lot3" to KIND_SUMMON,
+        "hero_refine" to KIND_HERO_REFINE, "hero_evolve" to KIND_EVOLVE, "castle_collect" to KIND_COLLECT,
+        "tech_evolve" to KIND_TECH, "item_use" to KIND_CHEST, "gear_refine" to KIND_GEAR_REFINE,
+        "fortify_gear" to KIND_GEAR_FORTIFY, "fortify_gear_items" to KIND_GEAR_FORTIFY,
+        "friend_add" to KIND_FRIENDS, "check_in" to KIND_CHECK_IN, "shop_buy" to KIND_MARKET,
+        "market_exchange" to KIND_MARKET)
+    /** The event's param (item template) must equal col 106. */
+    val PARAM_KINDS = setOf(KIND_CHEST)
+    /** Events only the goals count (the daily counters strip them for the rest). */
+    val EVENTS = setOf("hero_refine", "gear_refine", "check_in", "market_exchange")
+    /** The gear refine reply (`compose.S_GEAR_REFINE`). */
+    const val S_GEAR_REFINE = 1574
 
     /** The request changes nothing: answer with these frames (or this S3108) and write no revision. */
     class Unchanged(val packets: List<Frame> = emptyList(), val payload: ByteArray? = null) : Exception("unchanged")
@@ -196,7 +221,8 @@ object Goals {
      * ascending, then the rows of newly opened days ascending). Order inside one pass: counter events → level-up → open
      * due days → owned-state kinds → "complete all" rows. (The login passes no counter events.)
      */
-    fun evaluate(document: JObj, state: JObj, inputs: DailyInputs, now: Long, power: (() -> BigInteger?)? = null): List<Long> {
+    fun evaluate(document: JObj, state: JObj, inputs: DailyInputs, now: Long, power: (() -> BigInteger?)? = null,
+                 events: List<DailyHooks.Event> = emptyList()): List<Long> {
         val table = tables(inputs)
         val goals = table.goals
         val days = table.days
@@ -206,6 +232,22 @@ object Goals {
         val completed = LinkedHashSet<Long>()
         fun running(ident: Long) = rows.getValue(ident)[1] == JInt(WIRE_RUNNING)
         val existing = rows.keys.toList()
+        for (e in events) {
+            val kind = EVENT_KINDS[e.event]
+            if (kind == null || e.units <= 0) continue
+            for (ident in existing) {
+                val goal = goals[ident]
+                if (goal == null || goal.long("kind") != kind || !running(ident)) continue
+                if (kind in PARAM_KINDS && goal.long("param") != 0L && goal.long("param") != e.param) continue
+                val row = rows.getValue(ident)
+                row[2] = JInt(minOf(PyDocs.int(row[2]) + BigInteger.valueOf(e.units), BigInteger.valueOf(U32)))
+                changed.add(ident)
+                if (PyDocs.compare(row[2], goal["target"]!!) >= 0) {
+                    row[1] = JInt(WIRE_READY)
+                    completed.add(ident)
+                }
+            }
+        }
         val lvl = level(state)
         if (PyDocs.compare(lvl, document["level_seen"] ?: lvl) > 0) {
             for (ident in existing) {
@@ -279,4 +321,37 @@ object Goals {
     }
 
     fun listFrame(document: JObj): Frame = S_LIST to listPayload(document.arr("rows"))
+
+    /** One S3106 per id, in the given order (`_frames`). */
+    fun frames(document: JObj, ids: List<Long>): List<Frame> {
+        val rows = LinkedHashMap<Long, JArr>()
+        for (r in document.arr("rows")) rows[PyDocs.long(r.asArr[0])] = r.asArr
+        return ids.map { S_ROW to rowPayload(rows.getValue(it)) }
+    }
+
+    /**
+     * The goals' part of the follow-up `daily_counters` revision (`advance`): only an existing document is advanced.
+     * Returns null (nothing changed) or (goal_state_after, S3106 per row).
+     */
+    fun advance(owned: Owned, current: StateStore.Current, events: List<DailyHooks.Event>, inputs: DailyInputs, now: Long,
+                power: ((StateStore.Current) -> BigInteger?)? = null): Pair<JObj, List<Frame>>? {
+        val stored = PyDocs.get(current, "goal_state") ?: return null
+        val document = stored.deepCopy() as JObj
+        val ids = evaluate(document, owned.state, inputs, now, power?.let { p -> { p(current) } }, events)
+        if (document == stored) return null
+        return document to frames(document, ids)
+    }
+
+    /** Goal-only events of one committed action (`action_events`; the daily counters append them). */
+    fun actionEvents(action: String, plan: JObj?, packets: List<Frame> = emptyList()): List<DailyHooks.Event> {
+        val data = plan ?: JObj()
+        val uids = data["uids"]
+        if (action == "acquire_decompose" && Py.truthy(uids)) return listOf(DailyHooks.Event("hero_refine", (uids as JArr).size.toLong(), null))
+        if (action == "acquire_refine" && Py.truthy(uids) && packets.any { it.first == S_GEAR_REFINE }) {
+            return listOf(DailyHooks.Event("gear_refine", (uids as JArr).size.toLong(), null))
+        }
+        if (action == "daily_check_in") return listOf(DailyHooks.Event("check_in", 1, null))
+        if (action == "acquire_lucky_exchange" && Py.truthy(data["entry"])) return listOf(DailyHooks.Event("market_exchange", 1, null))
+        return emptyList()
+    }
 }

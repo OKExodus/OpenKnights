@@ -286,7 +286,13 @@ open class AcquisitionInputs(val tables: GameTables) {
     fun property(key: Any): String? = propertyCache.getOrPut(key.toString()) { single("property", key)?.field("102") }
 
     open fun freshHeroFields(uid: Long, template: Long): JArr = throw NotPorted("pk_test_fixture_inject_hero.fresh_hero_fields")
-    open fun astralInitialSkills(template: Long): JArr = throw NotPorted("pk_hero_card_inputs.astral_initial_skills")
+    private var astralGroups: JObj? = null
+
+    /** The initial god-skill list of a hero template (`pk_hero_card_inputs.astral_initial_skills`, groups cached). */
+    open fun astralInitialSkills(template: Long): JArr {
+        val groups = astralGroups ?: PkHeroCardInputs.astralGroups(tables).also { astralGroups = it }
+        return PkHeroCardInputs.astralInitialSkills(tables, template, groups)
+    }
 
     val BATTLE_TABLES = setOf("stage", "monster", "monsterability", "hero", "skill", "effect", "gift", "text", "herojuexing")
     private val battleRows = HashMap<Pair<String, String>, Map<String, String>?>()
@@ -615,8 +621,16 @@ open class DailyInputs(tables: GameTables) : AcquisitionInputs(tables) {
 
     fun forgeExp(): Long = rows("qianchuibailian").firstOrNull()?.let { int(it, "103") } ?: 41_160
 
-    open fun gearExp(template: Long, grade: Long): JObj = throw NotPorted("pk_item_fortify_contract.gear_item_inputs")
-    open fun jewelExp(template: Long, grade: Long): JObj = throw NotPorted("pk_item_fortify_contract.jewelry_item_inputs")
+    private val gearExpCache = HashMap<Pair<Long, Long>, JObj>()
+    private val jewelExpCache = HashMap<Pair<Long, Long>, JObj>()
+
+    /** Gear cap / EXP curve / scale, the item-Fortify inputs (`pk_item_fortify_contract.gear_item_inputs`), cached. */
+    open fun gearExp(template: Long, grade: Long): JObj =
+        gearExpCache.getOrPut(template to grade) { PkItemFortifyContract.gearItemInputs(tables, template, grade) }
+
+    /** Jewelry cap / EXP curve / scale (`pk_item_fortify_contract.jewelry_item_inputs`), cached. */
+    open fun jewelExp(template: Long, grade: Long): JObj =
+        jewelExpCache.getOrPut(template to grade) { PkItemFortifyContract.jewelryItemInputs(tables, template, grade) }
 
     fun exploreRow(ident: Long): JObj? = keyed("yingxiongyuanzheng")[ident]?.let { f ->
         val boxes = listOf(201, 205, 209).map { b ->

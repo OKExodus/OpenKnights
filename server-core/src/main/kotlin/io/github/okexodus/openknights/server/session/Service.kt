@@ -83,6 +83,17 @@ class Service(
     /** The acquisition catalog (`snapshot.acquisition_catalog`: release-data/shop-catalog.json). */
     val acquisitionCatalog: JObj? by lazy { releaseData?.let { io.github.okexodus.openknights.server.game.Shops.releaseCatalog(it) } }
 
+    /** The hero / gear Fortify catalog inputs (`snapshot.fortify_inputs`). */
+    val fortifyInputs: io.github.okexodus.openknights.server.game.FortifyInputs by lazy { io.github.okexodus.openknights.server.game.FortifyInputs(tables) }
+
+    /** The EXP-item Fortify catalog inputs (`snapshot.item_fortify_inputs`). */
+    val itemFortifyInputs: io.github.okexodus.openknights.server.game.ItemFortifyInputs by lazy { io.github.okexodus.openknights.server.game.ItemFortifyInputs(tables) }
+
+    /** The history label `{path, sha256}` of the loaded acquisition RNG policy (`ReleaseData.policy("acquisition-rng")`). */
+    val acquisitionPolicyLabel: JObj? by lazy {
+        releaseData?.let { jobj("path" to it.label("policies/acquisition-rng.json"), "sha256" to it.sha256("policies/acquisition-rng.json")) }
+    }
+
     /** The labeled local RNG policy document (`snapshot.acquisition_policy`, bound to every character in release). */
     var acquisitionPolicy: JObj? = null
 
@@ -96,8 +107,24 @@ class Service(
     /** The evolution rows (`snapshot.evolution_inputs` / `leader_inputs`). */
     val evolutionInputs: io.github.okexodus.openknights.server.game.EvolutionInputs by lazy { io.github.okexodus.openknights.server.game.EvolutionInputs(tables) }
 
+    /** The hero-card catalog inputs (`snapshot.hero_card_inputs`: Power Up, Astral Power, Ascension). */
+    val heroCardInputs: io.github.okexodus.openknights.server.game.HeroCardInputs by lazy { io.github.okexodus.openknights.server.game.HeroCardInputs(tables) }
+
+    /** The verified client lineup rules (`snapshot.secondary_rules`): loaded by the first C3779 of the process, then kept. */
+    var secondaryRules: io.github.okexodus.openknights.server.game.SecondaryTeam.NativeLineupRules? = null
+
     /** The universal Power of a character save (`snapshot.power_of` = `battle_stats.participant_power(snapshot)`). */
     var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
+
+    /**
+     * The labeled local policies of the hero systems in their loaded shape (`ReleaseData.policy`; `configure_release`):
+     * evolution test tiers, item-Fortify bonus draws, Power Up draws, ordinary-Ascension materials. A session applies
+     * them through its bound-policy check.
+     */
+    var evolutionTestPolicy: JObj? = null
+    var fortifyBonusPolicy: JObj? = null
+    var powerUpPolicy: JObj? = null
+    var ascensionPolicy: JObj? = null
 
     fun settle(reason: String) {
         val now = clock.now()
@@ -179,6 +206,10 @@ class Service(
             }
             val service = Service(driver, log, clock, tables, data, auth, world, select, root, generation)
             service.acquisitionPolicy = checkAcquisitionPolicy(data.document("policies/acquisition-rng.json"))
+            service.evolutionTestPolicy = io.github.okexodus.openknights.server.game.HeroEvolution.checkTestPolicy(data.policy("evolution")) as JObj?
+            service.fortifyBonusPolicy = io.github.okexodus.openknights.server.game.ItemFortify.checkBonusPolicy(data.policy("fortify-bonus"))
+            service.powerUpPolicy = io.github.okexodus.openknights.server.game.HeroPowerUp.checkPolicy(data.policy("power-up")) as JObj?
+            service.ascensionPolicy = io.github.okexodus.openknights.server.game.HeroAscension.checkMaterialPolicy(data.policy("ascension")) as JObj?
             io.github.okexodus.openknights.server.game.Events.setActive(io.github.okexodus.openknights.server.game.Events.releaseEvents(data))
             service.acquisitionCatalog
             service.freshSystems

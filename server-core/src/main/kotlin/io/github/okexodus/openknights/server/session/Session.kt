@@ -14,6 +14,18 @@ import io.github.okexodus.openknights.server.game.Guild
 import io.github.okexodus.openknights.server.game.Mail
 import io.github.okexodus.openknights.server.game.SocialRoutes
 import io.github.okexodus.openknights.server.game.HeroEvolution
+import io.github.okexodus.openknights.server.game.GodSkills
+import io.github.okexodus.openknights.server.game.HeroAscension
+import io.github.okexodus.openknights.server.game.HeroPowerUp
+import io.github.okexodus.openknights.server.game.HeroStats
+import io.github.okexodus.openknights.server.game.Plan
+import io.github.okexodus.openknights.server.game.PyValues
+import io.github.okexodus.openknights.server.store.ascendHero
+import io.github.okexodus.openknights.server.store.astralUpgrade
+import io.github.okexodus.openknights.server.store.evolveHero
+import io.github.okexodus.openknights.server.store.evolveLeaderHero
+import io.github.okexodus.openknights.server.store.powerUpSave
+import io.github.okexodus.openknights.server.store.powerUpTrain
 import io.github.okexodus.openknights.server.game.LeaderRepair
 import io.github.okexodus.openknights.server.game.Owned
 import io.github.okexodus.openknights.server.game.SecondaryTeam
@@ -21,7 +33,9 @@ import io.github.okexodus.openknights.server.game.SweepFeatures
 import io.github.okexodus.openknights.server.game.SystemSeeds
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.hexBytes
+import io.github.okexodus.openknights.server.game.Achievements
 import io.github.okexodus.openknights.server.game.AltTeam
+import io.github.okexodus.openknights.server.game.DailyHooks
 import io.github.okexodus.openknights.server.game.Claims
 import io.github.okexodus.openknights.server.game.DailyRoutes
 import io.github.okexodus.openknights.server.game.Goals
@@ -32,15 +46,19 @@ import io.github.okexodus.openknights.server.game.Summon
 import io.github.okexodus.openknights.server.game.VipQuest
 import io.github.okexodus.openknights.server.game.WorldParticipants
 import io.github.okexodus.openknights.server.game.NotPorted
+import io.github.okexodus.openknights.server.game.TransactionPackets
+import io.github.okexodus.openknights.server.game.AcquisitionRoutes
+import io.github.okexodus.openknights.server.game.ChangeJob
+import io.github.okexodus.openknights.server.game.HeroFortify
+import io.github.okexodus.openknights.server.game.ItemFortify
+import io.github.okexodus.openknights.server.store.FortifyResult
+import io.github.okexodus.openknights.server.store.fortifyHero
+import io.github.okexodus.openknights.server.store.fortifyItemsGear
+import io.github.okexodus.openknights.server.store.fortifyItemsHero
+import io.github.okexodus.openknights.server.store.fortifyItemsJewelry
+import io.github.okexodus.openknights.exact.toHexString
 import io.github.okexodus.openknights.server.store.AuthenticationRejected
 import io.github.okexodus.openknights.server.store.StateStore
-
-/** Opcode 6: an int32 code; a nonzero code ends the client's waiting layer and shows text 8000000 + code. */
-object TransactionPackets {
-    const val INVALID_DATA = 102
-
-    fun errorPayload(code: Int): ByteArray = WireWriter().i32(code).bytes()
-}
 
 /**
  * One client connection (`snapshot_server.Session`, release mode). The login service answers the sign-in (C7683 →
@@ -270,6 +288,30 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return FreshProfile.DeploymentPolicy(profile)
     }
 
+    /**
+     * A labeled local policy for this character (`_bound_policy`): the characters its document binds and every fresh
+     * character (operator decision 2026-09-12: the whole game is playable for the characters players create).
+     */
+    private fun boundPolicy(loaded: JObj?): JObj? {
+        if (loaded == null || loaded.isEmpty()) return null
+        val bound = loaded["characters"] as? io.github.okexodus.openknights.exact.JArr
+        if (bound != null && bound.any { (it as? io.github.okexodus.openknights.exact.JStr)?.value == characterId }) return loaded
+        val fresh = try { stateStore != null && stateStore!!.read().characterProfile != null } catch (e: Exception) { guard(e); false }
+        return if (fresh) loaded else null
+    }
+
+    /** The labeled local TEST policy (extended tiers, the third material slot, level gates). */
+    private fun evolutionTestPolicy() = boundPolicy(service.evolutionTestPolicy)
+
+    /** The labeled local item-Fortify bonus RNG policy. */
+    private fun fortifyBonusPolicy() = boundPolicy(service.fortifyBonusPolicy)
+
+    /** The labeled local Power Up RNG policy. */
+    private fun powerUpPolicy() = boundPolicy(service.powerUpPolicy)
+
+    /** The labeled local ordinary-Ascension (hero cards) policy. */
+    private fun ascensionPolicy() = boundPolicy(service.ascensionPolicy)
+
     private fun isFreshCharacter(): Boolean {
         freshCharacter?.let { return it }
         val fresh = try { stateStore?.read()?.characterProfile != null } catch (e: Exception) { guard(e); false }
@@ -335,6 +377,59 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             guard(e)
             log("daily_login_refresh_error", "character_id" to characterId, "error" to described(e))
             current
+        }
+    }
+
+    /**
+     * After a counted action: the follow-up `daily_counters` revision (quests, Daily Mission, Royal Door tasks, then the
+     * world's Door EXP and new-medal mails). Returns the extra frames; never fails the action (`_daily_counters`).
+     */
+    private fun dailyCounters(action: String, plan: JObj, packets: List<Frame> = emptyList()): List<Frame> {
+        class NothingCounted : RuntimeException("nothing counted")
+        try {
+            val events = DailyHooks.eventsFor(action, plan, packets) + DailyHooks.achievementEvents(action, packets)
+            val inputs = service.inputs
+            val policy = deploymentPolicy()
+            if (events.isEmpty() || policy == null) return emptyList()
+            val worldCtx = worldContext()
+            val (_, door) = worldCtx.document("royal_door")
+            val now = service.clock.now()
+            val (result, counted) = try {
+                stateStore!!.acquisitionTransaction("daily_counters", characterId!!, policy, inputs, "local-service",
+                    "Daily counters after $action", detailExtra = jobj("after_action" to action, "contract" to "docs/DAILY_CONTRACT.md")) { owned, current ->
+                    val served = servedTime(current, now)
+                    val planned = DailyHooks.planCounters(owned, current, events, inputs, now, door, served, service.powerOf)
+                    if (!DailyHooks.countsAnything(planned)) throw NothingCounted()
+                    planned["now_epoch"] = now
+                    planned["served_time"] = served
+                    planned
+                }
+            } catch (e: NothingCounted) {
+                return emptyList()
+            }
+            val doorExp = counted.data.long("door_exp")
+            val levels = if (doorExp != 0L) worldCtx.raiseDoorExp(doorExp, inputs) else null to null
+            var frames = counted.packets.toList()
+            val mails = counted["medal_mails"] as? io.github.okexodus.openknights.exact.JArr
+            if (mails != null && mails.isNotEmpty() && service.world != null) {
+                // New-medal mails: a world write after the character's commit; each S258 goes right after its S576.
+                try {
+                    val ctx = socialContext()
+                    frames = Achievements.deliverMails(frames, mails, { change -> ctx.update("mail", "mail_achievement", change) }, now, ctx.clockOffset)
+                } catch (e: Exception) {
+                    guard(e)
+                    log("achievement_mail_error", "character_id" to characterId, "after_action" to action, "error" to described(e))
+                }
+            }
+            log("transaction_committed", "action" to "daily_counters", "character_id" to characterId, "revision" to result["revision"],
+                "after_action" to action, "events" to events.map { it.json() }, "door_exp" to doorExp,
+                "door_levels" to listOf(levels.first, levels.second), "medals" to counted["achievements_completed"],
+                "reply_opcodes" to frames.map { it.first })
+            return frames
+        } catch (e: Exception) {
+            guard(e)
+            log("daily_counters_error", "character_id" to characterId, "after_action" to action, "error" to described(e))
+            return emptyList()
         }
     }
 
@@ -715,22 +810,24 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             service.settle("heartbeat")
             return listOf(14 to service.clock.s14(), 8 to ByteArray(0))
         }
-        if ((opcode == 3777 || opcode == 3779) && isFreshCharacter()) group(opcode, "alternate team")
-        if (opcode == 3779 || opcode == 3777) group(opcode, "secondary team (derived characters)")
-        if (opcode == 69) group(opcode, "hero Fortify")
+        if ((opcode == 3777 || opcode == 3779) && isFreshCharacter()) return altTeamRoute(opcode, payload)
+        if (opcode == 3779) return secondaryReplaceRoute(payload)
+        if (opcode == 3777) return secondaryUnlockRoute(payload)
+        if (opcode == 69) return heroFortifyRoute(payload)
         if (opcode == 81) group(opcode, "gear Fortify")
-        if (opcode == 71) group(opcode, "hero evolution")
-        if (opcode == 2083) group(opcode, "leader evolution")
-        if (opcode == 91 || opcode == 93 || opcode == 2641) group(opcode, "EXP-item Fortify")
-        if (opcode == 2561) group(opcode, "leader class change")
+        if (opcode == 71) return evolutionRoute(payload)
+        if (opcode == 2083) return leaderEvolutionRoute(payload)
+        if (opcode == 91 || opcode == 2641) return itemFortifyRoute(opcode, payload)
+        if (opcode == 93) group(opcode, "EXP-item Fortify")
+        if (opcode == 2561) return changeJobRoute(payload)
         if (opcode == 1569) group(opcode, "rename")
         if (opcode == 1537) group(opcode, "gift code")
         if (opcode == 643 || opcode == 645) group(opcode, "roulette rank")
         if (opcode in setOf(2049, 2629, 2593, 2817)) group(opcode, "gear / jewelry evolve")
         if (opcode in Routes.FORMATION) group(opcode, "formation")
-        if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) group(opcode, "hero cards")
+        if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
         if (opcode == 705) group(opcode, "rank list")
-        if (opcode in Routes.ACQUISITION) group(opcode, "acquisition")
+        if (opcode in Routes.ACQUISITION) return acquisitionRoute(opcode, payload)
         if (opcode in Routes.DAILY && (queriesSent || opcode !in QUERY_SEQUENCE)) return dailyRoute(opcode, payload)
         if (opcode in Routes.SOCIAL && (queriesSent || opcode !in QUERY_SEQUENCE) &&
             (opcode !in QUERY_SEQUENCE || service.world != null)) return socialRoute(opcode, payload)
@@ -780,6 +877,154 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             return listOf(6 to TransactionPackets.errorPayload(Routes.COMBAT_REFUSAL_CODE))
         }
         return legacyHandle(opcode, payload)
+    }
+
+    // --- hero Fortify, EXP-item Fortify, leader class change, Rebirth Evolve / Fortify, Reborn ------------------------
+
+    /**
+     * C69 ordinary hero Fortify (docs/FORTIFY_CONTRACT.md): commit first; the observed reply order is 46, 1184, 48, 40,
+     * 34, 128, then the daily counters.
+     */
+    private fun heroFortifyRoute(payload: ByteArray): List<Frame> {
+        val result: FortifyResult
+        try {
+            if (!queriesSent) throw HeroFortify.FortifyRejected("Complete initialization queries before fortifying")
+            val request = HeroFortify.decodeFortifyRequest(payload)
+            result = stateStore!!.fortifyHero(request, characterId!!, deploymentPolicy(), service.fortifyInputs,
+                "authenticated-client", "Native opcode69 hero Fortify")
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_hero_fortify", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("fortify_internal_error", "character_id" to characterId, "kind" to "hero", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "fortify_hero", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "material_uid" to result["material_uid"], "material_uids" to result["material_uids"],
+            "awarded_exp" to result["awarded_exp"], "gold_cost" to result["gold_cost"],
+            "levels_gained" to result.result.obj("settlement")["levels_gained"])
+        return HeroFortify.heroFortifyPackets(result.plan,
+            activityPayload = PlayerSections.encodeSection("game_activities", result.activitySection!!),
+            goldPayload = TransactionPackets.goldPropertyPayload(result.result.int("gold_after"))) +
+            dailyCounters("fortify_hero", jobj("material_uids" to result["material_uids"]))
+    }
+
+    /**
+     * C91 hero / C2641 jewelry EXP-item Fortify (docs/ITEM_FORTIFY_CONTRACT.md): commit first, then item 66 / 68, the
+     * state frame (46 hero / 106 gear / 3080 jewelry), the result popup (52 / 116 / 3112), 128 and 1184.
+     */
+    private fun itemFortifyRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val kind = mapOf(91 to "hero", 93 to "gear", 2641 to "jewelry").getValue(opcode)
+        val result: FortifyResult
+        try {
+            if (!queriesSent) throw ItemFortify.ItemFortifyRejected("Complete initialization queries before fortifying")
+            val request = ItemFortify.decodeItemFortifyRequest(payload)
+            val store = stateStore!!
+            val policy = deploymentPolicy()
+            val bonusPolicy = fortifyBonusPolicy()
+            val reason = "Native opcode$opcode $kind item Fortify"
+            result = when (opcode) {
+                91 -> store.fortifyItemsHero(request, characterId!!, policy, service.itemFortifyInputs, "authenticated-client", reason, bonusPolicy = bonusPolicy)
+                93 -> store.fortifyItemsGear(request, characterId!!, policy, service.itemFortifyInputs, "authenticated-client", reason, bonusPolicy = bonusPolicy)
+                else -> store.fortifyItemsJewelry(request, characterId!!, policy, service.itemFortifyInputs, "authenticated-client", reason, bonusPolicy = bonusPolicy)
+            }
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_item_fortify", "character_id" to characterId, "kind" to kind, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("item_fortify_internal_error", "character_id" to characterId, "kind" to kind, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        val plan = result.plan
+        log("transaction_committed", "action" to "fortify_items_$kind", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to plan["target_uid"], "new_level" to plan["new_level"], "reached_cap" to plan["reached_cap"],
+            "gold_cost" to plan["gold_cost"], "total_awarded" to plan["total_awarded"],
+            "bonus_policy_applied" to plan["bonus_policy_applied"], "bonus_tallies" to plan["bonus_tallies"], "topped_up" to plan["topped_up"])
+        return ItemFortify.itemFortifyPackets(plan, TransactionPackets.goldPropertyPayload(plan.int("gold_after")),
+            PlayerSections.encodeSection("game_activities", result.activitySection!!)) + dailyCounters("fortify_items_$kind", plan)
+    }
+
+    /** C2561 leader class change (`_change_job_route`, server/change_job.py): commit first, then card, Gold, S2850, book, S3040. */
+    private fun changeJobRoute(payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val evolution = service.evolutionInputs
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Class change needs a store-backed character with a deployment policy")
+            val committed = stateStore!!.acquisitionTransaction("leader_class_change", characterId!!, policy, inputs, "authenticated-client",
+                "Native opcode2561 leader class change",
+                detailExtra = jobj("opcode" to 2561, "request" to payload.toHexString(), "contract" to "server/change_job.py")) { owned, current ->
+                ChangeJob.planChangeJob(payload, owned, current, inputs, evolution)
+            }
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_class_change", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("class_change_internal_error", "character_id" to characterId, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "leader_class_change", "character_id" to characterId, "revision" to result["revision"],
+            "old_template" to plan["old_template"], "new_template" to plan["new_template"], "gold_cost" to plan["gold_cost"],
+            "reply_opcodes" to plan.packets.map { it.first })
+        return plan.packets.toList()
+    }
+
+    /**
+     * The acquisition family (`_acquisition_route`): commit first, then the plan's reply order and the daily counters.
+     * Rebirth Evolve C101, Rebirth Fortify C99 and Reborn C95 are ported; the other opcodes wait for their group.
+     */
+    private fun acquisitionRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        if (opcode !in setOf(99, 101, 95)) group(opcode, "acquisition")
+        val inputs = service.inputs
+        val rngPolicy = service.acquisitionPolicy      // `_acquisition_policy()`: bound to every character in release
+        val catalog = service.acquisitionCatalog
+        var action = AcquisitionRoutes.ACTIONS[opcode]
+        val request: JObj
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries before acquiring")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Acquisition needs a store-backed character with a deployment policy")
+            if (opcode in AcquisitionRoutes.CATALOG_OPCODES && catalog == null) throw Acquisition.Rejected("Shops need the captured server catalog (--acquisition-catalog)")
+            val now = service.clock.now()
+            if (AcquisitionRoutes.isReadOnly(opcode, payload)) group(opcode, "acquisition query")   // buy-back / fuse luck / shop / Lucky info
+            if (opcode == 75) group(opcode, "guild shop gate")
+            val routed = AcquisitionRoutes.plannerFor(opcode, payload, inputs, catalog, rngPolicy, policy, now) { current -> servedTime(current, now) }
+            action = routed.action
+            request = routed.request
+            if (opcode in setOf(2633, 2631, 73)) group(opcode, "served jewel list")   // they touch the 3072 list
+            val extra = jobj("opcode" to opcode, "request" to request)
+            if (rngPolicy != null) extra["acquisition_policy"] = service.acquisitionPolicyLabel ?: io.github.okexodus.openknights.exact.JNull
+            val committed = stateStore!!.acquisitionTransaction(routed.action, characterId!!, policy, inputs, "authenticated-client",
+                "Native opcode$opcode acquisition", detailExtra = extra, planner = routed.planner)
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_acquisition", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            if (opcode == 1125 && stateStore != null) group(opcode, "VIP quest refusal")   // the unchanged S1196 follows the S6
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("acquisition_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
+            "request" to request, "reply_opcodes" to plan.packets.map { it.first }, "evidence_class" to plan["evidence_class"],
+            "heroes_added" to result["heroes_added"], "items_created" to result["items_created"])
+        val packets = plan.packets.toList() + dailyCounters(action!!, plan.data, plan.packets)
+        if (action == "acquire_summon" || action == "acquire_roulette") group(opcode, "summon report / roulette rank")
+        return packets
     }
 
     /** Daily requests: commit first, then the live reply order. Only the query replies are ported so far. */
@@ -838,6 +1083,174 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         log("social_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first },
             "now_epoch" to now, "served_time" to served, "online" to service.onlineRoles(), "clock_offset" to ctx.clockOffset)
         return packets
+    }
+
+    // --- alternate team, hero evolution, hero cards -------------------------------------------------------------------
+
+    /** `getattr(exc, "code", 102)` of the hero-system refusals. */
+    private fun heroRejectionCode(e: Exception): Int = when (e) {
+        is HeroEvolution.EvolutionRejected -> e.code
+        is HeroPowerUp.PowerUpRejected -> e.code
+        is HeroAscension.AscensionRejected -> e.code
+        is GodSkills.GodSkillRejected -> e.code
+        is HeroStats.ProfileUnsupported -> e.code
+        is Acquisition.Rejected -> e.code
+        is SecondaryTeam.Rejected -> e.code
+        else -> 102
+    }
+
+    /** C3777 / C3779 of a created character (`_alt_team_route`): acquisition transactions `alt_team_unlock` / `alt_team_set`. */
+    private fun altTeamRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val action: String
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent) throw PyValues.ValueError("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw PyValues.ValueError("The alternate team needs a store-backed character with a deployment policy")
+            val planner: (Owned, StateStore.Current) -> Plan
+            if (opcode == AltTeam.C_UNLOCK) {
+                action = "alt_team_unlock"
+                planner = { owned, current -> AltTeam.planUnlock(payload, owned, current, inputs) }
+            } else {
+                val rules = service.secondaryRules ?: SecondaryTeam.loadNativeLineupRules(service.tables).also { service.secondaryRules = it }
+                action = "alt_team_set"
+                planner = { owned, current -> AltTeam.planSet(payload, owned, current, inputs, rules = rules) }
+            }
+            val committed = stateStore!!.acquisitionTransaction(action, characterId!!, policy, inputs, "authenticated-client",
+                "Native opcode$opcode alternate team", detailExtra = jobj("opcode" to opcode, "contract" to "server/alt_team.py"), planner = planner)
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {      // only the ValueError family is answered; anything else ends the connection
+            val code = heroRejectionCode(e)
+            log("rejected_alt_team", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        }
+        log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
+            "position" to plan["position"], "hero_uid" to plan["hero_uid"])
+        return plan.packets.toList()
+    }
+
+    /**
+     * C3779 of a character without a creation profile (`replace_secondary_hero`). Unreachable in release mode: every
+     * request re-validates the save first and release serves only created characters (their fresh probe is true).
+     */
+    private fun secondaryReplaceRoute(payload: ByteArray): List<Frame> = group(3779, "secondary team (derived characters)")
+
+    /** C3777 of a character without a creation profile (`unlock_secondary_position`); unreachable in release mode. */
+    private fun secondaryUnlockRoute(payload: ByteArray): List<Frame> = group(3777, "secondary team (derived characters)")
+
+    /** C71 ordinary hero evolution (docs/EVOLUTION_CONTRACT.md): commit first; core order 68/66, 50, 128, 1184. */
+    private fun evolutionRoute(payload: ByteArray): List<Frame> {
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent) throw HeroEvolution.EvolutionRejected("Complete initialization queries before evolving")
+            val request = HeroEvolution.decodeOrdinaryRequest(payload)
+            val committed = stateStore!!.evolveHero(request, characterId!!, deploymentPolicy(), service.evolutionInputs,
+                "authenticated-client", "Native opcode71 ordinary hero evolution", testPolicy = evolutionTestPolicy())
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = heroRejectionCode(e)
+            log("rejected_hero_evolution", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("evolution_internal_error", "character_id" to characterId, "kind" to "ordinary", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "evolve_hero", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "new_template" to result["new_template"])
+        return HeroEvolution.ordinaryEvolutionPackets(plan, PlayerSections.encodeSection("game_activities", result.obj("activity_section")),
+            TransactionPackets.goldPropertyPayload(result.int("gold_after"))) + dailyCounters("evolve_hero", jobj())
+    }
+
+    /** C2083 leader hero evolution (docs/EVOLUTION_CONTRACT.md): empty request; core order 66/68, 46, 2240, 2242, 128, 1184. */
+    private fun leaderEvolutionRoute(payload: ByteArray): List<Frame> {
+        val result: JObj
+        val plan: Plan
+        try {
+            if (!queriesSent) throw HeroEvolution.EvolutionRejected("Complete initialization queries before evolving the leader")
+            val request = HeroEvolution.decodeLeaderRequest(payload)
+            val committed = stateStore!!.evolveLeaderHero(request, characterId!!, deploymentPolicy(), service.evolutionInputs,
+                "authenticated-client", "Native opcode2083 leader hero evolution", testPolicy = evolutionTestPolicy())
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = heroRejectionCode(e)
+            log("rejected_leader_evolution", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {
+            guard(e)
+            log("evolution_internal_error", "character_id" to characterId, "kind" to "leader", "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "evolve_leader_hero", "character_id" to characterId, "revision" to result["revision"],
+            "target_uid" to result["target_uid"], "new_template" to result["new_template"])
+        return HeroEvolution.leaderEvolutionPackets(plan, PlayerSections.encodeSection("game_activities", result.obj("activity_section")),
+            TransactionPackets.goldPropertyPayload(result.int("gold_after"))) + dailyCounters("evolve_leader_hero", jobj())
+    }
+
+    /**
+     * Power Up C3693 / C3713 / C3721, Astral Power C2497, Ascension C3907 (`_hero_card_route`; docs/POWER_UP_CONTRACT.md,
+     * ASTRAL_POWER_CONTRACT.md, ASCENSION_CONTRACT.md): commit first, then the live reply order.
+     */
+    private fun heroCardRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val kind = mapOf(3693 to "power_up_open", 3713 to "power_up_train", 3721 to "power_up_save", 2497 to "astral_upgrade",
+            3907 to "ascend_hero").getValue(opcode)
+        val inputs = service.heroCardInputs
+        val policy = deploymentPolicy()      // outside the guarded part, as the reference
+        val actor = "authenticated-client"
+        try {
+            if (!queriesSent) throw PyValues.ValueError("Complete initialization queries before using hero-card systems")
+            if (opcode == 3693) {
+                // Live: the client sends this when the dialog opens and does not wait.
+                val request = HeroPowerUp.decodeOpenRequest(payload)
+                log("power_up_open", "character_id" to characterId, "target_uid" to request["target_uid"])
+                return emptyList()
+            }
+            if (opcode == 3713) {
+                val request = HeroPowerUp.decodeTrainRequest(payload)
+                val (result, plan) = stateStore!!.powerUpTrain(request, characterId!!, policy, inputs, powerUpPolicy(), actor,
+                    "Native opcode3713 Power Up train")
+                log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                    "target_uid" to plan["target_uid"], "way" to plan["way"], "count" to plan["count"], "pending" to plan["pending"],
+                    "rng_seed" to plan["rng_seed"], "stones" to plan.data.obj("item_change")["quantity"])
+                return HeroPowerUp.trainPackets(plan) + dailyCounters("power_up_train", jobj("count" to plan["count"]))
+            }
+            if (opcode == 3721) {
+                val request = HeroPowerUp.decodeSaveRequest(payload)
+                val (result, plan) = stateStore!!.powerUpSave(request, characterId!!, policy, inputs, actor, "Native opcode3721 Power Up save")
+                log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                    "target_uid" to plan["target_uid"], "deltas" to plan["deltas"], "dev_after" to plan["dev_after"],
+                    "train_revision" to plan["train_revision"])
+                return HeroPowerUp.savePackets(plan)
+            }
+            if (opcode == 2497) {
+                val request = GodSkills.decodeUpgradeRequest(payload)
+                val (result, plan) = stateStore!!.astralUpgrade(request, characterId!!, policy, inputs, actor, "Native opcode2497 Astral Power press")
+                log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                    "hero_uid" to plan["hero_uid"], "skill_before" to plan["skill_before"], "skill_after" to plan["skill_after"],
+                    "progress_after" to plan["progress_after"], "presses" to plan["presses"], "stopped" to plan["stopped"])
+                return GodSkills.upgradePackets(plan)
+            }
+            val request = HeroAscension.decodeRequest(payload)
+            val (result, plan) = stateStore!!.ascendHero(request, characterId!!, policy, inputs, actor, "Native opcode3907 Hero Ascension",
+                materialPolicy = ascensionPolicy())
+            log("transaction_committed", "action" to kind, "character_id" to characterId, "revision" to result["revision"],
+                "target_uid" to plan["target_uid"], "awaken_after" to plan["awaken_after"], "stats_after" to plan["stats_after"],
+                "gold_cost" to plan["gold_cost"])
+            return HeroAscension.ascensionPackets(plan, TransactionPackets.goldPropertyPayload(plan.data.int("gold_after")))
+        } catch (e: IllegalArgumentException) {
+            val code = heroRejectionCode(e)
+            log("rejected_$kind", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("hero_card_internal_error", "character_id" to characterId, "kind" to kind, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
     }
 
     /** The initialization query set and the fall-through (the reference's legacy handler, game service). */
