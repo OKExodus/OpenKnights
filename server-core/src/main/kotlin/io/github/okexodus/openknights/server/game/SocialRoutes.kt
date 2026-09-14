@@ -109,27 +109,95 @@ object SocialRoutes {
         }
     }
 
-    /** One social request (only the initialization queries are ported yet). */
-    fun dispatch(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long): List<Frame> {
-        val role = roleOf(current)
-        when (opcode) {
-            Guild.C_MY_GUILD -> {
-                guildDoc(ctx)
-                ctx.people(current)
-                return listOf(myGuildFrame(ctx, role, now, current))
-            }
-            Friends.C_PENDING -> {
-                val people = ctx.people(current)
-                val presence = ctx.presence()
-                return listOf(Friends.S_PENDING to Friends.pendingPayload(ctx.document("social")!!, role, people, presence, now, ctx.clockOffset))
-            }
-            Mail.C_LIST -> {
-                val claimed = claimedMail(current)
-                return listOf(Mail.S_LIST to Mail.listPayload(ctx.document("mail")!!, role, now, claimed, ctx.clockOffset))
-            }
-        }
-        throw NotPorted("social request (opcode $opcode)")
+    val GUILD_QUERIES = listOf(Guild.C_MY_GUILD, Guild.C_MEMBERS, Guild.C_GUILD_LIST, Guild.C_APPLICANTS, Guild.C_POSITIONS,
+        Guild.C_TECH_LIST, Guild.C_ACTIVITY, Guild.C_BOSS, Guild.C_OTHER, Guild.C_TASKS)
+    val GUILD_WORLD = listOf(Guild.C_APPLY, Guild.C_APPROVE, Guild.C_KICK, Guild.C_POSITION_APPLY, Guild.C_TRANSFER, Guild.C_QUIT,
+        Guild.C_TECH_UP, Guild.C_NOTICE, Guild.C_WAR_SIGN, Guild.C_GUILD_MAIL)
+    val GUILD_CHARACTER = listOf(Guild.C_CREATE, Guild.C_DONATE, Guild.C_WAGE, Guild.C_EMBLEM, Guild.C_RENAME, Guild.C_TASK_DONATE,
+        Guild.C_TASK_REFRESH, Guild.C_TASK_ACCEPT, Guild.C_TASK_CLAIM)
+    /** The Guild BOSS clear-CD / reset need a fought boss — nobody can fight it offline, so it is never on cooldown. */
+    val GUILD_REFUSED: Map<Int, Int> = linkedMapOf(Guild.C_WAR_FIELD to Guild.ERR_WAR_CLOSED, Guild.C_BOSS_CD to Guild.ERR_BOSS_ALIVE,
+        Guild.C_BOSS_RESET to Guild.ERR_BOSS_ALIVE)
+    val FRIEND_OPCODES = listOf(Friends.C_PENDING, Friends.C_RECOMMEND, Friends.C_ADD, Friends.C_ADD_NAME, Friends.C_REPLY, Friends.C_REMOVE,
+        Friends.C_PRAISE, Friends.C_INFO)
+    val MAIL_OPCODES = listOf(Mail.C_LIST, Mail.C_READ, Mail.C_CLAIM, Mail.C_DELETE, Mail.C_WRITE, Mail.C_BLACKLIST, Mail.C_BLOCK, Mail.C_UNBLOCK)
+    val OPCODES: List<Int> = GUILD_QUERIES + GUILD_WORLD + GUILD_CHARACTER + GUILD_REFUSED.keys + FRIEND_OPCODES + MAIL_OPCODES + Chat.C_CHAT
+
+    /** `commit(action, planner)`: one audited acquisition transaction of the requesting character; returns its plan. */
+    fun interface Commit {
+        operator fun invoke(action: String, planner: (Owned, StateStore.Current) -> Plan): Plan
     }
+
+    /** One social request (the game session's route): `dispatch`. */
+    fun dispatch(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long,
+                 servedTime: Long, ownerKey: String, online: List<Long> = emptyList()): List<Frame> {
+        GUILD_REFUSED[opcode]?.let { throw Acquisition.Rejected("Not available offline", it) }
+        if (opcode in GUILD_QUERIES || (opcode == Guild.C_TASK_REFRESH && payload.contentEquals(byteArrayOf(1)))) {
+            if (opcode == Guild.C_TASK_REFRESH) return listOf(taskFrame(current, ctx, now, ownerKey))
+            return query(opcode, payload, current, ctx, now, ownerKey)
+        }
+        if (opcode in GUILD_WORLD) return guildWorld(opcode, payload, current, ctx, now)
+        if (opcode in GUILD_CHARACTER) return guildCharacter(opcode, payload, current, ctx, commit, now, servedTime, ownerKey)
+        if (opcode in FRIEND_OPCODES) return friends(opcode, payload, current, ctx, commit, now)
+        if (opcode in MAIL_OPCODES) return mail(opcode, payload, current, ctx, commit, now)
+        if (opcode == Chat.C_CHAT) return chat(payload, current, ctx, now, online)
+        throw Acquisition.Rejected("Not a social request")
+    }
+
+    // --- guild (agent A: query, taskFrame, guildWorld, guildCharacter and their helpers) ------------------------------
+
+    /** The guild task list frame (`task_frame`). */
+    fun taskFrame(current: StateStore.Current, ctx: SocialContext, now: Long, ownerKey: String): Frame =
+        throw NotPorted("social_routes.task_frame")
+
+    /** The guild queries (`query`). */
+    fun query(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long, ownerKey: String): List<Frame> {
+        val role = roleOf(current)
+        if (opcode == Guild.C_MY_GUILD) {
+            guildDoc(ctx)
+            ctx.people(current)
+            return listOf(myGuildFrame(ctx, role, now, current))
+        }
+        throw NotPorted("social_routes.query (opcode $opcode)")
+    }
+
+    /** The world-only guild actions (`guild_world`). */
+    fun guildWorld(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long): List<Frame> =
+        throw NotPorted("social_routes.guild_world (opcode $opcode)")
+
+    /** The guild actions that change the character (`guild_character`). */
+    fun guildCharacter(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long,
+                       servedTime: Long, ownerKey: String): List<Frame> =
+        throw NotPorted("social_routes.guild_character (opcode $opcode)")
+
+    // --- friends, mail, chat (agent B: friends, mail, chat and their helpers) -------------------------------------------
+
+    /** The friend requests (`friends`). */
+    fun friends(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long): List<Frame> {
+        val role = roleOf(current)
+        if (opcode == Friends.C_PENDING) {
+            val people = ctx.people(current)
+            val presence = ctx.presence()
+            return listOf(Friends.S_PENDING to Friends.pendingPayload(ctx.document("social")!!, role, people, presence, now, ctx.clockOffset))
+        }
+        throw NotPorted("social_routes.friends (opcode $opcode)")
+    }
+
+    /** The mail requests (`mail`). */
+    fun mail(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long): List<Frame> {
+        val role = roleOf(current)
+        if (opcode == Mail.C_LIST) {
+            val claimed = claimedMail(current)
+            return listOf(Mail.S_LIST to Mail.listPayload(ctx.document("mail")!!, role, now, claimed, ctx.clockOffset))
+        }
+        throw NotPorted("social_routes.mail (opcode $opcode)")
+    }
+
+    /** C449 a chat line (`chat`). */
+    fun chat(payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long, onlineRoles: List<Long>): List<Frame> =
+        throw NotPorted("social_routes.chat")
+
+    // --- shared helpers -------------------------------------------------------------------------------------------------
 
     private fun claimedMail(current: StateStore.Current): List<Long> {
         val ledger = current.document("mail_state")

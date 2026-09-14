@@ -189,4 +189,10 @@ object Arena {
         }
         return w.bytes()
     }
+
+    // --- the Arena daily reward (C423) ------------------------------------------------------------------------------
+
+    /** C423 the daily ranking reward (`plan_reward`); `document` = the stored `arena_state` or null. */
+    fun planReward(owned: Owned, inputs: DailyInputs, document: JValue?, rank: Long, now: Long,
+                   rows: List<Pair<Long, Participant>>): Plan = throw NotPorted("arena.plan_reward")
 }

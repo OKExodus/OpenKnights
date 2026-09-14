@@ -25,6 +25,8 @@ object Friends {
     const val C_INFO = 385
     const val C_SPAR = 389
     const val S_PENDING = 384
+    const val S_ADD_RESULT = 388
+    const val S_REPLY_RESULT = 390
     const val S_ONLINE = 398
     const val S_OFFLINE = 400
     const val ROLE_MAX_FRIEND = 25

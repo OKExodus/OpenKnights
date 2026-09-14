@@ -4,7 +4,10 @@ import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.Json
 import io.github.okexodus.openknights.exact.PyTime
+import io.github.okexodus.openknights.exact.asLong
 import io.github.okexodus.openknights.exact.asObj
+import io.github.okexodus.openknights.exact.asStr
+import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jobj
 import java.nio.file.Files
 import java.nio.file.Path
@@ -27,6 +30,81 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
         /** The wire-id range reserved for bots (plan §5b; `world_participants.BOT_ID_*`). */
         const val BOT_ID_FIRST = 95_000_000L
         const val BOT_ID_LAST = 95_999_999L
+
+        // --- rank list (C705 → S736) -------------------------------------------------------------------------------
+
+        const val RANK_REQUEST_OPCODE = 705
+        const val RANK_REPLY_OPCODE = 736
+        /** Observed: 8 entries per page, at most 100 ranks listed. */
+        const val RANK_PAGE_SIZE = 8
+        const val RANK_MAX_LISTED = 100
+        const val RANK_LEVEL = 1L
+        const val RANK_POWER = 6L
+        const val RANK_PRESTIGE = 4L
+
+        /** Rank inputs of a world participant, characters and bots alike (`participant_rank_row`). */
+        class RankRow(val roleId: Long, val nameRaw: ByteArray, val level: Long, val reputation: Long, val created: String,
+                      val power: java.math.BigInteger?)
+
+        fun participantRankRow(p: io.github.okexodus.openknights.server.game.WorldParticipants.Participant): RankRow =
+            RankRow(p.participantId, p.nameRaw, p.level, p.reputation, p.created, p.power)
+
+        /** `u8 type, u32 page` (`decode_rank_request`). */
+        fun decodeRankRequest(payload: ByteArray): Pair<Long, Long> {
+            if (payload.size != 5) throw io.github.okexodus.openknights.server.game.PyValues.ValueError("Rank request must be u8 type + u32 page")
+            val r = io.github.okexodus.openknights.protocol.WireReader(payload)
+            return r.u8().toLong() to r.u32()
+        }
+
+        /** The requester's wire id from its save (`character_rank_row`: role 0; roles 2 / 3 / 12 are read as well). */
+        fun characterRankRoleId(current: StateStore.Current): Long {
+            val role = LinkedHashMap<Long, JObj>()
+            for (f in current.state.arr("role_properties")) role[(f as JObj).long("id")] = f.obj("value")
+            fun key(k: Any): Nothing = throw io.github.okexodus.openknights.server.game.PyDocs.KeyError(k)
+            val id = (role[0L] ?: key(0))["bits"] ?: key("bits")
+            val name = (role[2L] ?: key(2))["raw_hex"] ?: key("raw_hex")
+            name.asStr.hexBytes()
+            (role[3L] ?: key(3))["bits"] ?: key("bits")
+            return id.asLong
+        }
+
+        class RankEntry(val rank: Long, val roleId: Long, val nameRaw: ByteArray, val level: Long, val valueA: java.math.BigInteger, val valueB: Long)
+        class RankReply(val type: Long, val totalPages: Long, val page: Long, val entries: List<RankEntry>, val myRank: Long)
+
+        /**
+         * One S736 page from the world's participants (`build_rank_reply`, policy for order / tie-breaks): Level (type 1)
+         * level, Power, creation; Power (type 6, only when every row has a Power) Power, level, creation; prestige
+         * (type 4) Reputation, level, creation; other types an empty page. value_a = Power, value_b = Reputation.
+         */
+        fun buildRankReply(type: Long, requestPage: Long, rows: List<RankRow>, requesterRoleId: Long): RankReply {
+            val page = maxOf(1L, requestPage)
+            fun power(r: RankRow): java.math.BigInteger = r.power ?: java.math.BigInteger.ZERO
+            val byCreated = Comparator<RankRow> { a, b -> Json.CodePointOrder.compare(a.created, b.created) }
+            var listed: List<RankRow> = when {
+                type == RANK_LEVEL -> rows.sortedWith(compareByDescending<RankRow> { it.level }.thenByDescending { power(it) }.then(byCreated))
+                type == RANK_POWER && rows.isNotEmpty() && rows.all { it.power != null } ->
+                    rows.sortedWith(compareByDescending<RankRow> { power(it) }.thenByDescending { it.level }.then(byCreated))
+                type == RANK_PRESTIGE -> rows.sortedWith(compareByDescending<RankRow> { it.reputation }.thenByDescending { it.level }.then(byCreated))
+                else -> emptyList()
+            }
+            listed = listed.take(RANK_MAX_LISTED)
+            val totalPages = maxOf(1L, Math.floorDiv(listed.size.toLong() + RANK_PAGE_SIZE - 1, RANK_PAGE_SIZE.toLong()))
+            val start = (page - 1) * RANK_PAGE_SIZE
+            val chunk = if (start >= listed.size) emptyList() else listed.subList(start.toInt(), minOf(listed.size.toLong(), page * RANK_PAGE_SIZE).toInt())
+            val entries = chunk.mapIndexed { i, r -> RankEntry(start + i + 1, r.roleId, r.nameRaw, r.level, power(r), r.reputation) }
+            val mine = listed.indexOfFirst { it.roleId == requesterRoleId }
+            return RankReply(type, totalPages, page, entries, if (mine >= 0) mine + 1L else 0L)
+        }
+
+        /** S736 `u8 type, u32 pages, u32 page, u8 n, n × (u32 rank, u32 role, cstr name, u32 level, u64 a, u64 b), u32 my rank`. */
+        fun encodeRankReply(reply: RankReply): ByteArray {
+            val w = io.github.okexodus.openknights.protocol.WireWriter().u8(reply.type.toInt()).u32(reply.totalPages).u32(reply.page).u8(reply.entries.size)
+            for (e in reply.entries) {
+                if (e.nameRaw.contains(0.toByte())) throw io.github.okexodus.openknights.server.game.PyValues.ValueError("Rank name must not contain NUL")
+                w.u32(e.rank).u32(e.roleId).raw(e.nameRaw).raw(byteArrayOf(0)).u32(e.level).number('Q', e.valueA).number('Q', e.valueB)
+            }
+            return w.u32(reply.myRank).bytes()
+        }
 
         /** The world-level documents born with the world (`WORLD_DOCUMENTS`), in the reference's order. */
         val WORLD_DOCUMENTS: List<Pair<String, JObj>> get() = listOf(

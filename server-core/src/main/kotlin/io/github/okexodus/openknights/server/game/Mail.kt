@@ -17,6 +17,13 @@ import io.github.okexodus.openknights.protocol.WireWriter
  */
 object Mail {
     const val C_LIST = 257
+    const val C_READ = 195
+    const val C_CLAIM = 197
+    const val C_DELETE = 199
+    const val C_WRITE = 201
+    const val C_BLACKLIST = 203
+    const val C_BLOCK = 205
+    const val C_UNBLOCK = 207
     const val S_LIST = 256
     const val S_ADD = 258
     const val SYSTEM_REWARD = 0L
@@ -132,6 +139,7 @@ object Mail {
 
 /** Chat (`chat.py`), the part entering the game reads: the history replayed after the mail list. */
 object Chat {
+    const val C_CHAT = 449
     const val S_CHAT = 480
     const val PRIVATE = 2L
 
