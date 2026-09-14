@@ -119,6 +119,15 @@ class Service(
     /** The verified client lineup rules (`snapshot.secondary_rules`): loaded by the first C3779 of the process, then kept. */
     var secondaryRules: io.github.okexodus.openknights.server.game.SecondaryTeam.NativeLineupRules? = null
 
+    /**
+     * The gift-code tables (`snapshot.gift_code_tables`): the release data's `gift-codes.json` (salted digests only).
+     * Loaded at the first redeem.
+     */
+    val giftCodeTables: List<io.github.okexodus.openknights.server.game.GiftCodes.Table> by lazy {
+        releaseData?.let { listOf(io.github.okexodus.openknights.server.game.GiftCodes.loadTable(it.document("gift-codes.json"), it.label("gift-codes.json"))) }
+            ?: emptyList()
+    }
+
     /** The universal Power of a character save (`snapshot.power_of` = `battle_stats.participant_power(snapshot)`). */
     var powerOf: ((io.github.okexodus.openknights.server.store.StateStore.Current) -> java.math.BigInteger?)? = null
 

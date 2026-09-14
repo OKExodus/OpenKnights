@@ -39,6 +39,7 @@ import io.github.okexodus.openknights.server.game.Achievements
 import io.github.okexodus.openknights.server.game.AltTeam
 import io.github.okexodus.openknights.server.game.DailyHooks
 import io.github.okexodus.openknights.server.game.EquipEvolve
+import io.github.okexodus.openknights.server.game.GiftCodes
 import io.github.okexodus.openknights.server.game.Claims
 import io.github.okexodus.openknights.server.game.DailyRoutes
 import io.github.okexodus.openknights.server.game.Goals
@@ -601,7 +602,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             current = stateStore!!.read()
             now = service.clock.now()
             val stored = current.document(StateStore.SUMMON_STATE)
-            val document = if (Py.truthy(stored)) stored as JObj else Summon.initialDocument(current, now)
+            val document = Summon.withDefaultTimers(if (Py.truthy(stored)) stored as JObj else Summon.initialDocument(current, now), current, now)
             remaining = Summon.freeCdRemaining(document, now)
         } catch (e: Exception) {      // a login must not fail on this side system
             guard(e)
@@ -826,9 +827,9 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         if (opcode == 2083) return leaderEvolutionRoute(payload)
         if (opcode == 91 || opcode == 93 || opcode == 2641) return itemFortifyRoute(opcode, payload)
         if (opcode == 2561) return changeJobRoute(payload)
-        if (opcode == 1569) group(opcode, "rename")
-        if (opcode == 1537) group(opcode, "gift code")
-        if (opcode == 643 || opcode == 645) group(opcode, "roulette rank")
+        if (opcode == 1569) return renameRoute(payload)
+        if (opcode == 1537) return giftCodeRoute(payload)
+        if (opcode == 643 || opcode == 645) return rouletteRankRoute(opcode, payload)
         if (opcode in setOf(2049, 2629, 2593, 2817)) return equipEvolveRoute(opcode, payload)
         if (opcode in Routes.FORMATION) return formationRoute(opcode, payload)
         if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
@@ -1015,12 +1016,12 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
      * Rebirth Evolve C101, Rebirth Fortify C99 and Reborn C95 are ported; the other opcodes wait for their group.
      */
     private fun acquisitionRoute(opcode: Int, payload: ByteArray): List<Frame> {
-        if (opcode !in setOf(99, 101, 95)) group(opcode, "acquisition")
         val inputs = service.inputs
         val rngPolicy = service.acquisitionPolicy      // `_acquisition_policy()`: bound to every character in release
         val catalog = service.acquisitionCatalog
         var action = AcquisitionRoutes.ACTIONS[opcode]
-        val request: JObj
+        var servedJewels: Pair<ByteArray?, String?> = null to null
+        val request: io.github.okexodus.openknights.exact.JValue
         val result: JObj
         val plan: io.github.okexodus.openknights.server.game.Plan
         try {
@@ -1028,22 +1029,36 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Acquisition needs a store-backed character with a deployment policy")
             if (opcode in AcquisitionRoutes.CATALOG_OPCODES && catalog == null) throw Acquisition.Rejected("Shops need the captured server catalog (--acquisition-catalog)")
             val now = service.clock.now()
-            if (AcquisitionRoutes.isReadOnly(opcode, payload)) group(opcode, "acquisition query")   // buy-back / fuse luck / shop / Lucky info
-            if (opcode == 75) group(opcode, "guild shop gate")
+            if (AcquisitionRoutes.isReadOnly(opcode, payload)) {
+                // Queries: buy-back list (C89), fuse luck (C1253), shop list (C1057), Lucky Shop info (C2725 mode 0).
+                val (packets, fields) = AcquisitionRoutes.readOnlyReply(opcode, payload, stateStore!!.read(), inputs, catalog, rngPolicy, now)
+                log("acquisition_query_served", "character_id" to characterId, "opcode" to opcode, *fields.map { (k, v) -> k to v }.toTypedArray())
+                return packets
+            }
+            if (opcode == 75) guildShopGate(payload, catalog!!)   // Guild Shop goods: world guild membership + guild level
             val routed = AcquisitionRoutes.plannerFor(opcode, payload, inputs, catalog, rngPolicy, policy, now) { current -> servedTime(current, now) }
             action = routed.action
             request = routed.request
-            if (opcode in setOf(2633, 2631, 73)) group(opcode, "served jewel list")   // they touch the 3072 list
+            if (opcode in setOf(2633, 2631, 73)) servedJewels = servedJewelList()   // jewel refine / Combine / a jewelry box touch the 3072 list
             val extra = jobj("opcode" to opcode, "request" to request)
             if (rngPolicy != null) extra["acquisition_policy"] = service.acquisitionPolicyLabel ?: io.github.okexodus.openknights.exact.JNull
             val committed = stateStore!!.acquisitionTransaction(routed.action, characterId!!, policy, inputs, "authenticated-client",
-                "Native opcode$opcode acquisition", detailExtra = extra, planner = routed.planner)
+                "Native opcode$opcode acquisition", detailExtra = extra, servedJewelList = servedJewels.first,
+                servedJewelSource = servedJewels.second, planner = routed.planner)
             result = committed.first
             plan = committed.second
         } catch (e: IllegalArgumentException) {
             val code = ItemFortify.codeOf(e)
             log("rejected_acquisition", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
-            if (opcode == 1125 && stateStore != null) group(opcode, "VIP quest refusal")   // the unchanged S1196 follows the S6
+            if (opcode == 1125 && stateStore != null) {
+                // The client removed the quest icon when it sent C1125; the unchanged S1196 brings it back.
+                try {
+                    val (row, flag) = VipQuest.tail(stateStore!!.read().state)
+                    return listOf(6 to TransactionPackets.errorPayload(code), VipQuest.S_STATE to VipQuest.statePayload(row, flag != null && flag != 0L))
+                } catch (x: Exception) {
+                    guard(x)
+                }
+            }
             return listOf(6 to TransactionPackets.errorPayload(code))
         } catch (e: Exception) {      // a local defect must not drop the authenticated session
             guard(e)
@@ -1053,9 +1068,263 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
             "request" to request, "reply_opcodes" to plan.packets.map { it.first }, "evidence_class" to plan["evidence_class"],
             "heroes_added" to result["heroes_added"], "items_created" to result["items_created"])
-        val packets = plan.packets.toList() + dailyCounters(action!!, plan.data, plan.packets)
-        if (action == "acquire_summon" || action == "acquire_roulette") group(opcode, "summon report / roulette rank")
+        var packets = plan.packets.toList() + dailyCounters(action!!, plan.data, plan.packets)
+        if (action == "acquire_summon") packets = packets + summonReport(plan)
+        if (action == "acquire_roulette") rouletteRecord()            // the Fate Store ranking (roulette_rank.py)
         return packets
+    }
+
+    /**
+     * The free top-up pushed by the loopback gateway (`recharge`, docs/ACQUISITION_CONTRACT.md section 10): runs like a
+     * game request of this session; returns (packets, plan).
+     */
+    fun recharge(body: io.github.okexodus.openknights.exact.JValue): Pair<List<Frame>, io.github.okexodus.openknights.server.game.Plan> {
+        val request = io.github.okexodus.openknights.server.game.Recharge.decodeRequest(body)
+        val catalog = service.acquisitionCatalog
+        val inputs = service.inputs
+        val policy = deploymentPolicy()
+        if (kind != "game" || closed || !queriesSent || characterId == null) throw Acquisition.Rejected("No initialized game session for this login")
+        if (catalog == null || policy == null) throw Acquisition.Rejected("Recharge needs the captured catalog and a store-backed character")
+        stateStore = service.auth.resolveCharacter(token!!, characterId!!)
+        val now = service.clock.now()
+        val (result, plan) = stateStore!!.acquisitionTransaction("acquire_recharge", characterId!!, policy, inputs, "authenticated-client",
+            "Free top-up (operator policy 2026-09-11)", detailExtra = jobj("request" to request)) { owned, current ->
+            io.github.okexodus.openknights.server.game.Recharge.planRecharge(request, owned, inputs, catalog, current.document("recharge_ledger"),
+                servedTime(current, now), now, current.document("month_cards"))
+        }
+        log("transaction_committed", "action" to "acquire_recharge", "character_id" to characterId, "revision" to result["revision"],
+            "goods_id" to plan["goods_id"], "diamonds" to plan["diamonds"],
+            "vip_level" to listOf(plan["vip_level_before"], plan["vip_level_after"]),
+            "activities_updated" to plan["activities_updated"], "reply_opcodes" to plan.packets.map { it.first })
+        return plan.packets to plan
+    }
+
+    /** The gift code C1537 (`_gift_code_route`, gift_codes.py): grants, then S1664 01 + Reward; unknown / used codes answer S1664. */
+    private fun giftCodeRoute(payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Gift codes need a store-backed character with a deployment policy")
+            val now = service.clock.now()
+            val tables = service.giftCodeTables
+            try {
+                val committed = stateStore!!.acquisitionTransaction("gift_code", characterId!!, policy, inputs, "authenticated-client",
+                    "Native opcode1537 gift code", detailExtra = jobj("opcode" to 1537, "contract" to "server/gift_codes.py")) { owned, current ->
+                    GiftCodes.planRedeem(payload, owned, current, inputs, Acquisition.seedFor(payload, current.revision, "gift_code"), now, tables)
+                }
+                result = committed.first
+                plan = committed.second
+            } catch (unchanged: GiftCodes.Unchanged) {
+                log("gift_code_refused", "character_id" to characterId, "reason" to unchanged.message)
+                return unchanged.packets
+            }
+        } catch (e: IllegalArgumentException) {
+            val code = (e as? Acquisition.Rejected)?.code ?: 102
+            log("rejected_gift_code", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {
+            guard(e)
+            log("gift_code_internal_error", "character_id" to characterId, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "gift_code", "character_id" to characterId, "revision" to result["revision"],
+            "code_hash" to (plan["code_hash"] as io.github.okexodus.openknights.exact.JStr).value.take(12), "items" to plan.data.arr("grants").size)
+        return plan.packets.toList()
+    }
+
+    // --- items, summons, compose ------------------------------------------------------------------------------------------
+
+    /**
+     * After a summon: every 5★+ hero joins the world's Summon Report; S672 n = 1 + the S768 marquee per hero, the same
+     * frames pushed to every other online player (`_summon_report`). A world write after the commit; never fails.
+     */
+    private fun summonReport(plan: io.github.okexodus.openknights.server.game.Plan): List<Frame> {
+        val reports = io.github.okexodus.openknights.server.game.SummonReports
+        val inputs = service.inputs
+        return try {
+            val shown = plan["shown"]
+            val drawn = if (io.github.okexodus.openknights.server.game.Py.truthy(shown)) {
+                (shown as io.github.okexodus.openknights.exact.JArr).map { (it as io.github.okexodus.openknights.exact.JInt).value.toLong() }
+            } else emptyList()
+            val heroes = reports.qualifying(drawn, inputs)
+            if (heroes.isEmpty()) return emptyList()
+            val current = stateStore!!.read()
+            val role = SocialRoutes.roleOf(current)
+            val name = current.state.arr("role_properties").map { it as JObj }.firstOrNull { it.long("id") == 2L }
+                ?.let { (it.obj("value")["text"] ?: io.github.okexodus.openknights.exact.JStr("")) as io.github.okexodus.openknights.exact.JStr }?.value ?: ""
+            // the summon's own clock reading (plan now_epoch), not a second read after the commit (operator 2026-09-14)
+            val entries = reports.record(service.world, role, name.toByteArray(Charsets.UTF_8), heroes, plan.data.long("now_epoch"))
+            val ctx = socialContext()
+            for (other in service.onlineRoles()) {
+                if (other != role) ctx.push(other) { offset -> reports.summonFrames(entries, inputs, offset) }
+            }
+            log("summon_report_recorded", "character_id" to characterId, "role" to role, "heroes" to heroes)
+            reports.summonFrames(entries, inputs, ctx.clockOffset)
+        } catch (e: Exception) {
+            guard(e)
+            log("summon_report_error", "character_id" to characterId, "error" to described(e))
+            emptyList()
+        }
+    }
+
+    // --- shops, warehouse, claims, Fate Store ranking, rename --------------------------------------------------------------
+
+    /** C75 of a Guild Shop commodity: only a member whose guild reached the unlock level may buy (`guild_shop_gate`). */
+    private fun guildShopGate(payload: ByteArray, catalog: JObj) {
+        val record = catalog.obj("commodities")[io.github.okexodus.openknights.server.game.PyDocs.str(Shops.decodeBuyRequest(payload)["commodity"])] as? JObj
+        SocialRoutes.guildShopGate(stateStore!!.read(), socialContext(), record)
+    }
+
+    /** The Fate Store rank tab this session last listed (the reference's `self.roulette_tab`; C645 needs tab 2). */
+    private var rouletteTab: Int? = null
+
+    /** The character's own Fate Voucher counters into the world ranking (`_roulette_record`); never fails. */
+    private fun rouletteRecord(current: StateStore.Current? = null): JObj? {
+        val world = service.world
+        return try {
+            val cur = current ?: stateStore!!.read()
+            val roulette = io.github.okexodus.openknights.server.game.PyDocs.get(cur.state.obj("subsystems").obj("game_activities"), "roulette")
+            if (world == null || roulette == null) return null
+            val now = service.clock.now()
+            val today = Shops.dayOf(now)
+            val yesterday = Shops.dayOf(now - 86400)
+            val values = (roulette as JObj).arr("wire_values")
+            // a world revision only when the counters changed (`record_change`)
+            world.updateDocument("roulette_rank", "local-service", "roulette_score") { d ->
+                io.github.okexodus.openknights.server.game.RouletteRank.recordChange(d, SocialRoutes.roleOf(cur), values[3], values[4], today, yesterday)
+            }
+            world.document("roulette_rank")!!.second
+        } catch (e: Exception) {
+            guard(e)
+            log("roulette_rank_error", "character_id" to characterId, "error" to described(e))
+            null
+        }
+    }
+
+    /** C643 rank lists (S706) and C645 the Yesterday rank reward (S708) (`_roulette_rank_route`). */
+    private fun rouletteRankRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
+            val current = stateStore!!.read()
+            val role = SocialRoutes.roleOf(current)
+            val document = rouletteRecord(current)?.takeIf { Py.truthy(it) } ?: io.github.okexodus.openknights.server.game.RouletteRank.emptyDocument()
+            val now = service.clock.now()
+            val today = Shops.dayOf(now)
+            val yesterday = Shops.dayOf(now - 86400)
+            val threshold = inputs.prop(io.github.okexodus.openknights.server.game.RouletteRank.THRESHOLD_PROPERTY, io.github.okexodus.openknights.server.game.RouletteRank.THRESHOLD_DEFAULT)
+            val claims = current.document("roulette_claims")?.takeIf { Py.truthy(it) } as JObj?
+            val claimedDays = claims?.get("claimed")?.takeIf { Py.truthy(it) } as JObj?
+            val claimed = claimedDays?.get(yesterday)
+            if (opcode == io.github.okexodus.openknights.server.game.RouletteRank.C_RANK) {
+                if (payload.size != 1 || payload[0].toInt() !in listOf(io.github.okexodus.openknights.server.game.RouletteRank.TODAY, io.github.okexodus.openknights.server.game.RouletteRank.YESTERDAY, io.github.okexodus.openknights.server.game.RouletteRank.TOTAL)) {
+                    throw Acquisition.Rejected("C643 carries one tab byte 1-3")
+                }
+                val tab = payload[0].toInt()
+                val rows = io.github.okexodus.openknights.server.game.RouletteRank.listing(document, tab, today, yesterday, threshold)
+                val flags = LinkedHashMap<Long, Int>()
+                if (tab == io.github.okexodus.openknights.server.game.RouletteRank.YESTERDAY) flags[role] = io.github.okexodus.openknights.server.game.RouletteRank.ownFlag(rows, role, claimed).first
+                val names = LinkedHashMap<Long, ByteArray>()
+                for (p in worldContext().participants(current)) {
+                    val participant = p as WorldParticipants.Participant
+                    names[participant.participantId] = participant.nameRaw
+                }
+                val reply = listOf(io.github.okexodus.openknights.server.game.RouletteRank.S_RANK to io.github.okexodus.openknights.server.game.RouletteRank.rankPayload(tab, rows, names, flags))
+                rouletteTab = tab          // only a list actually served arms C645
+                log("roulette_rank_served", "character_id" to characterId, "tab" to tab, "rows" to rows.size)
+                return reply
+            }
+            // C645: the own Yesterday row, claimable once
+            if (payload.isNotEmpty() || rouletteTab != io.github.okexodus.openknights.server.game.RouletteRank.YESTERDAY) throw Acquisition.Rejected("The rank reward is claimed from the Yesterday list")
+            val rows = io.github.okexodus.openknights.server.game.RouletteRank.listing(document, io.github.okexodus.openknights.server.game.RouletteRank.YESTERDAY, today, yesterday, threshold)
+            val (flag, rank) = io.github.okexodus.openknights.server.game.RouletteRank.ownFlag(rows, role, claimed)
+            if (flag != 1) throw Acquisition.Rejected("No claimable rank reward")
+            val committed = stateStore!!.acquisitionTransaction("roulette_rank_claim", characterId!!, deploymentPolicy(), inputs,
+                "authenticated-client", "Native opcode645 Fate Store rank reward",
+                detailExtra = jobj("opcode" to 645, "contract" to "server/roulette_rank.py")) { owned, cur ->
+                io.github.okexodus.openknights.server.game.RouletteRank.planClaim(owned, cur.document("roulette_claims"), rank!!, yesterday)
+            }
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_roulette_rank", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {
+            guard(e)
+            log("roulette_rank_internal_error", "character_id" to characterId, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "roulette_rank_claim", "character_id" to characterId, "revision" to result["revision"],
+            "rank" to plan["rank"])
+        return plan.packets.toList()
+    }
+
+    /** C1569 Rename Card (`_rename_route`): the world name, then the save (card, role 2), then the registry. */
+    private fun renameRoute(payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val world = service.world
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        val old: String
+        val name: String
+        try {
+            if (!queriesSent) throw PyValues.ValueError("Complete initialization queries first")
+            val policy = deploymentPolicy()
+            if (policy == null || world == null) throw PyValues.ValueError("Renaming needs a store-backed character in the shared world")
+            try {
+                name = FreshProfile.normalizeName(io.github.okexodus.openknights.server.game.Rename.decodeRequest(payload))
+            } catch (e: IllegalArgumentException) {
+                log("rejected_rename", "character_id" to characterId, "reason" to e.message, "reply" to io.github.okexodus.openknights.server.game.Rename.REFUSED)
+                return io.github.okexodus.openknights.server.game.Rename.result(io.github.okexodus.openknights.server.game.Rename.REFUSED)
+            }
+            if (!io.github.okexodus.openknights.server.game.Rename.ownsCard(stateStore!!.read())) throw io.github.okexodus.openknights.server.game.Rename.NoRenameCard()     // the only 1731
+            val reason = "Native opcode1569 Rename Card"
+            val stored = world.member(characterId!!)          // the name and key the undo puts back as they are
+            try {
+                old = world.rename(characterId!!, name, "authenticated-client", reason)
+            } catch (e: FreshProfile.CreationRejected) {
+                val reply = if ("taken" in (e.message ?: "")) io.github.okexodus.openknights.server.game.Rename.TAKEN else io.github.okexodus.openknights.server.game.Rename.REFUSED
+                log("rejected_rename", "character_id" to characterId, "reason" to e.message, "reply" to reply)
+                return io.github.okexodus.openknights.server.game.Rename.result(reply)
+            }
+            try {
+                val committed = stateStore!!.acquisitionTransaction("rename_character", characterId!!, policy, inputs, "authenticated-client",
+                    reason, detailExtra = jobj("opcode" to 1569, "contract" to "server/rename.py")) { owned, _ -> io.github.okexodus.openknights.server.game.Rename.planRename(name, owned) }
+                result = committed.first
+                plan = committed.second
+            } catch (e: Exception) {
+                try {
+                    world.restoreName(characterId!!, stored!!.str("name"), stored.str("name_key"), "local-service",
+                        "Rename undone: the save refused it")
+                } catch (undo: Exception) {        // never hides the save's own error
+                    guard(undo)
+                    log("rename_undo_error", "character_id" to characterId, "error" to described(undo))
+                }
+                throw e
+            }
+            try {
+                service.auth.registry.renameCharacter(characterId!!, name, "authenticated-client", reason)
+            } catch (e: Exception) {                 // the display copy only; the save and the world already agree
+                guard(e)
+                log("rename_registry_error", "character_id" to characterId, "error" to described(e))
+            }
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_rename", "character_id" to characterId, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {
+            guard(e)
+            log("rename_internal_error", "character_id" to characterId, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to "rename_character", "character_id" to characterId, "revision" to result["revision"],
+            "name_before" to old, "name_after" to name)
+        return plan.packets.toList()
     }
 
     /** Daily requests: commit first, then the live reply order. Only the query replies are ported so far. */

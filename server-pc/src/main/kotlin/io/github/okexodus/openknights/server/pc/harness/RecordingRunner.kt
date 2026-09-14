@@ -207,9 +207,15 @@ class RecordingRunner(
                 tape.cursor = entropyRange[0]
                 val logFrom = log.events.size
                 pushes.clear()
-                val connId = (step["conn"] as? JInt)?.toInt()
-                val conn = connId?.let { conns[it] }
-                val characterBefore = conn?.session?.characterId
+                // A free top-up acts on the token's newest live game session (as the gateway picks it): its connection and
+                // character decide whether the step waits, like a frame of that connection.
+                val rechargeTarget = if (kind == "http" && step.str("path") == "/api/recharge") {
+                    val token = (step["body"] as? JObj)?.strOrNull("token")
+                    service?.liveGameSessions?.keys?.lastOrNull { it.token == token && it.characterId != null && it.queriesSent && !it.closed }
+                } else null
+                val connId = (step["conn"] as? JInt)?.toInt() ?: rechargeTarget?.let { t -> conns.entries.firstOrNull { it.value.session === t }?.key }
+                val conn = if (kind == "http") null else connId?.let { conns[it] }
+                val characterBefore = conn?.session?.characterId ?: rechargeTarget?.characterId
 
                 // --- run the step on this server ---
                 var generated: List<Pair<Int, String>> = emptyList()
@@ -365,7 +371,10 @@ class RecordingRunner(
                 }
                 val recordedPushes = step.arr("pushes").map { Triple(it.asArr[0].asInt.toInt(), it.asArr[1].asInt.toInt(), it.asArr[2].asStr) }
                 if (recordedPushes != pushes) {
-                    fail("pushed frames", "recorded" to recordedPushes.map { "${it.first}:${it.second}" }, "pushed" to pushes.map { "${it.first}:${it.second}" })
+                    val at = recordedPushes.indices.firstOrNull { it >= pushes.size || recordedPushes[it] != pushes[it] } ?: pushes.size
+                    fail("pushed frames", "recorded" to recordedPushes.map { "${it.first}:${it.second}" }, "pushed" to pushes.map { "${it.first}:${it.second}" },
+                        "first_difference" to at, "recorded_frame" to recordedPushes.getOrNull(at)?.third?.take(400),
+                        "pushed_frame" to pushes.getOrNull(at)?.third?.take(400))
                 }
                 // databases (the step's own and every one this server changed)
                 val differing = ArrayList<String>()

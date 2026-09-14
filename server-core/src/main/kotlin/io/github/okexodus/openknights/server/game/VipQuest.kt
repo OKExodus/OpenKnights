@@ -118,6 +118,45 @@ object VipQuest {
         return rowId != tailRow || claimable(row, View(current.state, current.document("recharge_ledger")), document, inputs) != ((tailByte ?: 0L) != 0L)
     }
 
+    fun decodeClaim(payload: ByteArray): JObj {
+        if (payload.size != 4) throw Acquisition.Rejected("C1125 is u32 row id")
+        return jobj("row" to io.github.okexodus.openknights.protocol.WireReader(payload).u32())
+    }
+
+    /** C1125: grants (S68 / S64), S1192 Reward, S1196 next row (policy order, after the captured C1121 order). */
+    fun planClaim(request: JObj, owned: Owned, inputs: AcquisitionInputs, current: StateStore.Current): Plan {
+        val stored = current.document("vip_quest")
+        val document = (if (Py.truthy(stored)) stored as JObj else seedDocument(current.state)).deepCopy()
+        val rowId = PyDocs.at(document, "row")
+        val row = if (Py.truthy(rowId)) inputs.vipAchieve(PyDocs.long(rowId)) else null
+        val view = View(owned.state, current.document("recharge_ledger"))
+        if (row == null || PyDocs.at(request, "row") != rowId || !claimable(row, view, document, inputs)) {
+            throw Acquisition.Rejected("This VIP quest row is not claimable", ERROR_NOT_CLAIMABLE)
+        }
+        val reward = io.github.okexodus.openknights.protocol.BattleReport.emptyReward()
+        val frames = ArrayList<Frame>()
+        for (r in row.arr("rewards")) {
+            val triple = r.asArr
+            val item = PyDocs.long(triple[1])
+            val quantity = PyDocs.long(triple[2])
+            frames.add(owned.grantItem(item, quantity))
+            reward.arr("items").add(io.github.okexodus.openknights.exact.jarr(item, quantity))
+        }
+        val ids = inputs.vipAchieve().keys.sorted()
+        val following = ids.firstOrNull { PyDocs.compare(JInt(it), rowId) > 0 } ?: 0L
+        document["row"] = JInt(following)
+        document["items"] = JObj()
+        document["supreme_tens"] = JInt(0)
+        owned.granted.clear()                 // the claim's own rewards do not count toward the next row
+        val nextRow = if (following != 0L) inputs.vipAchieve(following) else null
+        val nextClaimable = if (nextRow != null) claimable(nextRow, view, document, inputs) else false
+        setTail(owned.state, following, nextClaimable)
+        frames.add(S_CLAIM_REWARD to io.github.okexodus.openknights.protocol.BattleReport.encodeReward(reward))
+        frames.add(S_STATE to statePayload(following, nextClaimable))
+        return Plan(jobj("row" to request["row"], "next_row" to following, "next_claimable" to nextClaimable, "reward" to reward,
+            "vip_quest_after" to document, "evidence_class" to "native_use_policy_counters"), frames)
+    }
+
     @Suppress("unused")
     private val unused: JBool? = null
 }

@@ -20,7 +20,9 @@ object Guild {
     const val S_MY_GUILD = 2306
     const val S_TASKS = 2344
     const val LEADER = 100L
+    const val ERR_NOT_IN_GUILD = 52002
     const val ERR_NOT_YOURS = 52007
+    const val ERR_NO_ACCESS = 52009
     const val WAR_MATCH_HOUR = 19
     /** "No Match Found." (the result mail of a war without an opponent). */
     const val TEXT_NO_MATCH = 17106L
