@@ -75,6 +75,22 @@ object Summon {
 
     fun writeSummonState(db: SqlConnection, document: JValue) = Shops.writeState(db, "summon_state", document)
 
+    /**
+     * `with_default_timers(document, current, now)`: the summon document with a missing free timer ("2" / "3" of
+     * `free_next_epoch`) set to what a new document of this character gets ([initialDocument]) — POLICY (operator
+     * 2026-09-14), instead of a KeyError on a partial document. A complete document is returned unchanged.
+     */
+    fun withDefaultTimers(document: JObj, current: StateStore.Current, now: Long): JObj {
+        val free = document["free_next_epoch"]
+        if (free is JObj && free.containsKey("2") && free.containsKey("3")) return document
+        val defaults = initialDocument(current, now).obj("free_next_epoch")
+        val out = JObj(LinkedHashMap(document.map))
+        val timers = JObj(LinkedHashMap((free as? JObj)?.map ?: LinkedHashMap()))
+        out["free_next_epoch"] = timers
+        for (lot in listOf("2", "3")) if (lot !in timers) timers[lot] = defaults.getValue(lot)
+        return out
+    }
+
     fun freeCdRemaining(document: JObj, now: Long): List<Long> {
         val next = PyDocs.at(document, "free_next_epoch") as JObj
         return listOf("2", "3").map { maxOf(0L, PyDocs.long(PyDocs.at(next, it)) - now) }
@@ -225,14 +241,14 @@ object Summon {
         val mode = request.long("mode")
         if (lot !in OFFERED_LOTS) throw Acquisition.Rejected("This summon lot is not offered (no limited-time lot list)", Acquisition.ERROR_WRONG_TYPE)
         if (Py.truthy(request["ronghe"])) throw Acquisition.Rejected("ronghe = 1 was never captured (excluded branch)", Acquisition.ERROR_WRONG_TYPE)
-        val doc = document.deepCopy()
+        val doc = withDefaultTimers(document.deepCopy(), owned.current, now)
         val (row, kind) = pickRow(inputs, lot, mode, doc, now)
         val count = row.long("count_105")
         if (owned.state.arr("heroes").size + minOf(count, MAX_RESULT.toLong()) > 255) throw Acquisition.Rejected("Hero list would exceed its wire limit", 1016)
         val rng = PyRandom.seeded(seed)
         val time = serverTime ?: now
         val packets = ArrayList<Frame>()
-        var costFrame: Frame? = null
+        var costFrames: List<Frame> = emptyList()
         var palFrame: Frame? = null
         val cost = if (kind != "free") row.long("cost_104") else 0L
         val currency = row.long("currency_103")
@@ -242,9 +258,8 @@ object Summon {
                 palFrame = owned.roleAdd(PAL_POINTS, -cost)
             } else if (currency in VOUCHER_PROPERTY) {
                 val voucher = PyValues.parseLong(inputs.property(VOUCHER_PROPERTY.getValue(currency))!!)
-                val frames = owned.consumeTemplate(voucher, cost)
-                if (frames.size != 1) throw Acquisition.Rejected("Voucher must come from one stack", Acquisition.ERROR_NOT_ENOUGH)
-                costFrame = frames[0]
+                // Paid from every stack of the voucher (ascending uid, one S68 / S66 each) — operator 2026-09-14.
+                costFrames = owned.consumeTemplate(voucher, cost)
             } else throw Acquisition.Rejected("Unknown summon currency")
         }
         val draws = ArrayList<JObj>()
@@ -290,7 +305,7 @@ object Summon {
             drawsToGrant = kept
         } else drawsToGrant = draws
         // Frames: voucher cost first; per hero S32, S38, [Pal S128 after the first hero's S38], [book], S2850, S1184.
-        if (costFrame != null) packets.add(costFrame)
+        packets.addAll(costFrames)
         val templates = ArrayList<Long>()
         for ((index, draw) in drawsToGrant.withIndex()) {
             val (uid, groups) = owned.grantHero(draw.long("hero"))
