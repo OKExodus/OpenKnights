@@ -72,10 +72,6 @@ object SweepFeatures {
     const val ERROR_ALBUM_INCOMPLETE = 17000
     val ALBUM_SECTIONS: Map<Long, String> = mapOf(1L to "hero_collection", 2L to "equip_collection", 3L to "jewelry_collection")
 
-    // event_hall.ERROR_OFFER (text 8033000). Agent A defines this in EventHall.kt when porting `plan_great_offer`;
-    // referenced here as the literal to keep this slice compiling independently (see final answer / coordination note).
-    private const val ERROR_OFFER = 33000
-
     /**
      * The closed special-event S1760 frames served instead of S6 102 (none reachable with today's closed state): DLLJ
      * log-in gift (type 3), YXJJ Hero Pool buy / daily claim (type 6), CZFL Rebate / refresh (type 8).
@@ -555,10 +551,10 @@ object SweepFeatures {
         empty(payload, C_GREAT_OFFER)
         val document = current.document("sgxj_state")
         val view = EventHall.greatOfferView(document, inputs, now)
-            ?: throw Unchanged(listOf(EventHall.s1760(EventHall.T_GREAT_OFFER, byteArrayOf(0)), 6 to TransactionPackets.errorPayload(ERROR_OFFER)),
+            ?: throw Unchanged(listOf(EventHall.s1760(EventHall.T_GREAT_OFFER, byteArrayOf(0)), 6 to TransactionPackets.errorPayload(EventHall.ERROR_OFFER)),
                 jobj("event_type" to EventHall.T_GREAT_OFFER, "policy" to "great_offer_closed"))
         if (view.long("remaining") == 0L) {
-            throw Unchanged(listOf(EventHall.s1760(EventHall.T_GREAT_OFFER, EventHall.greatOfferBody(document, inputs, now)), 6 to TransactionPackets.errorPayload(ERROR_OFFER)),
+            throw Unchanged(listOf(EventHall.s1760(EventHall.T_GREAT_OFFER, EventHall.greatOfferBody(document, inputs, now)), 6 to TransactionPackets.errorPayload(EventHall.ERROR_OFFER)),
                 jobj("event_type" to EventHall.T_GREAT_OFFER, "policy" to "great_offer_no_attempts"))
         }
         val salt = "sgxj:${view.str("window")}:${PyDocs.str(view["spins"])}:${current.payloadSha256}"
