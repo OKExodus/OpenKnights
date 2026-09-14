@@ -135,4 +135,45 @@ class G4ShopsVectorsTest {
         }
         report("event ladder rules")
     }
+
+    private fun inputs() = DailyInputs(io.github.okexodus.openknights.gamedata.GameTables(
+        io.github.okexodus.openknights.gamedata.ApkTables(originals!!.resolve("com.enjoygame.hero2d.apk"))))
+
+    @Test
+    fun `claims rules`() {
+        assumeTrue(available("claims_rules"), "OPENKNIGHTS_DEV_DIR / OPENKNIGHTS_ORIGINALS not set: local-only test skipped")
+        val doc = vectors("claims_rules")!!
+        blobs = doc.obj("blobs")
+        val inputs = inputs()
+        for ((i, v) in doc.arr("raise_maxima").withIndex()) {
+            val vector = v.asObj
+            val block = vector.arr("block").deepCopy()
+            replay("raise_maxima $i", vector["result"], { Claims.raiseMaxima(block, vector.long("level"), inputs) }) { rec, _ ->
+                check("raise_maxima $i", compact(rec["block"]), compact(block))
+            }
+        }
+        for ((i, v) in doc.arr("buy_counts").withIndex()) {
+            val vector = v.asObj
+            replay("buy_counts $i", vector["result"], { Claims.buyCountFrames(vector.arr("block"), inputs) to Claims.buyCountFrames(vector.arr("block")) }) { rec, (a, b) ->
+                check("buy_counts $i", framesOf(rec["frames"]!!), framesOf(a))
+                check("buy_counts $i plain", framesOf(rec["plain"]!!), framesOf(b))
+            }
+        }
+        for ((i, v) in doc.arr("cards").withIndex()) {
+            val vector = v.asObj
+            val document = vector["document"]?.takeIf { it != JNull }
+            val today = vector.str("today")
+            val label = "card $i ${compact(document)} ${vector["card"]} $today"
+            replay("$label activate", vector["activate"], { Claims.activateCard(document?.deepCopy(), vector.long("card"), today) }) { rec, out ->
+                check("$label activate", compact(rec), compact(out))
+            }
+            replay("$label view", vector["view"], { Claims.cardView(document, today) }) { rec, out ->
+                check("$label view", compact(rec), compact(JObj().also { o -> out.forEach { (k, x) -> o[k] = x } }))
+            }
+            val payload = vector["payload"]
+            val actual = try { Claims.cardStatePayload(document, today).toHexString() } catch (e: NotPorted) { throw e } catch (e: Exception) { null }
+            if (isError(payload)) check("$label payload error", true, actual == null) else check("$label payload", (payload as JStr).value, actual)
+        }
+        report("claims rules")
+    }
 }
