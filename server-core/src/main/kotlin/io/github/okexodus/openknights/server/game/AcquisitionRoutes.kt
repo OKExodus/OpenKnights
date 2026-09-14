@@ -47,6 +47,21 @@ object AcquisitionRoutes {
     fun isReadOnly(opcode: Int, payload: ByteArray): Boolean =
         opcode in setOf(1057, 89, 1253) || (opcode == 2725 && payload.size >= 4 && payload.copyOfRange(payload.size - 4, payload.size).all { it == 0.toByte() })
 
+    /** The fuse luck query C1253 (`read_only_reply`, compose). */
+    @Suppress("UNUSED_PARAMETER")
+    fun fuseLuckReply(payload: ByteArray, current: StateStore.Current): Pair<List<Frame>, JObj> = throw NotPorted("fuse luck query (opcode 1253)")
+
+    /**
+     * `read_only_reply(opcode, payload, current, inputs, catalog, rng_policy, now)`: the replies of the queries that change
+     * nothing — buy-back list C89, fuse luck C1253, shop list C1057, Lucky Shop info C2725 — as (packets, log fields).
+     */
+    @Suppress("UNUSED_PARAMETER")
+    fun readOnlyReply(opcode: Int, payload: ByteArray, current: StateStore.Current, inputs: DailyInputs, catalog: JObj?, rngPolicy: JObj?,
+                      now: Long): Pair<List<Frame>, JObj> {
+        if (opcode == 1253) return fuseLuckReply(payload, current)
+        throw NotPorted("acquisition query (opcode $opcode)")
+    }
+
     /** One committed acquisition request's (action, request, planner) — the reference's `planner_for` result. */
     class Routed(val action: String, val request: JObj, val planner: (Owned, StateStore.Current) -> Plan)
 
@@ -63,6 +78,8 @@ object AcquisitionRoutes {
         val request: JObj
         val planner: (Owned, StateStore.Current) -> Plan
         when (opcode) {
+            // item use, choose box, merge, summons, hero refine, compose / refine / fuse (acquisition, summon, compose)
+            73, 4099, 803, 801, 321, 1251, 1249, 2051, 2633, 3137, 2055, 2631 -> throw NotPorted("acquisition planner (opcode $opcode)")
             101, 99 -> {
                 if (opcode == 101) {
                     request = Rebirth.decodeEvolveRequest(payload)
@@ -79,7 +96,8 @@ object AcquisitionRoutes {
                     Reborn.planReborn(request, owned, inputs, excluded)
                 }
             }
-            in ACTIONS -> throw NotPorted("acquisition planner (opcode $opcode)")
+            // shops, Lucky Shop, Fate Store spin, sell / buy-back, claims, VIP buys, VIP quest (shops, warehouse, claims)
+            75, 2725, 2723, 641, 83, 85, 87, 1121, 1025, 1027, 1029, 1669, 1125 -> throw NotPorted("acquisition planner (opcode $opcode)")
             else -> throw Acquisition.Rejected("Not an acquisition opcode")
         }
         val recorded = { owned: Owned, current: StateStore.Current ->

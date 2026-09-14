@@ -826,9 +826,9 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         if (opcode == 2083) return leaderEvolutionRoute(payload)
         if (opcode == 91 || opcode == 93 || opcode == 2641) return itemFortifyRoute(opcode, payload)
         if (opcode == 2561) return changeJobRoute(payload)
-        if (opcode == 1569) group(opcode, "rename")
-        if (opcode == 1537) group(opcode, "gift code")
-        if (opcode == 643 || opcode == 645) group(opcode, "roulette rank")
+        if (opcode == 1569) return renameRoute(payload)
+        if (opcode == 1537) return giftCodeRoute(payload)
+        if (opcode == 643 || opcode == 645) return rouletteRankRoute(opcode, payload)
         if (opcode in setOf(2049, 2629, 2593, 2817)) return equipEvolveRoute(opcode, payload)
         if (opcode in Routes.FORMATION) return formationRoute(opcode, payload)
         if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
@@ -1015,11 +1015,11 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
      * Rebirth Evolve C101, Rebirth Fortify C99 and Reborn C95 are ported; the other opcodes wait for their group.
      */
     private fun acquisitionRoute(opcode: Int, payload: ByteArray): List<Frame> {
-        if (opcode !in setOf(99, 101, 95)) group(opcode, "acquisition")
         val inputs = service.inputs
         val rngPolicy = service.acquisitionPolicy      // `_acquisition_policy()`: bound to every character in release
         val catalog = service.acquisitionCatalog
         var action = AcquisitionRoutes.ACTIONS[opcode]
+        var servedJewels: Pair<ByteArray?, String?> = null to null
         val request: JObj
         val result: JObj
         val plan: io.github.okexodus.openknights.server.game.Plan
@@ -1028,22 +1028,36 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             val policy = deploymentPolicy() ?: throw Acquisition.Rejected("Acquisition needs a store-backed character with a deployment policy")
             if (opcode in AcquisitionRoutes.CATALOG_OPCODES && catalog == null) throw Acquisition.Rejected("Shops need the captured server catalog (--acquisition-catalog)")
             val now = service.clock.now()
-            if (AcquisitionRoutes.isReadOnly(opcode, payload)) group(opcode, "acquisition query")   // buy-back / fuse luck / shop / Lucky info
-            if (opcode == 75) group(opcode, "guild shop gate")
+            if (AcquisitionRoutes.isReadOnly(opcode, payload)) {
+                // Queries: buy-back list (C89), fuse luck (C1253), shop list (C1057), Lucky Shop info (C2725 mode 0).
+                val (packets, fields) = AcquisitionRoutes.readOnlyReply(opcode, payload, stateStore!!.read(), inputs, catalog, rngPolicy, now)
+                log("acquisition_query_served", "character_id" to characterId, "opcode" to opcode, *fields.map { (k, v) -> k to v }.toTypedArray())
+                return packets
+            }
+            if (opcode == 75) guildShopGate(payload, catalog!!)   // Guild Shop goods: world guild membership + guild level
             val routed = AcquisitionRoutes.plannerFor(opcode, payload, inputs, catalog, rngPolicy, policy, now) { current -> servedTime(current, now) }
             action = routed.action
             request = routed.request
-            if (opcode in setOf(2633, 2631, 73)) group(opcode, "served jewel list")   // they touch the 3072 list
+            if (opcode in setOf(2633, 2631, 73)) servedJewels = servedJewelList()   // jewel refine / Combine / a jewelry box touch the 3072 list
             val extra = jobj("opcode" to opcode, "request" to request)
             if (rngPolicy != null) extra["acquisition_policy"] = service.acquisitionPolicyLabel ?: io.github.okexodus.openknights.exact.JNull
             val committed = stateStore!!.acquisitionTransaction(routed.action, characterId!!, policy, inputs, "authenticated-client",
-                "Native opcode$opcode acquisition", detailExtra = extra, planner = routed.planner)
+                "Native opcode$opcode acquisition", detailExtra = extra, servedJewelList = servedJewels.first,
+                servedJewelSource = servedJewels.second, planner = routed.planner)
             result = committed.first
             plan = committed.second
         } catch (e: IllegalArgumentException) {
             val code = ItemFortify.codeOf(e)
             log("rejected_acquisition", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
-            if (opcode == 1125 && stateStore != null) group(opcode, "VIP quest refusal")   // the unchanged S1196 follows the S6
+            if (opcode == 1125 && stateStore != null) {
+                // The client removed the quest icon when it sent C1125; the unchanged S1196 brings it back.
+                try {
+                    val (row, flag) = VipQuest.tail(stateStore!!.read().state)
+                    return listOf(6 to TransactionPackets.errorPayload(code), VipQuest.S_STATE to VipQuest.statePayload(row, flag != null && flag != 0L))
+                } catch (x: Exception) {
+                    guard(x)
+                }
+            }
             return listOf(6 to TransactionPackets.errorPayload(code))
         } catch (e: Exception) {      // a local defect must not drop the authenticated session
             guard(e)
@@ -1053,10 +1067,41 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
             "request" to request, "reply_opcodes" to plan.packets.map { it.first }, "evidence_class" to plan["evidence_class"],
             "heroes_added" to result["heroes_added"], "items_created" to result["items_created"])
-        val packets = plan.packets.toList() + dailyCounters(action!!, plan.data, plan.packets)
-        if (action == "acquire_summon" || action == "acquire_roulette") group(opcode, "summon report / roulette rank")
+        var packets = plan.packets.toList() + dailyCounters(action!!, plan.data, plan.packets)
+        if (action == "acquire_summon") packets = packets + summonReport(plan)
+        if (action == "acquire_roulette") rouletteRecord()            // the Fate Store ranking (roulette_rank.py)
         return packets
     }
+
+    /** The gift code C1537 (`_gift_code_route`, gift_codes.py): grants, then S1664 01 + Reward; unknown / used codes answer S1664. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun giftCodeRoute(payload: ByteArray): List<Frame> = group(1537, "gift code")
+
+    // --- items, summons, compose ------------------------------------------------------------------------------------------
+
+    /**
+     * After a summon: every 5★+ hero joins the world's Summon Report; S672 n = 1 + the S768 marquee per hero, the same
+     * frames pushed to every other online player (`_summon_report`). A world write after the commit; never fails.
+     */
+    @Suppress("UNUSED_PARAMETER")
+    private fun summonReport(plan: io.github.okexodus.openknights.server.game.Plan): List<Frame> = group(321, "summon report")
+
+    // --- shops, warehouse, claims, Fate Store ranking, rename --------------------------------------------------------------
+
+    /** C75 of a Guild Shop commodity: only a member whose guild reached the unlock level may buy (`guild_shop_gate`). */
+    @Suppress("UNUSED_PARAMETER")
+    private fun guildShopGate(payload: ByteArray, catalog: JObj): Unit = group(75, "guild shop gate")
+
+    /** The character's own Fate Voucher counters into the world ranking (`_roulette_record`); never fails. */
+    private fun rouletteRecord(): JObj? = group(641, "Fate Store ranking record")
+
+    /** C643 rank lists (S706) and C645 the Yesterday rank reward (S708) (`_roulette_rank_route`). */
+    @Suppress("UNUSED_PARAMETER")
+    private fun rouletteRankRoute(opcode: Int, payload: ByteArray): List<Frame> = group(opcode, "roulette rank")
+
+    /** C1569 Rename Card (`_rename_route`): the world name, then the save (card, role 2), then the registry. */
+    @Suppress("UNUSED_PARAMETER")
+    private fun renameRoute(payload: ByteArray): List<Frame> = group(1569, "rename")
 
     /** Daily requests: commit first, then the live reply order. Only the query replies are ported so far. */
     private fun dailyRoute(opcode: Int, payload: ByteArray): List<Frame> {
