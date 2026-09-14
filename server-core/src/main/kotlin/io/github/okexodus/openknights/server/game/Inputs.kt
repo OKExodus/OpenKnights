@@ -621,8 +621,16 @@ open class DailyInputs(tables: GameTables) : AcquisitionInputs(tables) {
 
     fun forgeExp(): Long = rows("qianchuibailian").firstOrNull()?.let { int(it, "103") } ?: 41_160
 
-    open fun gearExp(template: Long, grade: Long): JObj = throw NotPorted("pk_item_fortify_contract.gear_item_inputs")
-    open fun jewelExp(template: Long, grade: Long): JObj = throw NotPorted("pk_item_fortify_contract.jewelry_item_inputs")
+    private val gearExpCache = HashMap<Pair<Long, Long>, JObj>()
+    private val jewelExpCache = HashMap<Pair<Long, Long>, JObj>()
+
+    /** Gear cap / EXP curve / scale, the item-Fortify inputs (`pk_item_fortify_contract.gear_item_inputs`), cached. */
+    open fun gearExp(template: Long, grade: Long): JObj =
+        gearExpCache.getOrPut(template to grade) { PkItemFortifyContract.gearItemInputs(tables, template, grade) }
+
+    /** Jewelry cap / EXP curve / scale (`pk_item_fortify_contract.jewelry_item_inputs`), cached. */
+    open fun jewelExp(template: Long, grade: Long): JObj =
+        jewelExpCache.getOrPut(template to grade) { PkItemFortifyContract.jewelryItemInputs(tables, template, grade) }
 
     fun exploreRow(ident: Long): JObj? = keyed("yingxiongyuanzheng")[ident]?.let { f ->
         val boxes = listOf(201, 205, 209).map { b ->
