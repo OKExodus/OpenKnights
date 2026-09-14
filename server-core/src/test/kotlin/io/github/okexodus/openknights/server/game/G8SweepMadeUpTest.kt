@@ -3,16 +3,22 @@ package io.github.okexodus.openknights.server.game
 import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.Json
+import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.toHexString
 import io.github.okexodus.openknights.gamedata.GameTables
 import io.github.okexodus.openknights.gamedata.TableSource
+import io.github.okexodus.openknights.protocol.BattleReport
+import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.server.DeviceClock
 import io.github.okexodus.openknights.server.store.StateStore
+import org.junit.jupiter.api.AfterEach
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
+import org.junit.jupiter.api.BeforeEach
 import org.junit.jupiter.api.Test
 
 /**
@@ -31,6 +37,9 @@ class G8SweepMadeUpTest {
     private val inputs = DailyInputs(GameTables(TextTables(mapOf(
         "property.csv" to "101,102\n703,20\n",
         "viplv.csv" to "101,102,307,308,309\n1,0,20,10,10\n2,4,30,15,15\n"))))
+
+    @BeforeEach fun clock() { DeviceClock.active = DeviceClock(null, timeSource = { 0L }, offsetSource = { 0 }) }
+    @AfterEach fun resetClock() { DeviceClock.active = null }
 
     private fun framesText(frames: List<Frame>) = "[" + frames.joinToString(", ") { "[${it.first}, \"${it.second.toHexString()}\"]" } + "]"
 
@@ -141,5 +150,38 @@ class G8SweepMadeUpTest {
         // payload present -> refusal
         val e = assertThrows(Acquisition.Rejected::class.java) { SweepFeatures.planTmpVipClaim(byteArrayOf(1), current(state.deepCopy()), null, now) }
         assertEquals("C25 carries no payload" to 102, e.message to e.code)
+    }
+
+    // The gear-reward-count fix (2026-09-14): a gear good with count > 1 reports one equip per grant in the S3906 reward.
+    private fun gearState() = jobj(
+        "role_properties" to jarr(jobj("id" to 33, "value" to jobj("tag" to 4, "bits" to 1000)),
+            jobj("id" to 17, "value" to jobj("tag" to 4, "bits" to 0))),
+        "items" to JArr(), "item_capacity_values" to jarr(50, 50, 50), "equipment" to JArr(), "bag_equipment_uids" to JArr(),
+        "subsystems" to jobj("equip_collection" to jobj("count" to 0, "entries" to JArr()), "achievements" to jobj("entries" to JArr())))
+
+    private fun gearDoc(): JValue {
+        val shops = jobj()
+        for (shop in listOf(13, 14, 15)) shops[shop.toString()] = jobj(
+            "entries" to JArr((0 until 6).map { jarr(1, 0, 0) as JValue }.toMutableList()), "used" to 0)
+        return jobj("profile" to RebirthShop.PROFILE, "day" to "2026-09-14", "vip" to 0, "shops" to shops, "list_source" to jobj())
+    }
+
+    private fun buyEquipsCount(count: Int): Pair<Int, Int> {
+        // Build a shop_refresh good whose count column drives the buy; assert the reward frame and the actual grant.
+        val tables = mapOf("shop_refresh.csv" to "101,103,104,105,106,108,109,111,112,113\n1,3,4101,201,$count,91011,10,90003,0,100\n",
+            "equip.csv" to "101,102\n4101,0\n")
+        val inp = DailyInputs(GameTables(TextTables(tables)))
+        val cur = current(gearState())
+        val owned = Owned(cur, inp)
+        val plan = RebirthShop.planBuy(jobj("shop" to 13, "position" to 1), owned, gearDoc().asObj, inp, 1_000_000L, null)
+        val rewardFrame = plan.packets.first { it.first == 3906 }.second
+        val equips = BattleReport.readReward(WireReader(rewardFrame)).arr("equips")
+        return equips.size to owned.state.arr("equipment").size
+    }
+
+    @Test
+    fun `gear buy reward scales with count`() {
+        assertEquals(3 to 3, buyEquipsCount(3))   // fix: three equips reported, three granted
+        assertEquals(1 to 1, buyEquipsCount(1))   // count 1 unchanged (the captured case)
     }
 }

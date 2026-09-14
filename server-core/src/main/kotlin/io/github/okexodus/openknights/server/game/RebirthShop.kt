@@ -272,7 +272,7 @@ object RebirthShop {
                     val groups = owned.grantEquipment(goods).second
                     frames += groups.getValue("add") + groups.getValue("book")
                 }
-                reward.arr("equips").add(jarr(goods))
+                for (k in 0 until count) reward.arr("equips").add(jarr(goods))
             }
             KIND_JEWEL -> {
                 if (jewels == null) throw Acquisition.Rejected("No unequipped-jewelry list for this purchase")
