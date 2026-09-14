@@ -316,4 +316,16 @@ object Events {
         document["path"] = JStr(data.label("events.json"))
         return document
     }
+
+    /**
+     * C1121 on a defined ladder: (claimed tier index, reward pairs) or null; the rows are regenerated from the definition
+     * (the same live row rule as [ActivityProgress.claimRow], wording from the file).
+     */
+    fun claim(activity: JObj, entry: JObj): Pair<Int, JArr>? {
+        val (counter, claimed) = progressOf(activity, entry)
+        val tiers = activity.arr("tiers")
+        if ((activity["source"] as? JStr)?.value in INERT || claimed >= tiers.size || counter < tiers[claimed].asObj.int("threshold")) return null
+        entry["rows"] = rowsFor(activity, counter, claimed + 1)
+        return claimed to JArr(tiers[claimed].asObj.arr("rewards").mapTo(ArrayList<JValue>()) { JArr(it.asArr.toMutableList()) })
+    }
 }
