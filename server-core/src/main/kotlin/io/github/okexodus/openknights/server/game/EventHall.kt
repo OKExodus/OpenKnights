@@ -307,4 +307,53 @@ object EventHall {
             S_JEWEL_LIST_ADD to w.bytes()
         }
     }
+
+    // --- Event Hall action planners (group 8, owned by the Event Hall slice) -------------------------------------------
+    // Lead-written stubs with fixed signatures so the daily / sweep routes wire in without conflicts; the Event Hall
+    // slice replaces each body with the port of the matching `event_hall.py` function. Until then a NotPorted keeps the
+    // step waiting in the harness (the request's first cause moves here from the route).
+
+    /** `plan_palace_visit(owned, inputs, document, now)`: C1635 → S1762 `02`+Reward(Gold), S128 Gold, S1760 `02`. */
+    fun planPalaceVisit(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan =
+        throw NotPorted("event_hall.plan_palace_visit (C1635)")
+
+    /** `plan_palace_claim(owned, inputs, document, now)`: C1637 → Diamond / bonus items, S1762 `02`+Reward, S1760 `02`. */
+    fun planPalaceClaim(owned: Owned, inputs: DailyInputs, document: JObj, now: Long): Plan =
+        throw NotPorted("event_hall.plan_palace_claim (C1637)")
+
+    /** `decode_pie_request(payload)`: C1641 `u32 piece id`. */
+    fun decodePieRequest(payload: ByteArray): JObj =
+        throw NotPorted("event_hall.decode_pie_request (C1641)")
+
+    /** `plan_magic_pie(request, owned, document, served_time)`: C1641 → S128 AP, S128 Energy, S1762 `04`, S1760 `04`. */
+    fun planMagicPie(request: JObj, owned: Owned, document: JValue?, servedTime: Long): Plan =
+        throw NotPorted("event_hall.plan_magic_pie (C1641)")
+
+    /** `decode_combine(payload)`: C3077 `u32 recipe, u8 4, 4 × u32 equipment uid`. */
+    fun decodeCombine(payload: ByteArray): JObj =
+        throw NotPorted("event_hall.decode_combine (C3077)")
+
+    /** `plan_combine(request, owned, inputs)`: C3077 → the recipe's result equipment (equip_hecheng.csv), S3300. */
+    fun planCombine(request: JObj, owned: Owned, inputs: DailyInputs): Plan =
+        throw NotPorted("event_hall.plan_combine (C3077)")
+
+    /** `decode_exchange(payload)`: C1665 `u32 event, u8 formula index, u32 amount`. */
+    fun decodeExchange(payload: ByteArray): JObj =
+        throw NotPorted("event_hall.decode_exchange (C1665)")
+
+    /**
+     * `plan_exchange(request, owned, exchanges, document, now, served_time, excluded_heroes)`: C1665 → consume the
+     * formula's materials × amount (bag items, Diamond / Gold role props, cards picked by least_invested_first_v1),
+     * grant its result × amount, S1762 `09`+Reward, S1760 `09`.
+     */
+    fun planExchange(request: JObj, owned: Owned, exchanges: List<JValue>, document: JValue?, now: Long,
+                     servedTime: Long, excludedHeroes: Set<JValue> = emptySet()): Plan =
+        throw NotPorted("event_hall.plan_exchange (C1665)")
+
+    /**
+     * `plan_great_offer(owned, document, inputs, now, seed)`: one Great Offer spin (the caller refused closed /
+     * exhausted): S128 Diamond, S1762 `07`+Reward{diamond}, S1760 `07`, then the Diamond-spend achievement.
+     */
+    fun planGreatOffer(owned: Owned, document: JValue?, inputs: DailyInputs, now: Long, seed: BigInteger): Plan =
+        throw NotPorted("event_hall.plan_great_offer (C1649)")
 }

@@ -39,6 +39,39 @@ object SweepFeatures {
     const val ALBUM_PROFILE = "album_state_v1"
     const val REBIRTH_SHOP_WINDOW = 600007
 
+    // --- state-changing / stateless sweep requests (group 8) --------------------------------------------------------
+    const val C_YKHD_OLD_CARD = 1671
+    const val C_LEVEL_GIFT = 1633
+    const val C_SIGNATURE = 577
+    const val C_GREAT_OFFER = 1649
+    const val C_REBIRTH_SHOP_REFRESH = 3939
+    const val C_REBIRTH_SHOP_BUY = 3937
+    const val C_ALBUM_ACTIVATE = 513
+    const val S_ALBUM_REWARD = 550
+    const val ERROR_NOT_ACTIVATED = 53000
+    const val ROLE_SIGNATURE = 21L
+    const val TEXT_TAG = 0x61
+    const val SIGNATURE_MAX_BYTES = 64
+
+    /**
+     * The closed special-event S1760 frames served instead of S6 102 (none reachable with today's closed state): DLLJ
+     * log-in gift (type 3), YXJJ Hero Pool buy / daily claim (type 6), CZFL Rebate / refresh (type 8).
+     */
+    val CLOSED_EVENT_FRAMES: Map<Int, ByteArray> = linkedMapOf(
+        1639 to byteArrayOf(3, 0, 0, 0, 0, 2),
+        1645 to byteArrayOf(6, 0), 1647 to byteArrayOf(6, 0),
+        1651 to byteArrayOf(8, 0), 1667 to byteArrayOf(8, 0))
+
+    /** Requests that read and change nothing (the reply is the event's closed frame). */
+    val STATELESS: Set<Int> = linkedSetOf(C_YKHD_OLD_CARD, C_LEVEL_GIFT) + CLOSED_EVENT_FRAMES.keys
+
+    /** Opcode → action of the state-changing sweep requests (`ACTIONS`, reference order). */
+    val ACTIONS: Map<Int, String> = linkedMapOf(
+        C_SIGNATURE to "set_signature", C_WAREHOUSE_SLOT to "warehouse_capacity", C_TOTEM_LINEUP to "totem_lineup",
+        C_TMP_VIP to "tmp_vip_claim", C_GREAT_OFFER to "event_great_offer", C_REBIRTH_SHOP_TIMER to "rebirth_shop_roll",
+        C_REBIRTH_SHOP_REFRESH to "rebirth_shop_refresh", C_REBIRTH_SHOP_BUY to "rebirth_shop_buy",
+        C_ALBUM_ACTIVATE to "album_activate")
+
     /** The request changes nothing: reply with these frames and write no revision. */
     class Unchanged(packets: List<Frame>, fields: JObj? = null) : Exception("unchanged") {
         val packets: List<Frame> = ArrayList(packets)
@@ -327,4 +360,63 @@ object SweepFeatures {
         plan["evidence_class"] = "native_use_formula_login_repair_policy"
         return plan
     }
+
+    // === state-changing / stateless sweep requests (group 8, owned by the sweep-features slice) ======================
+    // Lead-written dispatcher + stubs with fixed signatures so `Session.sweepRoute` wires in without conflicts; the
+    // sweep-features slice replaces each stub body with the port of the matching `sweep_features.py` / `rebirth_shop.py`
+    // function. Until then a NotPorted keeps the step waiting in the harness (the request's first cause moves here).
+
+    /** (action, planner) of a state-changing sweep request; the returned pair mirrors `sweep_features.planner_for`. */
+    class SweepRouted(val action: String, val planner: (Owned, StateStore.Current) -> Plan)
+
+    /** `planner_for(opcode, payload, inputs, seeds, owner_key)`: (action, planner) of a state-changing sweep request. */
+    fun plannerFor(opcode: Int, payload: ByteArray, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?,
+                   ownerKey: String = "char"): SweepRouted {
+        val action = ACTIONS[opcode] ?: throw Acquisition.Rejected("Not a state-changing sweep request")
+        val planner: (Owned, StateStore.Current) -> Plan = when (opcode) {
+            C_ALBUM_ACTIVATE -> { owned, current -> planAlbumActivate(payload, owned, current, inputs, seeds) }
+            C_REBIRTH_SHOP_TIMER, C_REBIRTH_SHOP_REFRESH, C_REBIRTH_SHOP_BUY ->
+                { owned, current -> planRebirthShop(opcode, payload, owned, current, inputs, seeds, Summon.nowEpoch(), ownerKey) }
+            C_SIGNATURE -> { owned, _ -> planSignature(payload, owned, inputs) }
+            C_WAREHOUSE_SLOT -> { owned, _ -> planWarehouseSlot(payload, owned, inputs) }
+            C_TOTEM_LINEUP -> { _, current -> planTotemLineup(payload, current, seeds) }
+            C_TMP_VIP -> { _, current -> planTmpVipClaim(payload, current, seeds, Summon.nowEpoch()) }
+            C_GREAT_OFFER -> { owned, current -> planGreatOfferSpin(payload, owned, current, inputs, Summon.nowEpoch()) }
+            else -> throw Acquisition.Rejected("Not a state-changing sweep request")
+        }
+        return SweepRouted(action, planner)
+    }
+
+    /** `level_gift_frame(seeds)`: the served S1760 type-1 frame (the first type-1 seed frame, else `01 00000000`). */
+    fun levelGiftFrame(seeds: SystemSeeds.SeedFrames?): ByteArray =
+        throw NotPorted("sweep_features.level_gift_frame (C1633 login gift)")
+
+    /** `stateless_reply(opcode, payload, inputs, seeds)`: (packets, log fields) of the requests that read / change nothing. */
+    fun statelessReply(opcode: Int, payload: ByteArray, inputs: AcquisitionInputs?, seeds: SystemSeeds.SeedFrames?): Pair<List<Frame>, JObj> =
+        throw NotPorted("sweep_features.stateless_reply (opcode $opcode)")
+
+    /** `plan_album_activate(payload, owned, current, inputs, seeds)`: C513 → tujian.csv reward (once), S550 + S548. */
+    fun planAlbumActivate(payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?): Plan =
+        throw NotPorted("sweep_features.plan_album_activate (C513)")
+
+    /** `plan_totem_lineup(payload, current, seeds)`: C2529 `u32 target` → S2884 (the same lineup again is [Unchanged]). */
+    fun planTotemLineup(payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?): Plan =
+        throw NotPorted("sweep_features.plan_totem_lineup (C2529)")
+
+    /** `plan_signature(payload, owned, inputs)`: C577 → role property 21 + S128 (same text again is [Unchanged]). */
+    fun planSignature(payload: ByteArray, owned: Owned, inputs: AcquisitionInputs): Plan =
+        throw NotPorted("sweep_features.plan_signature (C577)")
+
+    /** `plan_tmp_vip_claim(payload, current, seeds, now)`: C25 → S1824 `01 <4 days>` (already claimed → [Unchanged]). */
+    fun planTmpVipClaim(payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, now: Long): Plan =
+        throw NotPorted("sweep_features.plan_tmp_vip_claim (C25)")
+
+    /** `plan_great_offer_spin(payload, owned, current, inputs, now)`: C1649 → one Great Offer spin, closed / no attempt → [Unchanged]. */
+    fun planGreatOfferSpin(payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs, now: Long): Plan =
+        throw NotPorted("sweep_features.plan_great_offer_spin (C1649)")
+
+    /** `plan_rebirth_shop(opcode, payload, owned, current, inputs, seeds, now, owner_key)`: C3941 timer / C3939 refresh / C3937 buy. */
+    fun planRebirthShop(opcode: Int, payload: ByteArray, owned: Owned, current: StateStore.Current, inputs: DailyInputs,
+                        seeds: SystemSeeds.SeedFrames?, now: Long, ownerKey: String): Plan =
+        throw NotPorted("sweep_features.plan_rebirth_shop (opcode $opcode)")
 }

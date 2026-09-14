@@ -850,7 +850,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                 listOf(6 to TransactionPackets.errorPayload(102))
             }
         }
-        if (opcode in Routes.SWEEP) group(opcode, "sweep feature")
+        if (opcode in Routes.SWEEP) return sweepRoute(opcode, payload)
         if (opcode in Routes.GOALS) return goalsRoute(opcode, payload)
         if (opcode in Routes.CAMPAIGN) group(opcode, "campaign")
         if (opcode == 3809) group(opcode, "lineup view")
@@ -1397,6 +1397,67 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         }
         // Castle actions feed quests / Daily Mission / Royal Door tasks / local ladders (daily_hooks.py).
         return plan.packets.toList() + dailyCounters(routed.action, plan.data, plan.packets)
+    }
+
+    /**
+     * The small features of the sweep (`_sweep_route`): album C515, Rebirth-shop timer / refresh / buy, signature C577,
+     * warehouse slot C77, totem lineup C2529, Temp VIP C25, Great Offer C1649, the closed special events. The stateless
+     * frames and the album read answer without a transaction; every action commits one audited revision first, then the
+     * reply (an `Unchanged` writes no revision). A buy feeds the daily counters.
+     */
+    private fun sweepRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        val inputs = service.inputs
+        val action: String
+        val result: JObj
+        val plan: io.github.okexodus.openknights.server.game.Plan
+        try {
+            if (!queriesSent || stateStore == null) throw Acquisition.Rejected("Complete initialization queries first")
+            val current = stateStore!!.read()
+            val seeds = seeds(current)
+            if (opcode in SweepFeatures.STATELESS) {
+                val (packets, fields) = SweepFeatures.statelessReply(opcode, payload, inputs, seeds)
+                log("sweep_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first },
+                    "fields" to fields)
+                return packets
+            }
+            if (opcode == SweepFeatures.C_ALBUM_INFO) {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C515 carries no payload")
+                val (album, provenance) = SweepFeatures.albumFrame(seeds, current)
+                log("sweep_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to listOf(SweepFeatures.S_ALBUM),
+                    "provenance" to provenance, "families" to SweepFeatures.decodeAlbum(album).size)
+                return listOf(SweepFeatures.S_ALBUM to album)
+            }
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("This feature needs a store-backed character with a deployment policy")
+            val routed = SweepFeatures.plannerFor(opcode, payload, inputs, seeds, characterId!!)
+            action = routed.action
+            // an Event Hall Shop jewel goes into the unequipped list: the opcode-3072 list this session served
+            val served = if (opcode == SweepFeatures.C_REBIRTH_SHOP_BUY) servedJewelList() else null to null
+            val committed = try {
+                stateStore!!.acquisitionTransaction(action, characterId!!, policy, inputs, "authenticated-client",
+                    "Native opcode$opcode sweep feature",
+                    detailExtra = jobj("opcode" to opcode, "contract" to "docs/SWEEP_FEATURES_CONTRACT.md"),
+                    servedJewelList = served.first, servedJewelSource = served.second, planner = routed.planner)
+            } catch (unchanged: SweepFeatures.Unchanged) {
+                log("sweep_unchanged", "character_id" to characterId, "opcode" to opcode,
+                    "reply_opcodes" to unchanged.packets.map { it.first }, "fields" to unchanged.fields)
+                return unchanged.packets
+            }
+            result = committed.first
+            plan = committed.second
+        } catch (e: IllegalArgumentException) {
+            val code = ItemFortify.codeOf(e)
+            log("rejected_sweep_feature", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code)
+            return listOf(6 to TransactionPackets.errorPayload(code))
+        } catch (e: Exception) {      // a local defect must not drop the authenticated session
+            guard(e)
+            log("sweep_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to result["revision"],
+            "opcode" to opcode, "reply_opcodes" to plan.packets.map { it.first }, "evidence_class" to plan["evidence_class"])
+        val packets = plan.packets.toList()
+        if (action == "rebirth_shop_buy") return packets + dailyCounters("rebirth_shop_buy", plan.data, plan.packets)
+        return packets
     }
 
     /** C2657 goal claim (`_goals_route`): commit first, then grants → S3104 Reward → S3106, then the follow-up counters. */
