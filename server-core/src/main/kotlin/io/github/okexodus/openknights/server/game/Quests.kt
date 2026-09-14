@@ -199,11 +199,15 @@ object Quests {
     }
 
     /** The owned-state facts: hero levels, hero stars, gear levels, worn gear stars per lineup hero, stage stars, held
-     * item templates (initialization items only). */
+     * item templates. */
     class Facts(val heroLevels: List<Long>, val heroStars: List<Long>, val gearLevels: List<Long>, val worn: List<List<Long>>,
                 val stages: Map<Long, Long>, val held: Set<Long>)
 
-    fun ownedFacts(state: JObj, inputs: AcquisitionInputs): Facts {
+    /**
+     * The owned-state facts (`_owned_facts`). `owned`: the Owned view — held items are then every stack it counts (the
+     * S18 bag, imported batches and acquired stacks); without one (callers that never read `held`) only the bag.
+     */
+    fun ownedFacts(state: JObj, inputs: AcquisitionInputs, owned: Owned? = null): Facts {
         val heroes = ((state["heroes"] as? JArr) ?: JArr()).map { Acquisition.heroValues(it.asArr) }
         val gear = LinkedHashMap<Long, JArr>()
         for (r in (state["equipment"] as? JArr) ?: JArr()) {
@@ -237,9 +241,13 @@ object Quests {
             stages[PyDocs.long(wire[0])] = PyDocs.long(wire[1])
         }
         val held = LinkedHashSet<Long>()
-        for (i in (state["items"] as? JArr) ?: JArr()) {
-            val wire = i.asObj.arr("wire_values")
-            if (PyDocs.compare(wire[2], JInt(0)) > 0) held.add(PyDocs.long(wire[1]))
+        if (owned != null) {
+            for (entry in owned.items.values) if (entry.count > 0) held.add(entry.template)
+        } else {
+            for (i in (state["items"] as? JArr) ?: JArr()) {
+                val wire = i.asObj.arr("wire_values")
+                if (PyDocs.compare(wire[2], JInt(0)) > 0) held.add(PyDocs.long(wire[1]))
+            }
         }
         return Facts(heroLevels, heroStars, gearLevels, worn, stages, held)
     }
@@ -310,14 +318,17 @@ object Quests {
         return changed
     }
 
-    /** Owned-state kinds switch to claimable when the save meets them (after the level-state kinds). */
-    fun refreshOwned(document: JObj, inputs: DailyInputs, state: JObj): Boolean {
+    /**
+     * Owned-state kinds switch to claimable when the save meets them (after the level-state kinds). `owned`: the Owned
+     * view whose item stacks count as held (kind 48).
+     */
+    fun refreshOwned(document: JObj, inputs: DailyInputs, state: JObj, owned: Owned? = null): Boolean {
         val levelled = refreshLevels(document, inputs, state)
         val rows = document.arr("quests").map { it.asArr }.filter { it[1] == JInt(STATE_RUNNING) }
             .mapNotNull { row -> inputs.quest(PyDocs.long(row[0]))?.let { row to it } }
             .filter { it.second.long("kind") in OWNED_STATE_KINDS }
         if (rows.isEmpty()) return levelled
-        val facts = ownedFacts(state, inputs)
+        val facts = ownedFacts(state, inputs, owned)
         var changed = levelled
         for ((row, quest) in rows) {
             if (ownedStateMet(quest, facts, inputs)) { row[1] = JInt(STATE_READY); changed = true }
@@ -536,7 +547,7 @@ object Quests {
     /**
      * C261 on a claimable story quest (`plan_story_claim`) → grants, S324, S320, S578 [4, …, +1]. New quests: the unlock
      * rule at the level after the claim's EXP; a document without its `claimed` list keeps the old successor rule
-     * (col 120 = the claimed id, col 108 ≤ the level before the claim).
+     * (col 120 = the claimed id, col 108 ≤ the level after the claim's EXP).
      */
     fun planStoryClaim(request: JObj, owned: Owned, inputs: DailyInputs, document: JObj?, level: Long): Plan {
         val doc = refreshStates(copy(document ?: throw PyDocs.TypeError("'NoneType' object is not subscriptable")), inputs, level)
@@ -558,16 +569,17 @@ object Quests {
             unlock(doc, inputs, owned.roleBits(ROLE_LEVEL).longValueExact())
         } else {
             val known = doc.arr("quests").map { it.asArr[0] }.toSet()
+            val levelAfter = owned.roleBits(ROLE_LEVEL)
             val successors = inputs.quests().values.filter { it["prerequisite"] == ident }.map { it.long("id") }.sorted()
             for (successor in successors) {
                 val candidate = inputs.quest(successor)!!
-                if (JInt(successor) !in known && successor !in BOUNTY_IDS && candidate.long("min_level") <= level) {
+                if (JInt(successor) !in known && successor !in BOUNTY_IDS && BigInteger.valueOf(candidate.long("min_level")) <= levelAfter) {
                     doc.arr("quests").add(jarr(successor, STATE_RUNNING, 0))
                 }
             }
         }
         refreshStates(doc, inputs, owned.roleBits(ROLE_LEVEL).longValueExact())
-        refreshOwned(doc, inputs, owned.state)          // a successor may already be met by the save
+        refreshOwned(doc, inputs, owned.state, owned)   // a successor may already be met by the save
         frames.add(rewardFrame(ident, reward))
         frames.add(S_QUESTS to questsPayload(doc))
         frames.addAll(achievement(owned, ACH_QUESTS))
@@ -592,6 +604,10 @@ object Quests {
         val nowBig = BigInteger.valueOf(now)
         if (opcode == C_BOUNTY_REFRESH) {
             if (PyDocs.compare(PyDocs.at(board, "used"), PyDocs.at(board, "limit")) >= 0) throw Acquisition.Rejected("Bounty Quest limit reached today", ERROR_LIMIT)
+            // a running auto completion is never dropped by a fresh board (the client's own text 70102)
+            if (Py.truthy(PyDocs.at(board, "auto_id"))) throw Acquisition.Rejected("There are still bounty quests being auto completing, please wait.", ERROR_AUTO_BUSY)
+            // free only once the board cd ran out, which the day change always precedes (the cd counts 86,400 s from the
+            // day's first touch, not to the reset)
             if (PyDocs.compare(PyDocs.at(board, "board_until"), JInt(now)) > 0) {
                 val price = prop(inputs, BOARD_REFRESH_PRICE, 10)
                 frames.addAll(Shops.diamondAchievement(owned, price.longValueExact(), serverTime))
@@ -602,6 +618,11 @@ object Quests {
             fresh["free"] = PyDocs.at(board, "free")
             frames.add(0, S_BOARD to boardPayload(fresh, now))
             return Plan(jobj("opcode" to opcode, "bounty_board_after" to fresh, "evidence_class" to "native_use_policy"), frames)
+        }
+        if (opcode == C_BOUNTY_TIMER && (!Py.truthy(PyDocs.at(board, "auto_id")) ||
+                PyDocs.compare(PyDocs.at(board, "auto_until"), JInt(now + TIMER_TOLERANCE)) > 0)) {
+            // checked before the row lookup: without an auto completion the route's quest id is 0
+            throw Acquisition.Rejected("No finished auto completion", ERROR_NOT_AUTO)
         }
         var row = row(board, request["quest"])
         when (opcode) {
@@ -617,7 +638,10 @@ object Quests {
                 row[2] = JInt(0)
             }
             C_BOUNTY_STARS -> {
-                if (row[1] == JInt(STATE_READY) || row[1] == JInt(STATE_DONE)) throw Acquisition.Rejected("Stars cannot be refreshed now", ERROR_STARS)
+                // a ready / claimed task and the auto-completing one (its stars set its reward and its timer)
+                if (row[1] == JInt(STATE_READY) || row[1] == JInt(STATE_DONE) || PyDocs.at(board, "auto_id") == row[0]) {
+                    throw Acquisition.Rejected("Stars cannot be refreshed now", ERROR_STARS)
+                }
                 if (PyDocs.compare(PyDocs.at(board, "free"), JInt(0)) > 0) {
                     board["free"] = JInt(PyDocs.int(PyDocs.at(board, "free")) - BigInteger.ONE)
                 } else {
@@ -637,10 +661,8 @@ object Quests {
                 board["auto_until"] = JInt(nowBig + PyDocs.int(PyDocs.at(star, "auto_seconds")))
             }
             C_BOUNTY_TIMER -> {
-                // The client's countdown can end a moment before the served clock; the auto id is cleared (policy).
-                if (!Py.truthy(PyDocs.at(board, "auto_id")) || PyDocs.compare(PyDocs.at(board, "auto_until"), JInt(now + TIMER_TOLERANCE)) > 0) {
-                    throw Acquisition.Rejected("No finished auto completion", ERROR_NOT_AUTO)
-                }
+                // The client's countdown can end a moment before the served clock; the auto id is cleared (policy). No / an
+                // unfinished auto completion is refused above, before the row lookup.
                 row = row(board, PyDocs.at(board, "auto_id"))
                 row[1] = JInt(STATE_READY)
                 board["auto_id"] = JInt(0)

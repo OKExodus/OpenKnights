@@ -478,12 +478,14 @@ object DailyRoutes {
         val (board, boardChanged) = Quests.boardRoll(boardBefore, inputs, now, ownerKey)
         if (boardChanged || PyDocs.get(current, "bounty_board") == null) changes["bounty_board_after"] = board
         val quests = questDocument(current, seeds).deepCopy()
-        var met = Quests.refreshOwned(quests, inputs, state)
+        // held items = every stack of the Owned view (a dry run works on the caller's copy)
+        val view = owned ?: Owned(current, inputs)
+        var met = Quests.refreshOwned(quests, inputs, state, view)
         val lvl = level(state)
         met = Quests.backfillClaimed(quests, inputs, questClaims, lvl, current.characterProfile != null) || met
         if (Quests.unlock(quests, inputs, lvl)) {
             Quests.refreshStates(quests, inputs, lvl)
-            Quests.refreshOwned(quests, inputs, state)
+            Quests.refreshOwned(quests, inputs, state, view)
             met = true
         }
         if (PyDocs.get(current, "quest_state") == null || met) changes["quest_state_after"] = quests

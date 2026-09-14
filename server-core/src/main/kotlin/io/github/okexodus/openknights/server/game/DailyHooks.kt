@@ -53,7 +53,7 @@ object DailyHooks {
         "evolve_leader_hero", "evolve_gear", "formation", "acquire_summon", "acquire_item_use",
         "acquire_choose_box", "acquire_merge", "acquire_fuse", "acquire_shop_buy", "rebirth_evolve",
         "rebirth_fortify", "card_sacrifice", "mail_claim", "training_claim", "forge_smith", "forge_craft",
-        "explore_claim", "event_combine", "event_exchange", "evolve_jewelry")
+        "explore_claim", "event_combine", "event_exchange", "evolve_jewelry", "goal_claim")
     /** Level-state quests (param = building / tech id). */
     val STATE_KINDS = mapOf("building_level" to 2L, "tech_level" to 25L)
     val COLLECT_EVENTS = mapOf(1L to "castle_collect_gold", 2L to "castle_collect_honor", 4L to "castle_collect_runes")
@@ -232,7 +232,7 @@ object DailyHooks {
             Quests.unlock(quests, inputs, levelNow)
             Quests.refreshStates(quests, inputs, levelNow)
             val levelled = quests.arr("quests").toList() != before
-            if (Quests.refreshOwned(quests, inputs, owned.state) || levelled) plan["quest_state_after"] = quests
+            if (Quests.refreshOwned(quests, inputs, owned.state, owned) || levelled) plan["quest_state_after"] = quests
         }
         val guildTasks = countGuildTasks(PyDocs.get(current, "guild_task_state"), events, inputs, now)
         if (guildTasks != null) {
