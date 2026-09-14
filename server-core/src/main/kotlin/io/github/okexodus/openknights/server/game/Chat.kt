@@ -138,12 +138,18 @@ object Chat {
         throw Acquisition.Rejected("Unknown chat channel", 102)
     }
 
-    /** Lines replayed after the mail list at login: the world history, the guild's history, the private lines to the viewer. */
-    fun loginHistory(chatDoc: JObj, viewer: Long, guildId: Long): List<Frame> {
+    /**
+     * Lines replayed after the mail list at login: the world history, the guild's history, the private lines to the
+     * viewer. A line whose sender the viewer has blocked ([blocked] = the viewer's mail blacklist, name hexes — the list
+     * the live push checks) is skipped on every channel; the viewer's own lines always replay.
+     */
+    fun loginHistory(chatDoc: JObj, viewer: Long, guildId: Long, blocked: Collection<String> = emptyList()): List<Frame> {
+        val names = blocked.toSet()
+        fun shown(line: JObj) = line.long("sender") == viewer || (line["name_hex"] as? io.github.okexodus.openknights.exact.JStr)?.value !in names
         val frames = ArrayList<Frame>()
-        chatDoc.arr("world").forEach { frames.add(replay(it as JObj, viewer)) }
-        if (guildId != 0L) ((chatDoc.obj("guild")[guildId.toString()] as? JArr) ?: JArr()).forEach { frames.add(replay(it as JObj, viewer)) }
-        ((chatDoc.obj("private")[viewer.toString()] as? JArr) ?: JArr()).forEach { frames.add(replay(it as JObj, viewer)) }
+        chatDoc.arr("world").forEach { if (shown(it as JObj)) frames.add(replay(it, viewer)) }
+        if (guildId != 0L) ((chatDoc.obj("guild")[guildId.toString()] as? JArr) ?: JArr()).forEach { if (shown(it as JObj)) frames.add(replay(it, viewer)) }
+        ((chatDoc.obj("private")[viewer.toString()] as? JArr) ?: JArr()).forEach { if (shown(it as JObj)) frames.add(replay(it, viewer)) }
         return frames
     }
 }

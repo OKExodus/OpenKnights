@@ -131,12 +131,26 @@ class G7FriendsMadeUpTest {
         val read = Mail.planPraiseRead(mail, Owned(current(), inputs), inputs, null)
         assertEquals("""[[128,"010b0550000000"]]""", frames(read.packets))
         assertEquals("""{"profile":"mail_state_v1","claimed":[],"praise_paid":[7]}""", compact(read["mail_state_after"]))
-        // the reference pays an opened praise mail again when it is claimed (reported; ported as it is)
         val owned = Owned(current(), inputs)
-        val again = Mail.planClaim(mail, owned, inputs, jobj("profile" to "mail_state_v1", "claimed" to jarr(3), "praise_paid" to jarr(7)))
+        val unopened = Mail.planClaim(mail, owned, inputs, jobj("profile" to "mail_state_v1", "claimed" to jarr(3)))
         assertEquals("""[[11,70,80]]""", roleChanges(owned))
-        assertEquals("""{"profile":"mail_state_v1","claimed":[3,7],"praise_paid":[7]}""", compact(again["mail_state_after"]))
-        assertEquals(listOf(128, 266, 262), again.packets.map { it.first })
+        assertEquals("""{"profile":"mail_state_v1","claimed":[3,7]}""", compact(unopened["mail_state_after"]))
+        assertEquals(listOf(128, 266, 262), unopened.packets.map { it.first })
+        // a praise mail paid when it was opened counts as claimed; a malformed ledger is refused cleanly
+        assertEquals(Mail.ERR_CLAIMED, assertThrows(Acquisition.Rejected::class.java) {
+            Mail.planClaim(mail, Owned(current(), inputs), inputs, jobj("profile" to "mail_state_v1", "claimed" to jarr(3), "praise_paid" to jarr(7)))
+        }.code)
+        assertEquals(102, assertThrows(Acquisition.Rejected::class.java) {
+            Mail.planClaim(mail, Owned(current(), inputs), inputs, jobj("claimed" to null))
+        }.code)
+        // a creation stamp without a zone is UTC; the login replay skips a blocked sender
+        assertEquals(1_698_796_860L, Friends.lastLogin(person(9004, "N".toByteArray(), 1, 0).let {
+            Participant(it.participantId, it.kind, it.nameRaw, it.level, created = "2023-11-01T00:00:00") }, JObj(), 60))
+        val history = jobj("world" to jarr(Chat.storedLine(1, 9002, "Rook".toByteArray(), "a".toByteArray(), now),
+            Chat.storedLine(1, 9003, "Zoë".toByteArray(), "b".toByteArray(), now)), "guild" to JObj(),
+            "private" to jobj("9001" to jarr(Chat.storedLine(2, 9002, "Rook".toByteArray(), "c".toByteArray(), now,
+                target = jobj("id" to 9001, "name_hex" to "4b6e69676874")))))
+        assertEquals("""[[480,"01002b2300005a6fc3ab00620000"]]""", frames(Chat.loginHistory(history, 9001, 0, listOf("526f6f6b"))))
 
         val box = jobj("next_id" to 8, "boxes" to jobj("9001" to jarr(mail)), "blacklist" to jobj("9002" to jarr("4b6e69676874")))
         assertEquals(4, Mail.write(box, a, b, "Hi".toByteArray(), "Body".toByteArray(), inputs, now).first)

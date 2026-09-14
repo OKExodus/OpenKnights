@@ -72,11 +72,27 @@ object Friends {
 
     private fun remaining(until: Long, now: Long) = maxOf(0, until - now)
 
-    /** `int(datetime.fromisoformat(created).timestamp())`, 0 when the text is not a date-time. */
-    fun createdEpoch(person: Participant): Long = try {
-        java.time.OffsetDateTime.parse(person.created).toEpochSecond()
-    } catch (e: java.time.format.DateTimeParseException) {
-        0
+    /**
+     * `int(datetime.fromisoformat(created).timestamp())` (`_created_epoch`), 0 when the text is not a date-time; a stamp
+     * without a zone (a date-time or a date alone) is read as UTC.
+     */
+    fun createdEpoch(person: Participant): Long {
+        val text = person.created.replace(' ', 'T')
+        val (epoch, nanos) = try {
+            java.time.OffsetDateTime.parse(text).let { it.toEpochSecond() to it.nano }
+        } catch (e: java.time.format.DateTimeParseException) {
+            try {
+                java.time.LocalDateTime.parse(text, java.time.format.DateTimeFormatter.ISO_LOCAL_DATE_TIME)
+                    .let { it.toEpochSecond(java.time.ZoneOffset.UTC) to it.nano }
+            } catch (e: java.time.format.DateTimeParseException) {
+                try {
+                    java.time.LocalDate.parse(person.created).atStartOfDay().toEpochSecond(java.time.ZoneOffset.UTC) to 0
+                } catch (e: java.time.format.DateTimeParseException) {
+                    return 0
+                }
+            }
+        }
+        return if (epoch < 0 && nanos > 0) epoch + 1 else epoch          // int() truncates toward zero
     }
 
     /**

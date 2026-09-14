@@ -233,6 +233,12 @@ class G7FriendsVectorsTest {
         }
         mailRules(doc, inputs)
         chatRules(doc, inputs)
+        for ((i, v) in doc.arr("history").withIndex()) {
+            val vector = v.asObj
+            replay("history $i", vector["result"], {
+                Chat.loginHistory(vector.obj("doc"), vector.long("viewer"), vector.long("guild_id"), vector.arr("blocked").map { (it as JStr).value })
+            }) { r, frames -> check("history $i", framesOf(r), framesOf(frames)) }
+        }
         for (v in doc.arr("command")) {
             val vector = v.asObj
             check("command ${vector.str("text")}", vector.str("reply"), Chat.commandReply(vector.str("text").hexBytes()).toHexString())
@@ -466,7 +472,8 @@ class G7FriendsVectorsTest {
             val now = vector.long("now")
             val l = "route $i C$opcode ${vector.str("payload")} ${vector.str("world").substringAfter("bundles/").substringBefore("/")}"
             replay(l, vector["result"], {
-                SocialRoutes.dispatch(opcode, vector.str("payload").hexBytes(), current, ctx, commit, now, now, requester,
+                if (opcode == 0) SocialRoutes.loginFrames(current, ctx, now)       // the login frames with the chat replay
+                else SocialRoutes.dispatch(opcode, vector.str("payload").hexBytes(), current, ctx, commit, now, now, requester,
                     vector.arr("online").map { (it as JInt).toLong() })
             }) { r, frames -> check("$l frames", framesOf((r as JObj)["frames"]!!), framesOf(frames)) }
             val recPushes = vector.arr("pushes").map { p -> "${p.asArr[0]}=" + framesOf(p.asArr[1]).joinToString(",") }

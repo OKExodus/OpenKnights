@@ -703,13 +703,13 @@ object SocialRoutes {
     /** The mail requests (`mail`): C257 list, C195 read, C197 claim, C199 delete, C201 write, C203 / C205 / C207 blacklist. */
     fun mail(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long): List<Frame> {
         val role = roleOf(current)
-        val claimed = claimedMail(current)
         if (opcode == Mail.C_LIST) {
-            return listOf(Mail.S_LIST to Mail.listPayload(ctx.document("mail")!!, role, now, claimed, ctx.clockOffset))
+            return listOf(Mail.S_LIST to Mail.listPayload(ctx.document("mail")!!, role, now, claimedMail(current), ctx.clockOffset))
         }
         val ledger = PyDocs.get(current, "mail_state")
         if (opcode == Mail.C_READ) {
             val mailId = Mail.decodeId(payload, opcode)
+            Mail.checkedLedger(ledger)                   // a malformed ledger is refused cleanly
             val found = Mail.find(ctx.document("mail")!!, role, mailId)
             var paid: List<Frame> = emptyList()
             if (Mail.praiseUnpaid(found, ledger)) {
@@ -718,13 +718,19 @@ object SocialRoutes {
                 }.packets
             }
             val hide = found != null && found["type"] == JInt(Mail.PRAISE)
-            val frames: List<Frame> = ctx.update("mail", "mail_read") { d -> Mail.read(d, role, mailId, hide) to jobj("role" to role, "mail" to mailId) }
+            // the world document is written only when the mail changes (unread → read)
+            val frames: List<Frame> = ctx.update("mail", "mail_read") { d ->
+                val unread = Mail.find(d, role, mailId)?.let { it["state"] == JInt(Mail.UNREAD) } == true
+                Mail.read(d, role, mailId, hide) to (if (unread) jobj("role" to role, "mail" to mailId) else null)
+            }
             return frames + paid
         }
         if (opcode == Mail.C_CLAIM) {
             val mailId = Mail.decodeId(payload, opcode)
+            val (claimed, _) = Mail.checkedLedger(ledger)
             val found = Mail.find(ctx.document("mail")!!, role, mailId)
-            if (found == null || mailId in claimed) {
+            // a praise mail paid when it was opened counts as claimed (nothing is paid again)
+            if (found == null || mailId in claimed || Mail.praisePaid(found, ledger)) {
                 if (found != null) {                     // claimed before, the world removal still pending
                     ctx.update<Unit>("mail", "mail_remove") { d -> Mail.remove(d, role, mailId); Unit to jobj("role" to role, "mail" to mailId) }
                 }
@@ -738,6 +744,7 @@ object SocialRoutes {
         }
         if (opcode == Mail.C_DELETE) {
             val mailId = Mail.decodeId(payload, opcode)
+            val (claimed, _) = Mail.checkedLedger(ledger)
             val found = Mail.find(ctx.document("mail")!!, role, mailId)
             var paid: List<Frame> = emptyList()
             if (Mail.praiseUnpaid(found, ledger)) {
@@ -777,6 +784,7 @@ object SocialRoutes {
                 val hex = Mail.nameHex(name)
                 if (opcode == Mail.C_BLOCK && hex !in names && names.size < 50) names.add(hex)
                 else if (opcode == Mail.C_UNBLOCK && hex in names) names.remove(hex)
+                else return@update Unit to null                       // nothing changed: no world revision
                 Unit to jobj("role" to role, "block" to (opcode == Mail.C_BLOCK))
             }
             return if (opcode == Mail.C_BLOCK) emptyList() else listOf(Mail.S_BLACKLIST to Mail.blacklistPayload(ctx.document("mail")!!, role))
@@ -816,11 +824,9 @@ object SocialRoutes {
 
     // --- shared helpers -------------------------------------------------------------------------------------------------
 
-    private fun claimedMail(current: StateStore.Current): List<Long> {
-        val ledger = current.document("mail_state")
-        val claimed = if (Py.truthy(ledger)) (ledger as JObj)["claimed"] else null
-        return (claimed as? JArr)?.map { (it as JInt).toLong() } ?: emptyList()
-    }
+    /** The claimed mail ids of the character's mail ledger (a malformed ledger is refused cleanly, `mail.ledger_ids`). */
+    private fun claimedMail(current: StateStore.Current): List<Long> =
+        Mail.ledgerIds(PyDocs.get(current, "mail_state"), "claimed").map { (it as JInt).toLong() }
 
     /**
      * The guild war's matching result, delivered lazily (at login or on the Events tab) once matching began: offline no
@@ -862,7 +868,7 @@ object SocialRoutes {
         val (gid, _) = myGuild(ctx, role)
         val frames = ArrayList<Frame>()
         frames.add(Mail.S_LIST to Mail.listPayload(ctx.document("mail")!!, role, now, claimed, ctx.clockOffset))
-        frames.addAll(Chat.loginHistory(ctx.document("chat")!!, role, gid))
+        frames.addAll(Chat.loginHistory(ctx.document("chat")!!, role, gid, Mail.blockedNames(ctx.document("mail")!!, role)))
         // the world's three newest Summon Report records (after S256 / S226, before S2306)
         val report = SummonReports.loginPayload(ctx.document("summon_reports"), ctx.clockOffset)
         if (report != null) frames.add(SummonReports.S_REPORT to report)

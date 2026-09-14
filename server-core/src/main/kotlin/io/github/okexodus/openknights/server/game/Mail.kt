@@ -186,7 +186,21 @@ object Mail {
         return listOf(S_STATE to WireWriter().u32(mailId).number('B', mail["state"]!!).bytes(), S_CONTENT to contentPayload(mail, hideReward))
     }
 
-    private fun ledgerIds(ledger: JObj, key: String): JArr = PyDocs.at(ledger, key) as? JArr ?: throw PyDocs.TypeError("'${key}' is not a list")
+    /**
+     * The id list [key] ("claimed" / "praise_paid") of a character's mail ledger (`ledger_ids`): empty when the ledger or
+     * the list is absent (unless [required]); a malformed ledger (not an object, a list that is not a list of ids, a
+     * missing required list) is refused cleanly (102).
+     */
+    fun ledgerIds(ledger: JValue?, key: String, required: Boolean = false): JArr {
+        val doc = if (Py.truthy(ledger)) ledger as? JObj ?: throw Acquisition.Rejected("Malformed mail ledger", Acquisition.ERROR_INVALID) else JObj()
+        val ids = doc[key] ?: if (required) throw Acquisition.Rejected("Malformed mail ledger", Acquisition.ERROR_INVALID) else return JArr()
+        if (ids !is JArr || ids.any { it !is JInt }) throw Acquisition.Rejected("Malformed mail ledger", Acquisition.ERROR_INVALID)
+        return ids
+    }
+
+    /** The (claimed, praise_paid) lists of a mail ledger, both checked (`checked_ledger`). */
+    fun checkedLedger(ledger: JValue?): Pair<List<Long>, List<Long>> =
+        ledgerIds(ledger, "claimed").map { (it as JInt).toLong() } to ledgerIds(ledger, "praise_paid").map { (it as JInt).toLong() }
 
     /** `sorted(set(ids) | {id})[-2000:]`. */
     private fun withId(ids: JArr, mailId: JValue): JArr {
@@ -199,9 +213,12 @@ object Mail {
     /** A "Praise from a Friend" mail (type 4) whose Pal Points were not paid yet. */
     fun praiseUnpaid(mail: JObj?, ledger: JValue?): Boolean {
         if (mail == null || mail["type"] != JInt(PRAISE) || !hasReward(mail["reward"])) return false
-        val paid = if (Py.truthy(ledger)) ((ledger as JObj)["praise_paid"] ?: JArr()) else JArr()
-        return mail["id"] !in (paid as JArr).toSet()
+        return mail["id"] !in ledgerIds(ledger, "praise_paid").toSet()
     }
+
+    /** A praise mail whose Pal Points were paid when it was opened: it counts as claimed (`praise_paid`). */
+    fun praisePaid(mail: JObj?, ledger: JValue?): Boolean =
+        mail != null && mail["type"] == JInt(PRAISE) && mail["id"] in ledgerIds(ledger, "praise_paid").toSet()
 
     /** `dict(ledger or {"profile": MAIL_PROFILE, "claimed": []})`. */
     private fun ledgerCopy(ledger: JValue?): JObj = if (Py.truthy(ledger)) PyDocs.shallow(ledger as JObj) else jobj("profile" to MAIL_PROFILE, "claimed" to JArr())
@@ -212,20 +229,25 @@ object Mail {
      * mail_state_after.
      */
     fun planPraiseRead(mail: JObj, owned: Owned, inputs: AcquisitionInputs, ledger: JValue?): Plan {
+        val paid = ledgerIds(ledger, "praise_paid")
         val after = ledgerCopy(ledger)
         val frames = grant(owned, mail["reward"] as JObj, inputs)
-        after["praise_paid"] = withId((after["praise_paid"] ?: JArr()) as? JArr ?: throw PyDocs.TypeError("praise_paid is not a list"), mail["id"]!!)
+        after["praise_paid"] = withId(paid, mail["id"]!!)
         return Plan(jobj("mail" to mail["id"], "reward" to mail["reward"], "mail_state_after" to after), frames)
     }
 
-    /** C197 `u32 id` → [S68 item] [S128 props] → S266 Reward → S262 id. The ledger records the claim. */
+    /**
+     * C197 `u32 id` → [S68 item] [S128 props] → S266 Reward → S262 id. The ledger records the claim; a mail claimed
+     * before, or a praise mail paid when it was opened, is refused (9002).
+     */
     fun planClaim(mail: JObj, owned: Owned, inputs: AcquisitionInputs, ledger: JValue?): Plan {
+        val claimed = ledgerIds(ledger, "claimed", required = Py.truthy(ledger))
         val after = ledgerCopy(ledger)
-        if (mail["id"] in ledgerIds(after, "claimed")) throw Acquisition.Rejected("The Mail Reward has been claimed", ERR_CLAIMED)
+        if (mail["id"] in claimed || praisePaid(mail, after)) throw Acquisition.Rejected("The Mail Reward has been claimed", ERR_CLAIMED)
         val stored = mail["reward"]
         val reward = if (Py.truthy(stored)) stored as JObj else Acquisition.emptyReward()
         val frames = if (hasReward(reward)) grant(owned, reward, inputs) else emptyList()
-        after["claimed"] = withId(ledgerIds(after, "claimed"), mail["id"]!!)
+        after["claimed"] = withId(claimed, mail["id"]!!)
         return Plan(jobj("mail" to mail["id"], "reward" to reward, "mail_state_after" to after),
             frames + listOf(S_REWARD to BattleReport.encodeReward(reward), S_REMOVE to WireWriter().u32(mail.long("id")).bytes()))
     }
@@ -253,6 +275,9 @@ object Mail {
         for (n in names) w.raw((n as JStr).value.hexBytes()).raw(byteArrayOf(0))
         return w.bytes()
     }
+
+    /** The names (hex) a participant has blocked — the list every delivery checks (`blocked_names`). */
+    fun blockedNames(document: JObj, role: Long): List<String> = blacklistOf(document, role).map { (it as JStr).value }
 
     /** A blacklist entry: the name bytes as hex. */
     fun nameHex(nameRaw: ByteArray): JStr = JStr(nameRaw.toHexString())
