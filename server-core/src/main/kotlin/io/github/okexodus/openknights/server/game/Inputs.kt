@@ -657,7 +657,28 @@ open class DailyInputs(tables: GameTables) : AcquisitionInputs(tables) {
             "b_reforge" to int(f, "707"), "c_reforge" to int(f, "708"))
     }
 
-    open fun cardPropertyValue(kind: String, record: JArr): Long = throw NotPorted("DailyInputs.card_property_value")
+    /**
+     * `card_property_value(kind, record)`: `Formula::GetEquipPropertyValue` / `GetJewelPropertyValue` of a 22-byte gear or
+     * jewel record, the enchant return's base of a Card Sacrifice.
+     */
+    fun cardPropertyValue(kind: String, record: JArr): Long {
+        if (record.size != 7) {
+            throw PyValues.ValueError(if (record.size > 7) "too many values to unpack (expected 7)" else "not enough values to unpack (expected 7, got ${record.size})")
+        }
+        val template = PyDocs.long(record[1])
+        val level = PyDocs.long(record[2])
+        val grade = PyDocs.long(record[4])
+        val flag = PyDocs.long(record[5])
+        val extra = PyDocs.long(record[6])
+        if (kind == "gear") {
+            val i = PkEquipEvolveContract.gearEvolveInputs(tables, template, grade)
+            return EquipEvolve.equipPropertyValue(level, flag, extra, i.long("base_108"), i.long("growth_109"), i.long("potential_before"),
+                i.long("property_912"))
+        }
+        val i = PkEquipEvolveContract.jewelEvolveInputs(tables, template, grade)
+        return EquipEvolve.jewelPropertyValue(level, flag, extra, i.long("base_108"), i.long("ratio_110"), i.long("potential_before"),
+            i.long("property_956"))
+    }
 
     fun heroName(template: Long): String {
         val row = if (template != 0L) single("hero", Math.floorDiv(template, 1000L)) else null

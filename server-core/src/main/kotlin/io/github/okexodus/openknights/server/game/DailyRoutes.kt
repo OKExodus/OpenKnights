@@ -7,6 +7,7 @@ import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
 import io.github.okexodus.openknights.exact.asArr
+import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireWriter
@@ -532,12 +533,12 @@ object DailyRoutes {
     /**
      * `planner_for(opcode, payload, inputs, seeds, now, served_time, world_ctx, owner_key)`: the action, the decoded
      * request and the planner of one committed daily request; the planner records `now_epoch` (and the `served_time` it
-     * used). Event Hall (group 8), Castle / Hidden Training / Card Sacrifice (group 6) and the arena reward (group 7) are
-     * ported with their groups.
+     * used). Event Hall (group 8) and the arena reward (group 7) are ported with their groups.
      */
     fun plannerFor(opcode: Int, payload: ByteArray, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?, now: Long,
                    servedTime: (StateStore.Current) -> Long, worldCtx: WorldContext = WorldContext(), ownerKey: String = "char"): Routed {
         val used = JObj()
+        var usedAction: String? = null
         val request: JObj
         val planner: (Owned, StateStore.Current) -> Plan
         when (opcode) {
@@ -596,7 +597,127 @@ object DailyRoutes {
                 }
             }
             in EVENT_HALL_OPCODES -> throw NotPorted("Event Hall action (opcode $opcode)")
-            in CASTLE_OPCODES -> throw NotPorted("Castle / Hidden Training / Card Sacrifice action (opcode $opcode)")
+            // Castle (castle.py)
+            Castle.C_COLLECT, Castle.C_BUILDING, Castle.C_TECH, Castle.C_GUILD_TECH, Castle.C_TRANSMUTE, Castle.C_ALCHEMY_REFRESH,
+            Castle.C_BUY_SLOT, Castle.C_WORK, Castle.C_RELEASE, Castle.C_GUARD -> {
+                request = when (opcode) {
+                    Castle.C_COLLECT, Castle.C_BUILDING -> jobj("id" to Castle.decodeU8(payload, opcode))
+                    Castle.C_TECH, Castle.C_GUILD_TECH, Castle.C_WORK, Castle.C_RELEASE, Castle.C_GUARD -> jobj("id" to Castle.decodeU32(payload, opcode))
+                    else -> {
+                        if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                        JObj()
+                    }
+                }
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    val doc = PyDocs.get(current, "castle_state")
+                    when (opcode) {
+                        Castle.C_COLLECT -> Castle.planCollect(request.long("id"), owned, inputs, doc, guildTechDocument(current, seeds, worldCtx, inputs),
+                            now, served, ownerKey)
+                        Castle.C_BUILDING -> Castle.planBuilding(request.long("id"), owned, inputs)
+                        Castle.C_TECH -> Castle.planTech(request.long("id"), owned, inputs)
+                        Castle.C_GUILD_TECH -> Castle.planGuildTech(request.long("id"), owned, inputs, guildTechDocument(current, seeds, worldCtx, inputs))
+                        Castle.C_TRANSMUTE -> Castle.planTransmute(owned, inputs, doc, guildTechDocument(current, seeds, worldCtx, inputs), now, ownerKey)
+                        Castle.C_ALCHEMY_REFRESH -> Castle.planAlchemyRefresh(owned, inputs, doc, now, served, ownerKey)
+                        Castle.C_BUY_SLOT -> Castle.planBuySlot(owned, inputs, doc, now, served)
+                        Castle.C_WORK -> Castle.planWork(request.long("id"), owned, inputs, doc, now)
+                        Castle.C_RELEASE -> Castle.planRelease(request.long("id"), owned, inputs, doc, now)
+                        else -> Castle.planGuard(request.long("id"), owned, inputs, doc, now, served)
+                    }
+                }
+            }
+            // Hidden Training rooms (hidden_training.py)
+            HiddenTraining.C_ROOM_CREATE, HiddenTraining.C_TRAIN, HiddenTraining.C_ROOM_PASSWORD, HiddenTraining.C_TRAIN_CLAIM,
+            HiddenTraining.C_ROOM_ADD_TIME -> {
+                var secret: HiddenTraining.RoomSecret? = null
+                when (opcode) {
+                    HiddenTraining.C_ROOM_CREATE -> {
+                        if (payload.size != 1) throw Acquisition.Rejected("C1763 is u8 room type")
+                        request = jobj("type" to (payload[0].toLong() and 0xFF))
+                    }
+                    HiddenTraining.C_TRAIN -> request = HiddenTraining.decodeTrain(payload)
+                    HiddenTraining.C_ROOM_PASSWORD -> {
+                        secret = HiddenTraining.decodeRoomPassword(payload, opcode)
+                        request = jobj("room" to secret.room, "password_length" to secret.password.size)   // no code in history
+                    }
+                    HiddenTraining.C_ROOM_ADD_TIME -> request = jobj("room" to Castle.decodeU32(payload, opcode))
+                    else -> {
+                        if (payload.isNotEmpty()) throw Acquisition.Rejected("C1777 has no payload")
+                        request = JObj()
+                    }
+                }
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    val doc = PyDocs.get(current, "training_state")
+                    when (opcode) {
+                        HiddenTraining.C_ROOM_CREATE -> HiddenTraining.planCreateRoom(request.long("type"), owned, inputs, doc, now, served)
+                        HiddenTraining.C_TRAIN -> HiddenTraining.planTrain(request, owned, inputs, doc, now)
+                        HiddenTraining.C_ROOM_PASSWORD -> HiddenTraining.planPassword(secret!!, owned, inputs, doc, now)
+                        HiddenTraining.C_ROOM_ADD_TIME -> HiddenTraining.planAddTime(request, owned, inputs, doc, now, served)
+                        else -> HiddenTraining.planClaim(owned, inputs, doc, now)
+                    }
+                }
+            }
+            // the forge: Blacksmith and Crafting (hidden_training.py)
+            HiddenTraining.C_SMITH, HiddenTraining.C_CRAFT, HiddenTraining.C_SMITH_NO_CD, HiddenTraining.C_CRAFT_NO_CD -> {
+                request = if (opcode == HiddenTraining.C_SMITH || opcode == HiddenTraining.C_CRAFT) HiddenTraining.decodePick(payload, opcode)
+                    else HiddenTraining.decodeU32Slot(payload, opcode)
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    val doc = PyDocs.get(current, "forge_state")
+                    when (opcode) {
+                        HiddenTraining.C_SMITH -> HiddenTraining.planSmith(request, owned, inputs, doc, now)
+                        HiddenTraining.C_CRAFT -> HiddenTraining.planCraft(request, owned, current, inputs, doc, now)
+                        else -> HiddenTraining.planNoCd(if (opcode == HiddenTraining.C_SMITH_NO_CD) "smith" else "craft", request, owned, inputs,
+                            doc, now, served)
+                    }
+                }
+            }
+            // Hero Set Out (hidden_training.py)
+            HiddenTraining.C_EXPLORE_HERO, HiddenTraining.C_EXPLORE_GO, HiddenTraining.C_EXPLORE_REFRESH, HiddenTraining.C_EXPLORE_RETURN,
+            HiddenTraining.C_EXPLORE_CLAIM, HiddenTraining.C_EXPLORE_BUY, HiddenTraining.C_EXPLORE_CANCEL -> {
+                request = when (opcode) {
+                    HiddenTraining.C_EXPLORE_HERO, HiddenTraining.C_EXPLORE_GO -> HiddenTraining.decodeExplorePick(payload, opcode)
+                    HiddenTraining.C_EXPLORE_REFRESH -> HiddenTraining.decodeRefresh(payload)
+                    HiddenTraining.C_EXPLORE_BUY -> {
+                        if (payload.isNotEmpty()) throw Acquisition.Rejected("C2121 has no payload")
+                        JObj()
+                    }
+                    else -> HiddenTraining.decodeU8Slot(payload, opcode)
+                }
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    val doc = exploreDocument(current, seeds, now)
+                    when (opcode) {
+                        HiddenTraining.C_EXPLORE_HERO -> HiddenTraining.planExploreHero(request, owned, inputs, doc, now, ownerKey)
+                        HiddenTraining.C_EXPLORE_GO -> HiddenTraining.planExploreGo(request, owned, inputs, doc, now)
+                        HiddenTraining.C_EXPLORE_REFRESH -> HiddenTraining.planExploreRefresh(request, owned, inputs, doc, now, served, ownerKey)
+                        HiddenTraining.C_EXPLORE_RETURN -> HiddenTraining.planExploreReturn(request, owned, inputs, doc, now, ownerKey)
+                        HiddenTraining.C_EXPLORE_CLAIM -> HiddenTraining.planExploreClaim(request, owned, inputs, doc, now, ownerKey)
+                        HiddenTraining.C_EXPLORE_BUY -> HiddenTraining.planExploreBuy(owned, inputs, doc, now, served)
+                        else -> HiddenTraining.planExploreCancel(request, owned, inputs, doc, now)
+                    }
+                }
+            }
+            // hero / gear / jewelry Sacrifice and Reforge (card_reset.py)
+            CardReset.C_RESET_HERO, CardReset.C_RESET_GEAR, CardReset.C_RESET_JEWEL -> {
+                request = CardReset.decodeReset(payload, opcode)
+                if (request["mode"] == JInt(CardReset.REFORGE)) usedAction = "card_reforge"
+                planner = { owned, current ->
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    val explore = LinkedHashSet<JValue>()
+                    for (s in exploreDocument(current, seeds, now).arr("slots")) {
+                        val hero = s.asObj["hero"]
+                        if (Py.truthy(hero)) explore.add(hero!!)
+                    }
+                    CardReset.planReset(opcode, request, owned, inputs, current, served, exploreHeroes = explore)
+                }
+            }
             C_ARENA_REWARD -> throw NotPorted("arena reward (opcode $opcode)")
             else -> throw Acquisition.Rejected("Not a daily opcode")
         }
@@ -606,12 +727,11 @@ object DailyRoutes {
             for ((k, v) in used) plan[k] = v
             plan
         }
-        return Routed(ACTIONS.getValue(opcode), request, recorded)
+        return Routed(usedAction ?: ACTIONS.getValue(opcode), request, recorded)
     }
 
     private const val C_ARENA_REWARD = 423
     private val EVENT_HALL_OPCODES = setOf(1635, 1637, 1641, 3077, 1665)
-    private val CASTLE_OPCODES = ACTIONS.filterValues { a -> listOf("castle", "training", "forge", "explore", "card_").any { a.startsWith(it) } }.keys
 
     /** The S6 code of a refused daily request. */
     fun refusal(opcode: Int): Int = REFUSALS.getValue(opcode)
