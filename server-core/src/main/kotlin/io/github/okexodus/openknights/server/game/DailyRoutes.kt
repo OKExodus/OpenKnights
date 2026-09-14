@@ -6,6 +6,7 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireWriter
@@ -15,10 +16,9 @@ import io.github.okexodus.openknights.server.store.WorldDirectory
 import java.math.BigInteger
 
 /**
- * The daily routes' login parts (`daily_routes.py`): the documents with their seeds, the one audited refresh
- * revision before the S18 (`refresh_needed` dry run on a copy, `refresh_plan` inside the transaction), the unsolicited
- * login burst (S1760 Event Hall set, S1824, Hidden Training pushes, S3234) and the replies to the initialization
- * queries this module owns. The action planners (`planner_for`) belong to the daily actions port.
+ * The daily routes (`daily_routes.py`): the documents with their seeds, the one audited refresh revision before the
+ * S18 (`refresh_needed` dry run on a copy, `refresh_plan` inside the transaction), the unsolicited login burst (S1760
+ * Event Hall set, S1824, Hidden Training pushes, S3234), the query replies and the action planners (`planner_for`).
  */
 object DailyRoutes {
     /** Opcode → action of the committed daily requests (`ACTIONS`, reference order). */
@@ -98,6 +98,35 @@ object DailyRoutes {
         /** World characters + bots (`WorldContext.participants`). */
         fun participants(current: StateStore.Current? = null): List<Any> =
             participantsOf?.invoke(this, current) ?: throw NotPorted("world_participants (the participant list of the daily routes)")
+
+        /**
+         * The arena ladder in rank order (`arena_ranks`): the stored ranks plus every participant not yet ranked; a
+         * changed ladder is written back to the world (audited `arena_ladder_join`, optimistic on its revision).
+         */
+        fun arenaRanks(participants: List<WorldParticipants.Participant>, actor: String = "local-service"): List<Long> {
+            val (revision, ladder) = document("arena_ladder")
+            val (ranks, changed) = Arena.ladderRanks(ladder, participants)
+            if (changed && world != null) {
+                val after = PyDocs.shallow(ladder).also { it["ranks"] = JArr(ranks.mapTo(ArrayList()) { JInt(it) }) }
+                world.putDocument("arena_ladder", after, revision!!, actor, "arena_ladder_join", jobj("ranks" to ranks.size))
+            }
+            return ranks
+        }
+    }
+
+    /** The arena of one request (`arena_context`): the ladder ranks, the participants by id, the own rank, the opponent rows. */
+    class ArenaContext(val ranks: List<Long>, val byId: Map<Long, WorldParticipants.Participant>, val rank: Long,
+                       val rows: List<Pair<Long, WorldParticipants.Participant>>)
+
+    fun arenaContext(current: StateStore.Current, worldCtx: WorldContext, now: Long): ArenaContext {
+        val participants = worldCtx.participants(current).map { it as WorldParticipants.Participant }
+        val ranks = worldCtx.arenaRanks(participants)
+        val byId = LinkedHashMap<Long, WorldParticipants.Participant>()
+        for (p in participants) byId[p.participantId] = p
+        val own = (ownId(current) as? JInt)?.value?.takeIf { it.bitLength() < 64 }?.toLong()
+        val at = if (own == null) -1 else ranks.indexOf(own)
+        val rank = if (at >= 0) at + 1L else ranks.size + 1L
+        return ArenaContext(ranks, byId, rank, Arena.opponents(ranks, byId, own))
     }
 
     /** (payload, provenance) of the first seed frame of an opcode (of an S1760 type) that decodes; else (null, null). */
@@ -198,7 +227,10 @@ object DailyRoutes {
 
     // --- queries (no state change) -----------------------------------------------------------------------------------------
 
-    /** Training room queries: C1761 list (u16 page, whose value the list ignores), C1771 invite (no reply). */
+    /**
+     * Training room queries (no state change): C1761 list (u16 page, whose value the list ignores), C1765 enter / Train
+     * Now, C1771 invite (no reply), C1773 remove (nobody else sits offline), C1775 results preview.
+     */
     fun trainingQuery(opcode: Int, payload: ByteArray, current: StateStore.Current, inputs: DailyInputs, now: Long): List<Frame> {
         val state = current.state
         val document = PyDocs.get(current, "training_state")
@@ -207,18 +239,19 @@ object DailyRoutes {
                 if (payload.size != 2) throw Acquisition.Rejected("C1761 is u16 page")
                 return HiddenTraining.roomListReply(document, state, inputs, now)
             }
-            HiddenTraining.C_ROOM_ENTER -> throw NotPorted("hidden_training.enter_reply (C1765)")
+            HiddenTraining.C_ROOM_ENTER ->
+                return HiddenTraining.enterReply(HiddenTraining.decodeRoomPassword(payload, opcode), document, state, inputs, now)
             HiddenTraining.C_ROOM_INVITE -> {
                 if (payload.size != 4) throw Acquisition.Rejected("C1771 is u32 room")
                 return emptyList()
             }
             HiddenTraining.C_ROOM_KICK -> {
                 if (payload.size != 8) throw Acquisition.Rejected("C1773 is u32 room + u32 player")
-                throw NotPorted("hidden_training.kick_reply (C1773)")
+                return HiddenTraining.kickReply(io.github.okexodus.openknights.protocol.WireReader(payload).number('I'), document, state, inputs, now)
             }
         }
         if (payload.isNotEmpty()) throw Acquisition.Rejected("C1775 has no payload")
-        throw NotPorted("hidden_training.preview_reply (C1775)")
+        return HiddenTraining.previewReply(document, state, inputs, now)
     }
 
     fun queryReply(opcode: Int, payload: ByteArray, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, inputs: DailyInputs,
@@ -249,10 +282,19 @@ object DailyRoutes {
                 val (values, _) = Castle.alchemyView(current.state, PyDocs.obj(current, "castle_state"), inputs, now)
                 return listOf(Castle.alchemyFrame(values))
             }
-            Castle.C_CATCH_LIST -> throw NotPorted("castle.catch_list_payload (C753, the world participants)")
+            Castle.C_CATCH_LIST -> {
+                val own = ownId(current)
+                val participants = worldCtx.participants(current).map { it as WorldParticipants.Participant }
+                return listOf(Castle.S_CATCH_LIST to Castle.catchListPayload(participants, own, level(current.state)))
+            }
             Castle.C_RESCUE_LIST -> return listOf(Castle.S_RESCUE_LIST to Castle.rescueListPayload())
             Castle.C_SERVANT_CHECK -> return emptyList()
-            417, 421 -> throw NotPorted("arena queries (C417 / C421, the world participants and the arena ladder)")
+            Arena.C_ARENA_OPEN, Arena.C_ARENA_TOP -> {
+                val arena = arenaContext(current, worldCtx, now)
+                if (opcode == Arena.C_ARENA_TOP) return listOf(Arena.S_ARENA_TOP to Arena.topPayload(arena.ranks, arena.byId))
+                val document = Arena.arenaView(PyDocs.get(current, "arena_state"), arena.rank, now, Arena.joinedAtOf(current))
+                return listOf(Arena.S_ARENA_INFO to Arena.infoPayload(document, arena.rank, arena.rows))
+            }
         }
         throw Acquisition.Rejected("Not a daily query")
     }
@@ -435,12 +477,14 @@ object DailyRoutes {
         val (board, boardChanged) = Quests.boardRoll(boardBefore, inputs, now, ownerKey)
         if (boardChanged || PyDocs.get(current, "bounty_board") == null) changes["bounty_board_after"] = board
         val quests = questDocument(current, seeds).deepCopy()
-        var met = Quests.refreshOwned(quests, inputs, state)
+        // held items = every stack of the Owned view (a dry run works on the caller's copy)
+        val view = owned ?: Owned(current, inputs)
+        var met = Quests.refreshOwned(quests, inputs, state, view)
         val lvl = level(state)
         met = Quests.backfillClaimed(quests, inputs, questClaims, lvl, current.characterProfile != null) || met
         if (Quests.unlock(quests, inputs, lvl)) {
             Quests.refreshStates(quests, inputs, lvl)
-            Quests.refreshOwned(quests, inputs, state)
+            Quests.refreshOwned(quests, inputs, state, view)
             met = true
         }
         if (PyDocs.get(current, "quest_state") == null || met) changes["quest_state_after"] = quests
@@ -479,6 +523,95 @@ object DailyRoutes {
         data["evidence_class"] = JStr("preservation_policy_daily_reset")
         return Plan(data, emptyList())
     }
+
+    // --- transactions -----------------------------------------------------------------------------------------------------
+
+    /** One committed daily request's (action, request, planner) — the reference's `planner_for` result. */
+    class Routed(val action: String, val request: JObj, val planner: (Owned, StateStore.Current) -> Plan)
+
+    /**
+     * `planner_for(opcode, payload, inputs, seeds, now, served_time, world_ctx, owner_key)`: the action, the decoded
+     * request and the planner of one committed daily request; the planner records `now_epoch` (and the `served_time` it
+     * used). Event Hall (group 8), Castle / Hidden Training / Card Sacrifice (group 6) and the arena reward (group 7) are
+     * ported with their groups.
+     */
+    fun plannerFor(opcode: Int, payload: ByteArray, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?, now: Long,
+                   servedTime: (StateStore.Current) -> Long, worldCtx: WorldContext = WorldContext(), ownerKey: String = "char"): Routed {
+        val used = JObj()
+        val request: JObj
+        val planner: (Owned, StateStore.Current) -> Plan
+        when (opcode) {
+            // the daily systems: check-in, time gifts, salary, Daily Mission gifts, Royal Door (daily.py)
+            Daily.C_SIGN_MONTH, Daily.C_SIGN_GIFT, Daily.C_SALARY -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                request = JObj()
+                planner = when (opcode) {
+                    Daily.C_SALARY -> { owned, current -> Daily.planSalary(owned, inputs, PyDocs.get(current, "salary_state"), now) }
+                    Daily.C_SIGN_MONTH -> { owned, current -> Daily.planMonthSign(owned, inputs, signDocument(current, seeds, now), now) }
+                    else -> { owned, current -> Daily.planTimeGift(owned, inputs, signDocument(current, seeds, now), now) }
+                }
+            }
+            Daily.C_MISSION_GIFT -> {
+                request = Daily.decodeMissionGift(payload)
+                planner = { owned, current -> Daily.planMissionGift(request, owned, inputs, PyDocs.get(current, "daily_mission_state"), now) }
+            }
+            Daily.C_DOOR_DAILY, Daily.C_DOOR_LEVEL_UP -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                request = jobj("kind" to if (opcode == Daily.C_DOOR_DAILY) "daily" else "level_up")
+                val (_, door) = worldCtx.document("royal_door")
+                planner = { owned, current ->
+                    Daily.planDoorClaim(request.str("kind"), owned, inputs, PyDocs.get(current, "royal_door_state"), door, now, door["born_at_utc"])
+                }
+            }
+            Daily.C_DOOR_DONATE -> {
+                request = Daily.decodeDonate(payload)
+                val (_, door) = worldCtx.document("royal_door")
+                planner = { owned, current ->
+                    Daily.planDoorDonate(request, owned, inputs, PyDocs.get(current, "royal_door_state"), door, now, door["born_at_utc"])
+                }
+            }
+            // quests: story claims and the bounty board (quests.py)
+            Quests.C_QUEST_CLAIM, Quests.C_BOUNTY_ACCEPT, Quests.C_BOUNTY_QUIT, Quests.C_BOUNTY_EXPEDITE, Quests.C_BOUNTY_STARS,
+            Quests.C_BOUNTY_AUTO, Quests.C_BOUNTY_TIMER, Quests.C_BOUNTY_REFRESH -> {
+                val bare = opcode == Quests.C_BOUNTY_TIMER || opcode == Quests.C_BOUNTY_REFRESH
+                request = if (bare) JObj() else Quests.decodeTask(payload, opcode)
+                if (bare && payload.isNotEmpty()) throw Acquisition.Rejected("C$opcode has no payload")
+                planner = { owned, current ->
+                    val board = boardDocument(current, seeds, now)
+                    val quests = questDocument(current, seeds)
+                    val served = servedTime(current)
+                    used["served_time"] = JInt(served)
+                    var story: Plan? = null
+                    if (opcode == Quests.C_QUEST_CLAIM) {
+                        val (rolled, _) = Quests.boardRoll(board, inputs, now, ownerKey)
+                        if (rolled.arr("rows").none { it.asArr[0] == request["quest"] }) {
+                            story = Quests.planStoryClaim(request, owned, inputs, quests, level(current.state))
+                        }
+                    }
+                    if (opcode == Quests.C_BOUNTY_TIMER) {
+                        val (rolled, _) = Quests.boardRoll(board, inputs, now, ownerKey)
+                        request["quest"] = rolled["auto_id"] ?: JNull
+                    }
+                    story ?: Quests.planBounty(opcode, request, owned, inputs, quests, board, now, ownerKey, serverTime = served)
+                }
+            }
+            in EVENT_HALL_OPCODES -> throw NotPorted("Event Hall action (opcode $opcode)")
+            in CASTLE_OPCODES -> throw NotPorted("Castle / Hidden Training / Card Sacrifice action (opcode $opcode)")
+            C_ARENA_REWARD -> throw NotPorted("arena reward (opcode $opcode)")
+            else -> throw Acquisition.Rejected("Not a daily opcode")
+        }
+        val recorded = { owned: Owned, current: StateStore.Current ->
+            val plan = planner(owned, current)
+            plan["now_epoch"] = now
+            for ((k, v) in used) plan[k] = v
+            plan
+        }
+        return Routed(ACTIONS.getValue(opcode), request, recorded)
+    }
+
+    private const val C_ARENA_REWARD = 423
+    private val EVENT_HALL_OPCODES = setOf(1635, 1637, 1641, 3077, 1665)
+    private val CASTLE_OPCODES = ACTIONS.filterValues { a -> listOf("castle", "training", "forge", "explore", "card_").any { a.startsWith(it) } }.keys
 
     /** The S6 code of a refused daily request. */
     fun refusal(opcode: Int): Int = REFUSALS.getValue(opcode)

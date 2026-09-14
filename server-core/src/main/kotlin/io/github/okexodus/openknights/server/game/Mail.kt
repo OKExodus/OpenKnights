@@ -4,6 +4,7 @@ import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.jvalue
@@ -57,6 +58,47 @@ object Mail {
     fun hasReward(reward: JValue?): Boolean {
         if (!Py.truthy(reward)) return false
         return (reward as JObj).any { (k, v) -> k != "version" && Py.truthy(v) }
+    }
+
+    /** Reward scalars → role property (grant order of the live claim S128: Gold 6 before Exploit 7). */
+    val ROLE_OF: Map<String, Long> = linkedMapOf("exp" to 4L, "gold" to 6L, "exploit" to 7L, "diamond" to 8L, "stamina" to 9L,
+        "energy" to 10L, "friend_point" to 11L, "reputation" to 12L, "donation" to 30L)
+
+    private val GRANTED_SCALARS = listOf("gold", "exploit", "diamond", "stamina", "energy", "friend_point", "reputation", "donation")
+
+    /**
+     * Pay a Reward v14 into the save (`grant`): item stacks (S68 / S64 each), heroes and equipment through the
+     * acquisition grants, then one S128 with every scalar that changed.
+     */
+    fun grant(owned: Owned, reward: JObj, @Suppress("UNUSED_PARAMETER") inputs: AcquisitionInputs): List<Frame> {
+        val frames = ArrayList<Frame>()
+        for (pair in (reward["items"] as? JArr) ?: JArr()) {
+            val template = pair.asArr[0]
+            val count = pair.asArr[1]
+            if (Py.truthy(count)) frames.add(owned.grantItem(PyDocs.long(template), PyDocs.long(count)))
+        }
+        for (entry in (reward["heroes"] as? JArr) ?: JArr()) {
+            val template = if (entry is JArr) entry[0] else entry
+            val groups = owned.grantHero(PyDocs.long(template)).second
+            for (group in listOf("add", "book", "god", "activity")) frames.addAll(groups.getValue(group))
+        }
+        for (entry in (reward["equips"] as? JArr) ?: JArr()) {
+            val template = if (entry is JArr) entry[0] else entry
+            val groups = owned.grantEquipment(PyDocs.long(template)).second
+            for (group in listOf("add", "book")) frames.addAll(groups.getValue(group))
+        }
+        val fields = ArrayList<Long>()
+        for (name in GRANTED_SCALARS) {
+            val value = reward[name]
+            if (Py.truthy(value)) {
+                owned.roleAdd(ROLE_OF.getValue(name), PyDocs.int(value))
+                fields.add(ROLE_OF.getValue(name))
+            }
+        }
+        if (fields.isNotEmpty()) {
+            frames.add(Acquisition.S_ROLE to Acquisition.roleUpdatePayload(fields.map { Triple(it, owned.role(it).long("tag"), owned.roleBits(it)) }))
+        }
+        return frames
     }
 
     /** Eviction order: mail without a claimable Reward first, then praise mail; other Reward mail is never evicted. */

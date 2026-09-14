@@ -9,6 +9,7 @@ import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.toHexString
+import io.github.okexodus.openknights.protocol.BattleReport
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
@@ -18,17 +19,26 @@ import java.time.temporal.ChronoUnit
 import java.util.WeakHashMap
 
 /**
- * The login parts of `goals.py` ("Mubiao", the 7-day target event): the per-character `goal_state` document seeded
- * once from the seed S3108, the days that open with the character's day index (local calendar days since creation + 1)
- * and level, the owned-state kinds re-read from the save, and the S3108 list payload.
+ * `goals.py` ("Mubiao", the 7-day target event): the per-character `goal_state` document seeded once from the seed
+ * S3108, the days that open with the character's day index (local calendar days since creation + 1) and level, the
+ * owned-state kinds re-read from the save, the S3108 list payload and the C2657 claim.
  */
 object Goals {
     const val C_CLAIM = 2657
+    const val S_REWARD = 3104
     const val S_ROW = 3106
     const val S_LIST = 3108
     const val PROFILE = "goal_state_v1"
     const val WIRE_RUNNING = 2L
     const val WIRE_READY = 3L
+    const val WIRE_CLAIMED = 4L
+    /** text 8011004 "The quest is not on the list". */
+    const val ERROR_NOT_LISTED = 11004
+    /** text 8070107 "Quest is not in can claim mode.". */
+    const val ERROR_NOT_READY = 70107
+    /** mubiaoquest reward types (cols 108 / 111 / 114 / 117): 1 item, 2 hero. */
+    const val REWARD_ITEM = 1L
+    const val REWARD_HERO = 2L
     const val ROLE_LEVEL = 3L
     const val U32 = 0xFFFFFFFFL
     const val KIND_LEVEL = 1L
@@ -321,6 +331,64 @@ object Goals {
     }
 
     fun listFrame(document: JObj): Frame = S_LIST to listPayload(document.arr("rows"))
+
+    /** C2657 `u32 goal` (`decode_claim`). */
+    fun decodeClaim(payload: ByteArray): Long {
+        if (payload.size != 4) throw Acquisition.Rejected("C2657 carries one u32 goal id")
+        return WireReader(payload).number('I').value.toLong()
+    }
+
+    /**
+     * The Reward v14 of a goal's (type, id, count) rewards (`reward_of`): type 1 = item (the currency items 2000x become
+     * their scalar, as the claims pay them), type 2 = hero × count.
+     */
+    fun rewardOf(goal: JObj): JObj {
+        val keyOfRole = LinkedHashMap<Long, String>()
+        for ((key, role) in Mail.ROLE_OF) keyOfRole[role] = key
+        val reward = Acquisition.emptyReward()
+        for (r in goal.arr("rewards")) {
+            val (kind, ident, count) = r.asArr.map { PyDocs.int(it) }
+            val currency = if (ident.bitLength() < 63) Claims.PAIR_CURRENCY[ident.toLong()] else null
+            if (kind == BigInteger.valueOf(REWARD_ITEM) && currency != null) {
+                val key = currency.first ?: keyOfRole[currency.second]
+                    ?: throw Acquisition.Rejected("Goal ${PyDocs.str(goal["id"])}: currency item $ident has no Reward field")
+                reward[key] = JInt(PyDocs.int(reward[key] ?: throw PyDocs.KeyError("'$key'")) + count)
+            } else if (kind == BigInteger.valueOf(REWARD_ITEM)) {
+                reward.arr("items").add(jarr(ident, count))
+            } else if (kind == BigInteger.valueOf(REWARD_HERO)) {
+                var n = BigInteger.ZERO
+                while (n < count) { reward.arr("heroes").add(jarr(ident)); n += BigInteger.ONE }
+            } else {
+                throw Acquisition.Rejected("Goal ${PyDocs.str(goal["id"])}: unknown reward type $kind")
+            }
+        }
+        return reward
+    }
+
+    /**
+     * C2657 on a wire-3 row (`plan_claim`) → grants (items, heroes, then one S128) → S3104 Reward → S3106 (the row at
+     * wire 4) → S3106 of any other row the refresh changed. Refusals: unknown / unserved id or Goals off 11004, not
+     * claimable 70107.
+     */
+    fun planClaim(payload: ByteArray, owned: Owned, current: StateStore.Current, seeds: SystemSeeds.SeedFrames?, inputs: DailyInputs,
+                  now: Long, power: ((StateStore.Current) -> BigInteger?)? = null): Plan {
+        val ident = decodeClaim(payload)
+        val document = documentOf(current, seeds, inputs, now).first
+            ?: throw Acquisition.Rejected("Goals are not open for this character", ERROR_NOT_LISTED)
+        val ids = evaluate(document, owned.state, inputs, now, power?.let { p -> { p(current) } })
+        val goal = tables(inputs).goals[ident]
+        val row = document.arr("rows").firstOrNull { it.asArr[0] == JInt(ident) }?.asArr
+        if (row == null || goal == null) throw Acquisition.Rejected("The goal is not on the list", ERROR_NOT_LISTED)
+        if (row[1] != JInt(WIRE_READY)) throw Acquisition.Rejected("The goal is not claimable", ERROR_NOT_READY)
+        val reward = rewardOf(goal)
+        val packets = ArrayList(Mail.grant(owned, reward, inputs))
+        row[1] = JInt(WIRE_CLAIMED)
+        packets.add(S_REWARD to BattleReport.encodeReward(reward))
+        packets.add(S_ROW to rowPayload(row))
+        packets.addAll(frames(document, ids.filter { it != ident }))
+        return Plan(jobj("goal" to ident, "kind" to goal["kind"], "rewards" to goal["rewards"]!!.deepCopy(), "reward" to reward,
+            "goal_state_after" to document, "evidence_class" to "native_use_load_rewards_candidate_order"), packets)
+    }
 
     /** One S3106 per id, in the given order (`_frames`). */
     fun frames(document: JObj, ids: List<Long>): List<Frame> {

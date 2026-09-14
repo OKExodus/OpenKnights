@@ -37,6 +37,7 @@ object Castle {
     const val S_BUILDING = 640
     const val S_GUILD_TECH = 2330
     const val S_ALCHEMY = 800
+    const val S_CATCH_LIST = 804
     const val S_RESCUE_LIST = 806
     const val S_SERVANT_MSG = 808
     const val S_ITEM_CAPACITY = 72
@@ -263,5 +264,26 @@ object Castle {
     }
 
     /** S806 `u8 challenges remaining, u8, u8 n`: the friends' recruits — none offline. */
+    /**
+     * S804 `u8 cost, u8 cost, u8 n1, n1 × (u32 id, name, u32 level, u32 hero, u8 role), u8 n2, n2 × (…, u8 flag)` from
+     * the shared world (`catch_list_payload`): "Defeated by Me" = up to six at or below the player's level (highest
+     * first), "Enemy" = up to six of the others (lowest first), a "Defeated by Me" row left out by participant id; nobody
+     * is a recruit offline (role 0).
+     */
+    fun catchListPayload(participants: List<WorldParticipants.Participant>, ownId: JValue?, ownLevel: Long, cost: Long = 5): ByteArray {
+        val own = (ownId as? JInt)?.value
+        val others = participants.filter { own == null || BigInteger.valueOf(it.participantId) != own }
+        val below = others.filter { it.level <= ownLevel }.sortedByDescending { it.level }.take(6)
+        val shown = below.mapTo(HashSet()) { it.participantId }
+        val above = others.filter { it.participantId !in shown }.sortedBy { it.level }.take(6)
+        fun row(p: WorldParticipants.Participant, flag: Boolean): ByteArray = WireWriter().number('I', p.participantId).raw(p.nameRaw)
+            .raw(byteArrayOf(0)).number('I', p.level).number('I', p.leaderTemplate).raw(if (flag) byteArrayOf(0, 0) else byteArrayOf(0)).bytes()
+        val w = WireWriter().raw(PyDocs.bytes(listOf(cost, cost, below.size.toLong())))
+        for (p in below) w.raw(row(p, false))
+        w.raw(PyDocs.bytes(listOf(above.size.toLong())))
+        for (p in above) w.raw(row(p, true))
+        return w.bytes()
+    }
+
     fun rescueListPayload(remaining: Long = 6, second: Long = 2): ByteArray = PyDocs.bytes(listOf(remaining, second, 0))
 }

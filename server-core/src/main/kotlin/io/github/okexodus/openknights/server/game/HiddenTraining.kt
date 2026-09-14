@@ -6,19 +6,23 @@ import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.JStr
 import io.github.okexodus.openknights.exact.JValue
+import io.github.okexodus.openknights.exact.PyInt
+import io.github.okexodus.openknights.exact.asArr
 import io.github.okexodus.openknights.exact.asObj
 import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.toHexString
+import io.github.okexodus.openknights.protocol.BattleReport
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import java.math.BigInteger
 
 /**
  * The login / query parts of `hidden_training.py`: the training room list S2112 (C1761; offline every room but the
- * default one is the player's own), the Blacksmith / Crafting cooldowns (S1760 type 5, S3726) and the Hero Set Out
- * slots S2274 (seeded once from the seed frame). Every timer is an absolute deadline sent as the remaining seconds.
+ * default one is the player's own), the room queries (C1765 enter / Train Now and C1773 remove → S2114, C1775 results
+ * preview → S2116), the Blacksmith / Crafting cooldowns (S1760 type 5, S3726) and the Hero Set Out slots S2274 (seeded
+ * once from the seed frame). Every timer is an absolute deadline sent as the remaining seconds.
  */
 object HiddenTraining {
     const val C_ROOM_LIST = 1761
@@ -32,6 +36,8 @@ object HiddenTraining {
     const val C_TRAIN_CLAIM = 1777
     const val C_ROOM_ADD_TIME = 1779
     const val S_ROOM_LIST = 2112
+    const val S_ROOM_INFO = 2114
+    const val S_TRAIN_PREVIEW = 2116
     const val S_EVENT_UPDATE = 1760
     const val T_SMITH = 5
     const val S_CRAFT_CD = 3726
@@ -39,10 +45,16 @@ object HiddenTraining {
 
     const val ROLE_ID = 0L
     const val ROLE_NAME = 2L
+    const val ROLE_LEVEL = 3L
+    const val TITLE = 22L
     const val TRAINING_PROFILE = "training_state_v1"
     const val FORGE_PROFILE = "forge_state_v1"
     const val EXPLORE_PROFILE = "explore_state_v1"
     const val ERROR_NO_ROOM = 38000
+    const val ERROR_ROOM_CODE = 38001
+    const val ERROR_LEVEL = 38004
+    const val ERROR_NOT_OWNER = 38006
+    const val ERROR_NOT_TRAINING = 38007
     const val DEFAULT_ROOM = 1L
     const val DEFAULT_ROW = 401L
 
@@ -159,6 +171,181 @@ object HiddenTraining {
         val doc = trainingDocument(document)
         val rooms = roomsView(doc, state, inputs, now)
         return listOf(S_ROOM_LIST to roomListPayload(rooms, PyDocs.get(doc, "seat")?.let { it as JObj }, now, inputs))
+    }
+
+    /**
+     * The player's attack score for the training settlement (`attack_score`, policy): the client's per-slot Power
+     * formula 2·HP + 21·DEF + 15·(ATK + Unique) + 20·RebornAtk + 25·RebornDef (u32 stats) over the formation's heroes
+     * (hero fields 4 / 6 / 8 / 10 / 22 / 23) with the title row (title.csv 201 HP, 202 Unique, 203 ATK).
+     */
+    fun attackScore(state: JObj, inputs: DailyInputs): BigInteger {
+        val title = roleBits(state, TITLE)
+        val row = if (title is JInt && title.value.bitLength() < 64) inputs.titleBonus(title.value.toLong())
+            else jobj("hp" to 0, "unique" to 0, "atk" to 0)
+        val heroes = HashMap<JValue, Map<JValue, JValue>>()
+        for (fields in PyDocs.at(state, "heroes") as JArr) {
+            val values = LinkedHashMap<JValue, JValue>()
+            for (f in fields as JArr) {
+                val bits = f.asObj.obj("value")["bits"]
+                values[PyDocs.at(f.asObj, "id")] = if (Py.truthy(bits)) bits!! else JInt(0)
+            }
+            heroes[values[JInt(0)] ?: throw PyDocs.KeyError("0")] = values
+        }
+        val mask = BigInteger.valueOf(0xFFFFFFFFL)
+        var total = BigInteger.ZERO
+        for (s in (state["formation"] as? JArr) ?: JArr()) {
+            val slot = s.asObj
+            val uid = slot["hero_uid"]
+            val values = heroes[uid ?: JNull]
+            if (!Py.truthy(uid) || values == null) continue
+            fun v(id: Long): BigInteger = PyDocs.int(values[JInt(id)] ?: JInt(0))
+            val hp = v(4) + PyDocs.int(row["hp"])
+            val atk = v(6) + PyDocs.int(row["atk"])
+            val defense = v(8)
+            val unique = v(10) + PyDocs.int(row["unique"])
+            total += BigInteger.TWO * hp.and(mask) + BigInteger.valueOf(21) * defense.and(mask) +
+                BigInteger.valueOf(15) * (atk.and(mask) + unique.and(mask)) + BigInteger.valueOf(20) * v(22).and(mask) +
+                BigInteger.valueOf(25) * v(23).and(mask)
+        }
+        return total
+    }
+
+    private fun find(rooms: List<Room>, uid: JValue?): Room =
+        rooms.firstOrNull { it.uid == uid } ?: throw Acquisition.Rejected("Training room does not exist", ERROR_NO_ROOM)
+
+    /**
+     * S2114 `u32 uid, u32 row, cstr master, i32 room remaining, i32 own training remaining, cstr password, u8 n, n ×
+     * (u8 seat, u32 player id, cstr name, u32 hero template)`. The password shows only to the room's owner.
+     */
+    fun roomInfoPayload(room: Room, seat: JObj?, now: Long, inputs: DailyInputs, rooms: List<Room>): ByteArray {
+        val byUid = LinkedHashMap<JValue, Room>().also { m -> rooms.forEach { m[it.uid] = it } }
+        val own = if (Py.truthy(seat) && PyDocs.at(seat!!, "room") == room.uid) remaining(JInt(seatEnd(seat, byUid, inputs)), now) else BigInteger.ZERO
+        val w = WireWriter().number('I', room.uid).number('I', room.row).raw(room.masterRaw).raw(byteArrayOf(0))
+        w.number('i', remaining(room.expiresAt, now)).number('i', own)
+        w.raw(if (room.mine) room.password else ByteArray(0)).raw(byteArrayOf(0)).raw(PyDocs.bytes(listOf(room.players.size.toLong())))
+        for (player in room.players) {
+            w.number('B', player.seat).number('I', player.playerId ?: JNull).raw(player.nameRaw).raw(byteArrayOf(0))
+            w.number('I', player.template)
+        }
+        return w.bytes()
+    }
+
+    /**
+     * Rate factor per 10,000 (`training_boost`): xiuxing 301 (base), + 303 in the player's own room, + 302 when every
+     * seat is taken (policy).
+     */
+    fun trainingBoost(room: Room, inputs: DailyInputs): Long {
+        val row = row(inputs, room.row)
+        var boost = row.long("boost")
+        if (room.mine) boost += row.long("creator_boost")
+        if (room.players.size >= row.long("seats")) boost += row.long("full_boost")
+        return boost
+    }
+
+    /** EXP(t) = ⌊t·P·601·B / (6·10⁸·10⁴)⌋, Honor(t) = ⌊t·P·602·B / (6·10¹⁰·10⁴)⌋ (`training_reward`). */
+    fun trainingReward(seconds: BigInteger, power: BigInteger, row: JObj, boost: Long): Pair<BigInteger, BigInteger> {
+        val base = seconds * power
+        return PyInt.floorDiv(base * row.int("exp_rate") * BigInteger.valueOf(boost), BigInteger.valueOf(600_000_000L * 10_000L)) to
+            PyInt.floorDiv(base * row.int("honor_rate") * BigInteger.valueOf(boost), BigInteger.valueOf(60_000_000_000L * 10_000L))
+    }
+
+    /** (seconds trained so far, training end) of the seated player; not seated: 38007 (`_trained`). */
+    private fun trained(document: JObj, rooms: List<Room>, inputs: DailyInputs, now: Long): Pair<BigInteger, BigInteger> {
+        val seat = PyDocs.at(document, "seat")
+        if (!Py.truthy(seat)) throw Acquisition.Rejected("Training hasn't started or was claimed", ERROR_NOT_TRAINING)
+        val byUid = LinkedHashMap<JValue, Room>().also { m -> rooms.forEach { m[it.uid] = it } }
+        val end = seatEnd(seat as JObj, byUid, inputs)
+        return (BigInteger.valueOf(now).min(end) - PyDocs.int(PyDocs.at(seat, "seated_at"))).max(BigInteger.ZERO) to end
+    }
+
+    /** A Reward with the EXP and the Honor (as exploit) (`_reward`). */
+    private fun reward(exp: BigInteger, honor: BigInteger): ByteArray {
+        val reward = Acquisition.emptyReward()
+        reward["exp"] = JInt(exp)
+        reward["exploit"] = JInt(honor)
+        return BattleReport.encodeReward(reward)
+    }
+
+    private fun levelOk(room: Room, level: JValue?, inputs: DailyInputs): Boolean {
+        val row = row(inputs, room.row)
+        val lvl = level ?: JNull
+        return PyDocs.compare(JInt(row.long("min_level")), lvl) <= 0 && PyDocs.compare(lvl, JInt(row.long("max_level"))) <= 0
+    }
+
+    /** C1765 / C1769 `u32 room, cstring password` (`decode_room_password`). */
+    class RoomSecret(val room: JInt, val password: ByteArray)
+
+    fun decodeRoomPassword(payload: ByteArray, opcode: Int): RoomSecret {
+        if (payload.size < 5 || payload[payload.size - 1] != 0.toByte() || payload.copyOfRange(4, payload.size - 1).contains(0.toByte())) {
+            throw Acquisition.Rejected("C$opcode is u32 room + cstring")
+        }
+        return RoomSecret(WireReader(payload).number('I'), payload.copyOfRange(4, payload.size - 1))
+    }
+
+    /**
+     * C1765 `u32 room (0 = "Train Now"), cstr password` → S2114 (`enter_reply`). Train Now opens the room the player
+     * trains in, else the joinable room with the highest base boost; a password is asked for rooms of others; the level
+     * window is xiuxing 502 … 503.
+     */
+    fun enterReply(request: RoomSecret, document: JValue?, state: JObj, inputs: DailyInputs, now: Long): List<Frame> {
+        val doc = trainingDocument(document)
+        val rooms = roomsView(doc, state, inputs, now)
+        val level = roleBits(state, ROLE_LEVEL, 1)
+        val seat = PyDocs.at(doc, "seat").takeIf { it != JNull }
+        val room: Room
+        if (request.room.value.signum() == 0) {
+            if (Py.truthy(seat)) {
+                room = find(rooms, PyDocs.at(seat as JObj, "room"))
+            } else {
+                val joinable = rooms.filter { r ->
+                    levelOk(r, level, inputs) && (r.mine || r.password.isEmpty()) && r.players.size < row(inputs, r.row).long("seats")
+                }
+                if (joinable.isEmpty()) throw Acquisition.Rejected("No training room is open", ERROR_NO_ROOM)
+                var best = joinable[0]
+                fun key(r: Room): Pair<Long, BigInteger> = row(inputs, r.row).long("boost") to PyDocs.int(r.uid).negate()
+                var bestKey = key(best)
+                for (r in joinable.drop(1)) {
+                    val k = key(r)
+                    if (k.first > bestKey.first || (k.first == bestKey.first && k.second > bestKey.second)) { best = r; bestKey = k }
+                }
+                room = best
+            }
+        } else {
+            room = find(rooms, request.room)
+            if (room.password.isNotEmpty() && !room.mine && !room.password.contentEquals(request.password)) {
+                throw Acquisition.Rejected("Incorrect room code", ERROR_ROOM_CODE)
+            }
+            if (!levelOk(room, level, inputs)) throw Acquisition.Rejected("Your level is too low", ERROR_LEVEL)
+        }
+        return listOf(S_ROOM_INFO to roomInfoPayload(room, seat as JObj?, now, inputs, rooms))
+    }
+
+    /**
+     * C1775 ("End" in the room) → S2116 Reward (EXP, Honor so far) + i32 remaining training seconds; no change
+     * (`preview_reply`). `power`: the attack score to use (null = the save's).
+     */
+    fun previewReply(document: JValue?, state: JObj, inputs: DailyInputs, now: Long, power: BigInteger? = null): List<Frame> {
+        val doc = trainingDocument(document)
+        val rooms = roomsView(doc, state, inputs, now)
+        val (seconds, end) = trained(doc, rooms, inputs, now)
+        val room = find(rooms, PyDocs.at(doc.obj("seat"), "room"))
+        val score = power ?: attackScore(state, inputs)
+        val (exp, honor) = trainingReward(seconds, score, row(inputs, room.row), trainingBoost(room, inputs))
+        return listOf(S_TRAIN_PREVIEW to (reward(exp, honor) + WireWriter().number('i', remaining(JInt(end), now)).bytes()))
+    }
+
+    /** A room the player owns (stored); the default room: 38006, another: 38000 (`_own_room`). */
+    private fun ownRoom(document: JObj, uid: JValue): JObj =
+        document.arr("rooms").firstOrNull { PyDocs.at(it.asObj, "uid") == uid }?.asObj
+            ?: if (uid == JInt(DEFAULT_ROOM)) throw Acquisition.Rejected("Only room owner can use this function", ERROR_NOT_OWNER)
+            else throw Acquisition.Rejected("Training room does not exist", ERROR_NO_ROOM)
+
+    /** C1773 `u32 room, u32 player` (owner only): offline nobody else sits in the player's rooms → S2114 (`kick_reply`). */
+    fun kickReply(room: JValue, document: JValue?, state: JObj, inputs: DailyInputs, now: Long): List<Frame> {
+        val doc = trainingDocument(document)
+        ownRoom(doc, room)
+        val rooms = roomsView(doc, state, inputs, now)
+        return listOf(S_ROOM_INFO to roomInfoPayload(find(rooms, room), PyDocs.at(doc, "seat").takeIf { it != JNull } as JObj?, now, inputs, rooms))
     }
 
     // --- Blacksmith / Crafting ---------------------------------------------------------------------------------------------
