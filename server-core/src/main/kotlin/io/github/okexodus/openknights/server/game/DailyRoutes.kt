@@ -533,7 +533,7 @@ object DailyRoutes {
     /**
      * `planner_for(opcode, payload, inputs, seeds, now, served_time, world_ctx, owner_key)`: the action, the decoded
      * request and the planner of one committed daily request; the planner records `now_epoch` (and the `served_time` it
-     * used). Event Hall (group 8) and the arena reward (group 7) are ported with their groups.
+     * used). The Event Hall actions (group 8) are ported with their group.
      */
     fun plannerFor(opcode: Int, payload: ByteArray, inputs: DailyInputs, seeds: SystemSeeds.SeedFrames?, now: Long,
                    servedTime: (StateStore.Current) -> Long, worldCtx: WorldContext = WorldContext(), ownerKey: String = "char"): Routed {
@@ -718,7 +718,15 @@ object DailyRoutes {
                     CardReset.planReset(opcode, request, owned, inputs, current, served, exploreHeroes = explore)
                 }
             }
-            C_ARENA_REWARD -> throw NotPorted("arena reward (opcode $opcode)")
+            // the Arena daily reward (arena.py)
+            C_ARENA_REWARD -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C423 has no payload")
+                request = JObj()
+                planner = { owned, current ->
+                    val arena = arenaContext(current, worldCtx, now)
+                    Arena.planReward(owned, inputs, PyDocs.get(current, "arena_state"), arena.rank, now, arena.rows)
+                }
+            }
             else -> throw Acquisition.Rejected("Not a daily opcode")
         }
         val recorded = { owned: Owned, current: StateStore.Current ->

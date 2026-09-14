@@ -56,6 +56,7 @@ import io.github.okexodus.openknights.server.game.ChangeJob
 import io.github.okexodus.openknights.server.game.HeroFortify
 import io.github.okexodus.openknights.server.game.ItemFortify
 import io.github.okexodus.openknights.server.store.FortifyResult
+import io.github.okexodus.openknights.server.store.WorldDirectory
 import io.github.okexodus.openknights.server.store.EquipEvolveResult
 import io.github.okexodus.openknights.server.store.evolveGear
 import io.github.okexodus.openknights.server.store.evolveJewelry
@@ -833,7 +834,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         if (opcode in setOf(2049, 2629, 2593, 2817)) return equipEvolveRoute(opcode, payload)
         if (opcode in Routes.FORMATION) return formationRoute(opcode, payload)
         if (opcode in setOf(3693, 3713, 3721, 2497, 3907)) return heroCardRoute(opcode, payload)
-        if (opcode == 705) group(opcode, "rank list")
+        if (opcode == 705) return rankRoute(payload)
         if (opcode in Routes.ACQUISITION) return acquisitionRoute(opcode, payload)
         if (opcode in Routes.DAILY && (queriesSent || opcode !in QUERY_SEQUENCE)) return dailyRoute(opcode, payload)
         if (opcode in Routes.SOCIAL && (queriesSent || opcode !in QUERY_SEQUENCE) &&
@@ -1327,6 +1328,26 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return plan.packets.toList()
     }
 
+    /** C705 → S736 from the shared world directory (`_rank_route`, docs/CHARACTER_CREATE_CONTRACT.md section 8). */
+    private fun rankRoute(payload: ByteArray): List<Frame> {
+        val reply: WorldDirectory.Companion.RankReply
+        val rows: List<WorldDirectory.Companion.RankRow>
+        try {
+            if (!queriesSent) throw PyValues.ValueError("Complete initialization queries before opening the rank list")
+            val (type, page) = WorldDirectory.decodeRankRequest(payload)
+            val own = WorldDirectory.characterRankRoleId(stateStore!!.read())
+            // Every world participant (characters + the documented bot extension), docs/WORLD_PARTICIPANTS.md.
+            rows = worldContext().participants().map { WorldDirectory.participantRankRow(it as WorldParticipants.Participant) }
+            reply = WorldDirectory.buildRankReply(type, page, rows, own)
+        } catch (e: IllegalArgumentException) {
+            log("rejected_rank_list", "character_id" to characterId, "reason" to e.message, "error_code" to 102)
+            return listOf(6 to TransactionPackets.errorPayload(102))
+        }
+        log("rank_list_served", "character_id" to characterId, "rank_type" to reply.type, "page" to reply.page, "entries" to reply.entries.size,
+            "total_pages" to reply.totalPages, "my_rank" to reply.myRank, "world_members" to rows.size)
+        return listOf(WorldDirectory.RANK_REPLY_OPCODE to WorldDirectory.encodeRankReply(reply))
+    }
+
     /** Daily requests (`_daily_route`, daily_routes.py): commit first, then the live reply order. */
     private fun dailyRoute(opcode: Int, payload: ByteArray): List<Frame> {
         val inputs = service.inputs
@@ -1409,23 +1430,35 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         return plan.packets.toList() + dailyCounters("goal_claim", plan.data, plan.packets)
     }
 
-    /** Social requests (guild, friends, chat, mail); only the three initialization queries are ported yet. */
+    /**
+     * Social requests (guild, friends, chat, mail; `_social_route`): each change of the requesting character is one
+     * audited acquisition transaction; world documents change through the social context. Praise, mail claims and an
+     * added friend feed the daily counters.
+     */
     private fun socialRoute(opcode: Int, payload: ByteArray): List<Frame> {
         var now: Long? = null
-        val packets: List<Frame>
+        var packets: List<Frame>
         val ctx: SocialRoutes.SocialContext
         val served: Long
+        val committed = ArrayList<Pair<String, io.github.okexodus.openknights.exact.JValue?>>()
         try {
             if (!queriesSent) throw Acquisition.Rejected("Complete initialization queries first")
-            deploymentPolicy() ?: throw Acquisition.Rejected("The social layer needs a store-backed character with a deployment policy")
-            if (opcode !in setOf(Guild.C_MY_GUILD, Friends.C_PENDING, Mail.C_LIST)) group(opcode, "social system")
+            val policy = deploymentPolicy() ?: throw Acquisition.Rejected("The social layer needs a store-backed character with a deployment policy")
             now = service.clock.now()
+            val at: Long = now
             val current = stateStore!!.read()
             ctx = socialContext()
             served = servedTime(current, now)
-            packets = SocialRoutes.dispatch(opcode, payload, current, ctx, now)
+            val commit = SocialRoutes.Commit { action, planner ->
+                val (result, plan) = stateStore!!.acquisitionTransaction(action, characterId!!, policy, service.inputs, "authenticated-client",
+                    "Native opcode$opcode social system", detailExtra = jobj("opcode" to opcode, "now_epoch" to at, "contract" to "docs/SOCIAL_CONTRACT.md"),
+                    planner = planner)
+                committed.add(action to result["revision"])
+                plan
+            }
+            packets = SocialRoutes.dispatch(opcode, payload, current, ctx, commit, now, served, characterId!!, service.onlineRoles())
         } catch (e: IllegalArgumentException) {
-            val code = (e as? Acquisition.Rejected)?.code ?: 102
+            val code = ItemFortify.codeOf(e)
             log("rejected_social", "character_id" to characterId, "opcode" to opcode, "reason" to e.message, "error_code" to code,
                 "now_epoch" to now)
             return listOf(6 to TransactionPackets.errorPayload(code))
@@ -1434,6 +1467,16 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             log("social_internal_error", "character_id" to characterId, "opcode" to opcode, "error" to described(e))
             return listOf(6 to TransactionPackets.errorPayload(102))
         }
+        for ((action, revision) in committed) {
+            log("transaction_committed", "action" to action, "character_id" to characterId, "revision" to revision, "opcode" to opcode)
+        }
+        // quest counters of the social actions: praise, a friend added (a sent request that found the player, or an
+        // accepted request — POLICY), mail items claimed (owned-state kinds)
+        val counted = committed.map { it.first }.filter { it == "friend_praise" || it == "mail_claim" }.toMutableList()
+        fun firstIs(op: Int, data: ByteArray) = packets.isNotEmpty() && packets[0].first == op && packets[0].second.contentEquals(data)
+        if ((opcode == Friends.C_ADD || opcode == Friends.C_ADD_NAME) && firstIs(Friends.S_ADD_RESULT, byteArrayOf(0))) counted.add("friend_add")
+        if (opcode == Friends.C_REPLY && firstIs(Friends.S_REPLY_RESULT, byteArrayOf(0)) && packets.size > 1) counted.add("friend_add")
+        for (action in counted) packets = packets + dailyCounters(action, JObj())
         log("social_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first },
             "now_epoch" to now, "served_time" to served, "online" to service.onlineRoles(), "clock_offset" to ctx.clockOffset)
         return packets

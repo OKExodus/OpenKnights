@@ -100,8 +100,8 @@ object Summon {
      * `int(datetime.fromisoformat(stamp).timestamp())`: an aware stamp maps through its own offset, a naive one
      * through the host's local offset; the fractional seconds are truncated toward zero.
      */
-    fun isoTimestamp(stamp: String): Long {
-        val parsed = parseIso(stamp)
+    fun isoTimestamp(stamp: String, naiveAsUtc: Boolean = false): Long {
+        val parsed = parseIso(stamp, naiveAsUtc)
         val epoch = parsed.first
         val nanos = parsed.second
         return if (epoch < 0 && nanos > 0) epoch + 1 else epoch
@@ -109,7 +109,8 @@ object Summon {
 
     private val NAIVE = DateTimeFormatter.ISO_LOCAL_DATE_TIME
 
-    private fun parseIso(stamp: String): Pair<Long, Int> {
+    /** `datetime.fromisoformat(stamp)` as (epoch, nanos); a stamp without a zone is local time, or UTC with [naiveAsUtc]. */
+    private fun parseIso(stamp: String, naiveAsUtc: Boolean = false): Pair<Long, Int> {
         val text = stamp.replace(' ', 'T')
         try {
             val aware = OffsetDateTime.parse(text)
@@ -119,6 +120,7 @@ object Summon {
         try {
             val naive = LocalDateTime.parse(text, NAIVE)
             val guess = naive.toEpochSecond(ZoneOffset.UTC)
+            if (naiveAsUtc) return guess to naive.nano
             val offset = Now.offset(guess)
             return naive.toEpochSecond(ZoneOffset.ofTotalSeconds(offset)) to naive.nano
         } catch (_: DateTimeParseException) {
@@ -126,6 +128,7 @@ object Summon {
         try {
             val date = java.time.LocalDate.parse(stamp)
             val guess = date.atStartOfDay().toEpochSecond(ZoneOffset.UTC)
+            if (naiveAsUtc) return guess to 0
             return date.atStartOfDay().toEpochSecond(ZoneOffset.ofTotalSeconds(Now.offset(guess))) to 0
         } catch (_: DateTimeParseException) {
         }
