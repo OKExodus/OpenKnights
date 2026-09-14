@@ -12,6 +12,7 @@ import io.github.okexodus.openknights.exact.hexBytes
 import io.github.okexodus.openknights.exact.jarr
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.WireReader
+import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.store.StateStore
 import java.math.BigInteger
 
@@ -630,21 +631,81 @@ object BattleStats {
     fun cityBarDisplay(power: Long): Long = trunc(f32(power.toDouble()))
 
     const val S_LINEUP_VIEW = 3776
+    const val C_LINEUP_VIEW = 3809
+
+    val BATTLE_MODE_NOTE = "mode 'battle' reproduces the live campaign report max_hp (CAND, 106/107 captured own " +
+        "actors): the client chain without the jewelry-album (type 3) families, the totem added as an integer, and " +
+        "the four totals rounded through binary32; its score is not the client Power (use mode 'power')"
+
+    /** `hero.get(id) or 0`: the field's bits when truthy, else 0. */
+    private fun heroField(hero: Map<Long, BigInteger?>, id: Long): Long {
+        val bits = hero[id]
+        return if (bits == null || bits.signum() == 0) 0L else bits.toLong()
+    }
 
     /**
      * `battle_actors(state, inputs, world)`: own campaign actors for the battle engine — `{battle position 1..6: slot
-     * stats (mode "battle")}` for the counted main slots (report position = formation flag + 1). Lead-written stub; the
-     * campaign slice ports it (a thin wrapper over `lineupStats(mode = "battle")`).
+     * stats (mode "battle")}` for the counted main slots (report position = formation flag + 1), a thin wrapper over
+     * `lineupStats(mode = "battle")`.
      */
-    fun battleActors(state: JObj, inputs: AcquisitionInputs, world: JObj? = null): JObj =
-        throw NotPorted("battle_stats.battle_actors")
+    fun battleActors(state: JObj, inputs: AcquisitionInputs, world: JObj? = null): JObj {
+        val lineup = lineupStats(state, inputs, world, mode = "battle")
+        val actors = JObj(intKeys = true)
+        for (s in lineup.arr("slots")) {
+            val slot = s.asObj
+            if (slot.bool("counted")) actors[(slot.long("position") + 1).toString()] = slot
+        }
+        return jobj("actors" to actors, "unresolved" to lineup["unresolved"], "note" to BATTLE_MODE_NOTE)
+    }
 
     /**
      * `lineup_view_payload(state, inputs, world)`: S3776 for one character (own card, another local character or a bot
-     * built as a state). Lead-written stub; the campaign slice ports it over the existing `Model`.
+     * built as a state) — HandleGetOthersInfo layout over the power-mode `Model`.
      */
-    fun lineupViewPayload(state: JObj, inputs: AcquisitionInputs, world: JObj? = null): ByteArray =
-        throw NotPorted("battle_stats.lineup_view_payload")
+    fun lineupViewPayload(state: JObj, inputs: AcquisitionInputs, world: JObj? = null): ByteArray {
+        val model = Model(state, inputs, world)
+        val w = WireWriter().number('I', 0L).number('I', 0L).number('B', 0L)
+        val slots = ArrayList<Pair<JObj, JObj>>()
+        for (slotId in MAIN_SLOTS) {
+            val raw = slotOf(state, slotId) ?: continue
+            if (!Py.truthy(raw["hero_uid"])) continue
+            slots.add(raw to model.slot(slotId))
+        }
+        w.number('B', slots.size.toLong())
+        for ((raw, stats) in slots) {
+            val hero = model.heroes.getValue(raw.long("hero_uid"))
+            val flag = (raw["flag"] as? JInt)?.value?.toLong() ?: 0L
+            w.number('B', flag and 0xFF).number('I', heroField(hero, 1L)).number('B', 0L)
+                .number('H', heroField(hero, 2L) and 0xFFFF).number('H', 0L)
+            for (k in listOf("hp", "atk", "def", "crit", "reborn_atk", "reborn_def")) w.number('I', stats.getValue(k))
+            w.number('Q', stats.getValue("score"))
+            val gear = model.slotGear(raw).entries.filter { it.value != null && it.value!![0] != 0L }.sortedBy { it.key }
+            w.number('B', gear.size.toLong())
+            for ((pos, r) in gear) w.number('B', pos).number('I', r!![1]).number('B', r[4] and 0xFF)
+                .number('B', r[5] and 0xFF).number('I', r[2]).number('I', r[6])
+            val jewels = model.slotJewels(raw).entries.filter { it.value.uid != 0L }.sortedBy { it.key }
+            w.number('B', jewels.size.toLong())
+            for ((pos, b) in jewels) w.number('B', pos).number('I', b.config).number('B', b.grade)
+                .number('B', b.superFlag).number('I', b.level).number('I', b.extra)
+            val groups = model.slotGems(raw).entries.sortedBy { it.key }
+            w.number('B', groups.size.toLong())
+            for ((gid, ids) in groups) {
+                w.number('B', gid).number('B', ids.size.toLong())
+                for (g in ids) w.number('I', g)
+            }
+        }
+        val team = (model.secondary ?: LongArray(0)).withIndex().filter { it.value != 0L && it.value in model.heroes }
+        w.number('B', team.size.toLong())
+        for ((position, uid) in team) {
+            val hero = model.heroes.getValue(uid)
+            val ability = model.heroAbility(uid)
+            val s = ability.stats
+            w.number('B', position.toLong()).number('I', heroField(hero, 1L)).number('H', heroField(hero, 2L) and 0xFFFF).number('H', 0L)
+            w.number('I', s[HP]).number('I', s[ATK]).number('I', s[DEF]).number('I', s[UNQ])
+                .number('I', heroField(hero, 22L) and U32).number('I', heroField(hero, 23L) and U32).number('Q', ability.score)
+        }
+        return w.bytes()
+    }
 
     // --- world helpers -----------------------------------------------------------------------------------------------------
 

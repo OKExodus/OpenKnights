@@ -1549,11 +1549,11 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
                         "campaign_battle" -> {
                             val helper = Campaign.helperParticipant(request, owned, worldCtx, social, now, inputs)
                             helperRole = helper?.participantId
-                            p = Campaign.planBattle(request, owned, cur, inputs, document, now, world, helper, helperState(helper), seed)
+                            p = Campaign.planBattle(request, owned, cur, inputs, document, now, world, helper, helperState(helper), seed.toLong())
                             if (regen != null) p.packets = listOf(regen) + p.packets
                             if (!Py.truthy(p["commit"])) throw Campaign.Lost(p)
                         }
-                        "campaign_auto" -> p = Campaign.planAuto(request, owned, cur, inputs, document, now, Campaign.SplitMix64(seed xor 0xA070L))
+                        "campaign_auto" -> p = Campaign.planAuto(request, owned, cur, inputs, document, now, Campaign.SplitMix64(seed.toLong() xor 0xA070L))
                         "campaign_reentry" -> p = Campaign.planReentry(request, owned, inputs, document, now, servedTime(cur, now))
                         else -> p = Campaign.planStarBox(request, owned, inputs, document)
                     }
