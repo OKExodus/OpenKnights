@@ -2,15 +2,14 @@ package io.github.okexodus.openknights.server.game
 
 import io.github.okexodus.openknights.exact.JObj
 import io.github.okexodus.openknights.exact.asObj
-import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.server.store.StateStore
 
 /**
  * Request → planner dispatch of the acquisition routes (`acquisition_routes.py`, docs/ACQUISITION_CONTRACT.md). Every
  * plan records `now_epoch` and, when an event window or ladder was judged, the `served_time` it used.
  *
- * Ported so far: item use, choose box, merge, summons, hero refine / fuse, refines, Combine, the fuse luck query and the
- * Rebirth Evolve / Fortify (C101 / C99) and Reborn (C95) branches; the other opcodes' planners are [NotPorted].
+ * Ported so far: the Rebirth Evolve / Fortify (C101 / C99) and Reborn (C95) branches; every other opcode's planner is
+ * [NotPorted] (the acquisition group).
  */
 object AcquisitionRoutes {
     val ACTIONS: Map<Int, String> = linkedMapOf(73 to "acquire_item_use", 4099 to "acquire_choose_box", 803 to "acquire_merge",
@@ -53,7 +52,7 @@ object AcquisitionRoutes {
         if (payload.isNotEmpty()) throw Acquisition.Rejected("C1253 has no payload")
         val stored = current.document("fuse_luck_state")
         val document = if (Py.truthy(stored)) stored!!.asObj else Compose.initialLuckDocument(current)
-        return listOf(Compose.S_LUCK to Compose.luckPayload(document.obj("luck"))) to jobj("luck" to document["luck"])
+        return listOf(Compose.S_LUCK to Compose.luckPayload(document.obj("luck"))) to io.github.okexodus.openknights.exact.jobj("luck" to document["luck"])
     }
 
     /**
@@ -144,12 +143,12 @@ object AcquisitionRoutes {
             }
             2051 -> {
                 val uids = Compose.decodeUidList(payload, "C2051")
-                request = jobj("uids" to uids)
+                request = io.github.okexodus.openknights.exact.jobj("uids" to uids)
                 planner = { owned, _ -> Compose.planGearRefine(uids, owned, inputs) }
             }
             2633 -> {
                 val uids = Compose.decodeUidList(payload, "C2633")
-                request = jobj("uids" to uids)
+                request = io.github.okexodus.openknights.exact.jobj("uids" to uids)
                 planner = { owned, current ->
                     val entries = current.jewelEntriesView ?: throw Acquisition.Rejected("No jewelry list to refine from")
                     Compose.planJewelRefine(uids, owned, inputs, entries)
