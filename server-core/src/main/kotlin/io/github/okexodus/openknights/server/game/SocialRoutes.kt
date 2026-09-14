@@ -146,29 +146,449 @@ object SocialRoutes {
 
     // --- guild (agent A: query, taskFrame, guildWorld, guildCharacter and their helpers) ------------------------------
 
-    /** The guild task list frame (`task_frame`). */
-    fun taskFrame(current: StateStore.Current, ctx: SocialContext, now: Long, ownerKey: String): Frame =
-        throw NotPorted("social_routes.task_frame")
+    /** Days the leader must be offline before the Leader seat can be applied for. */
+    const val LEADER_AWAY_PROPERTY = 200004L
+
+    /** The S2330 document of a character: its own levels, shown while in a world guild, capped by that guild. */
+    private fun personalView(current: StateStore.Current, ctx: SocialContext, role: Long): JObj {
+        val (_, guild) = myGuild(ctx, role)
+        return Guild.personalTechView(PyDocs.obj(current, "guild_tech_state"), guild, ctx.inputs!!)
+    }
+
+    private fun personalFrame(current: StateStore.Current, ctx: SocialContext, role: Long): Frame =
+        Guild.S_TECH_PERSONAL to Castle.guildTechPayload(personalView(current, ctx, role))
+
+    /** `_page`: a `u32` page when the payload is 4 bytes, else page 1. */
+    private fun page(payload: ByteArray): Long = if (payload.size == 4) io.github.okexodus.openknights.protocol.WireReader(payload).u32() else 1
+
+    /** Frames for another participant built now (the reference's frame lists), whatever the recipient's clock. */
+    private fun pushNow(ctx: SocialContext, role: Long, frames: List<Frame>) {
+        ctx.push(role) { frames }
+    }
+
+    /** `(S_ROLE, role_update_payload([(f, tag, bits) for f in fields]))`. */
+    private fun roleFrame(owned: Owned, fields: List<Long>): Frame =
+        Acquisition.S_ROLE to Acquisition.roleUpdatePayload(fields.map { Triple(it, owned.role(it).long("tag"), owned.roleBits(it)) })
+
+    private fun u32Pair(payload: ByteArray): Pair<Long, Long> =
+        io.github.okexodus.openknights.protocol.WireReader(payload).let { it.u32() to it.u32() }
+
+    /** The guild task list frame (`task_frame`): the board as it is today (renewed, not stored). */
+    fun taskFrame(current: StateStore.Current, ctx: SocialContext, now: Long, ownerKey: String): Frame {
+        val doc = Guild.taskDocument(PyDocs.get(current, "guild_task_state"), ctx.inputs!!, now, ownerKey)
+        return Guild.S_TASKS to Guild.tasksPayload(doc, now)
+    }
 
     /** The guild queries (`query`). */
     fun query(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long, ownerKey: String): List<Frame> {
         val role = roleOf(current)
-        if (opcode == Guild.C_MY_GUILD) {
-            guildDoc(ctx)
-            ctx.people(current)
-            return listOf(myGuildFrame(ctx, role, now, current))
+        val doc = guildDoc(ctx)
+        val people = ctx.people(current)
+        when (opcode) {
+            Guild.C_MY_GUILD -> return listOf(myGuildFrame(ctx, role, now, current))
+            Guild.C_MEMBERS -> {
+                if (payload.size != 8) throw Acquisition.Rejected("C2147 is u32 guild, u32 page")
+                val (guildId, page) = u32Pair(payload)
+                val guild = doc.obj("guilds")[guildId.toString()] as JObj? ?: throw Acquisition.Rejected("Cannot find the Guild", Guild.ERR_NO_GUILD)
+                return listOf(Guild.S_MEMBERS to Guild.membersPayload(guildId, guild, page, people, ctx.inputs!!))
+            }
+            Guild.C_GUILD_LIST -> return listOf(Guild.S_GUILD_LIST to Guild.guildListPayload(doc, page(payload), role, people, ctx.inputs!!))
+            Guild.C_APPLICANTS -> {
+                val (_, guild) = guildRequired(ctx, role)
+                return listOf(Guild.S_APPLICANTS to Guild.applicantsPayload(guild, page(payload), people, ctx.presence(), now, ctx.clockOffset))
+            }
+            Guild.C_POSITIONS -> {
+                val (_, guild) = guildRequired(ctx, role)
+                return listOf(Guild.S_POSITIONS to positionsPayload(guild, people))
+            }
+            Guild.C_TECH_LIST -> {
+                val (_, guild) = guildRequired(ctx, role)
+                return listOf(Guild.S_TECH_LIST to Guild.techListPayload(guild))
+            }
+            Guild.C_ACTIVITY -> {
+                guildRequired(ctx, role)
+                val own = warResults(ctx, role, now)
+                val (_, guild) = guildRequired(ctx, role)
+                return Guild.activityFrames(guild, now, ctx.inputs) + own
+            }
+            Guild.C_BOSS -> {
+                val (_, guild) = guildRequired(ctx, role)
+                return listOf(Guild.S_BOSS to Guild.bossPayload(guild, ctx.inputs!!))
+            }
+            Guild.C_OTHER -> {
+                val guildId = Guild.decodeU32(payload, opcode)
+                val guild = doc.obj("guilds")[guildId.toString()] as JObj? ?: throw Acquisition.Rejected("Cannot find the Guild", Guild.ERR_NO_GUILD)
+                return listOf(Guild.S_OTHER to Guild.otherGuildPayload(guildId, guild, people, ctx.inputs!!))
+            }
+            Guild.C_TASKS -> return listOf(taskFrame(current, ctx, now, ownerKey))
         }
-        throw NotPorted("social_routes.query (opcode $opcode)")
+        throw Acquisition.Rejected("Not a social query")
+    }
+
+    /**
+     * S2326 `u8 n, n × (u32 position, u8 m, m × (cstr name, u32 value))` — per position (Leader … Senior) its holders
+     * and their accumulated contribution.
+     */
+    fun positionsPayload(guild: JObj, people: Map<Long, Participant>): ByteArray {
+        val w = io.github.okexodus.openknights.protocol.WireWriter()
+        var count = 0L
+        for (position in Guild.POSITIONS.dropLast(1)) {
+            val holders = guild.arr("members").map { it as JObj }.filter { it["position"] == JInt(position) }
+            w.u32(position).raw(PyDocs.bytes(listOf(holders.size.toLong())))
+            for (m in holders) {
+                val person = people[m.long("role")]
+                w.raw(person?.nameRaw ?: "?".toByteArray()).raw(byteArrayOf(0)).number('I', PyDocs.at(m, "contribution"))
+            }
+            count++
+        }
+        return PyDocs.bytes(listOf(count)) + w.bytes()
     }
 
     /** The world-only guild actions (`guild_world`). */
-    fun guildWorld(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long): List<Frame> =
-        throw NotPorted("social_routes.guild_world (opcode $opcode)")
+    fun guildWorld(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, now: Long): List<Frame> {
+        val role = roleOf(current)
+        val inputs = ctx.inputs!!
+        val people = ctx.people(current)
+        when (opcode) {
+            Guild.C_APPLY -> {
+                val guildId = Guild.decodeU32(payload, opcode)
+                ctx.update<Unit>("guilds", "guild_apply") { d ->
+                    Guild.apply(d, role, guildId, inputs, now)
+                    Unit to jobj("guild" to guildId, "role" to role)
+                }
+                return listOf(Guild.S_APPLY to byteArrayOf(0))
+            }
+            Guild.C_APPROVE -> {
+                if (payload.size != 5) throw Acquisition.Rejected("C2159 is u32 role, u8 action")
+                val r = io.github.okexodus.openknights.protocol.WireReader(payload)
+                val applicant = r.u32()
+                val action = r.u8()
+                ctx.update("guilds", "guild_decide") { d ->
+                    Guild.decide(d, role, applicant, action == 1, inputs, now) to jobj("role" to role, "applicant" to applicant, "accept" to (action == 1))
+                }
+                if (action == 1) pushNow(ctx, applicant, listOf(myGuildFrame(ctx, applicant, now)))
+                return listOf(Guild.S_APPROVE to io.github.okexodus.openknights.protocol.WireWriter().u32(applicant).u8(0).bytes())
+            }
+            Guild.C_KICK -> {
+                val target = Guild.decodeU32(payload, opcode)
+                ctx.update("guilds", "guild_kick") { d -> Guild.kick(d, role, target, inputs, now) to jobj("role" to role, "target" to target) }
+                pushNow(ctx, target, listOf(myGuildFrame(ctx, target, now), Guild.S_TECH_PERSONAL to byteArrayOf(0)))
+                return listOf(Guild.S_KICK to byteArrayOf(0))
+            }
+            Guild.C_QUIT -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C2173 has no payload")
+                ctx.update("guilds", "guild_quit") { d -> Guild.quitGuild(d, role, now) to jobj("role" to role) }
+                return listOf(Guild.S_QUIT to byteArrayOf(0), myGuildFrame(ctx, role, now, current), Guild.S_TECH_PERSONAL to byteArrayOf(0))
+            }
+            Guild.C_TRANSFER -> {
+                val target = Guild.decodeU32(payload, opcode)
+                ctx.update("guilds", "guild_transfer") { d -> Guild.transfer(d, role, target, inputs) to jobj("role" to role, "target" to target) }
+                pushNow(ctx, target, listOf(myGuildFrame(ctx, target, now)))
+                return listOf(myGuildFrame(ctx, role, now, current))
+            }
+            Guild.C_NOTICE -> {
+                val notice = Guild.decodeCstrings(payload, 1, opcode)[0]
+                ctx.update("guilds", "guild_notice") { d -> Guild.setNotice(d, role, notice, inputs) to jobj("role" to role) }
+                return listOf(myGuildFrame(ctx, role, now, current))
+            }
+            Guild.C_POSITION_APPLY -> {
+                val position = Guild.decodeU32(payload, opcode)
+                val presence = ctx.presence()
+                ctx.update("guilds", "guild_position") { d ->
+                    applyPosition(d, role, position, inputs, presence, now) to jobj("role" to role, "position" to position)
+                }
+                return listOf(myGuildFrame(ctx, role, now, current),
+                    Guild.S_POSITIONS to positionsPayload(Guild.guildOf(guildDoc(ctx), role).second ?: noneSubscript(), people))
+            }
+            Guild.C_TECH_UP -> {
+                val tech = Guild.decodeU32(payload, opcode)
+                ctx.update("guilds", "guild_tech") { d ->
+                    val r = Guild.upgradeTech(d, role, tech, inputs)
+                    r to jobj("role" to role, "tech" to tech, "cost" to r.second)
+                }
+                val (_, guild) = myGuild(ctx, role)
+                for (member in (guild ?: noneSubscript()).arr("members")) {       // every member's personal caps follow
+                    val other = (member as JObj).long("role")
+                    if (other != role) pushNow(ctx, other, listOf(Guild.S_TECH_LIST to Guild.techListPayload(guild!!)))
+                }
+                return listOf(myGuildFrame(ctx, role, now, current), Guild.S_TECH_LIST to Guild.techListPayload(guild!!),
+                    personalFrame(current, ctx, role))
+            }
+            Guild.C_WAR_SIGN -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C2185 has no payload")
+                return warSign(current, ctx, role, now)
+            }
+            Guild.C_GUILD_MAIL -> {
+                // `mail.decode_strings`: the same codec (and messages) as the guild's cstring decoder
+                val (title, body) = Guild.decodeCstrings(payload, 2, opcode)
+                return guildMail(current, ctx, role, title, body, now)
+            }
+        }
+        throw Acquisition.Rejected("Not a guild action")
+    }
 
-    /** The guild actions that change the character (`guild_character`). */
+    /** The reference's TypeError of a missing guild record read as a dictionary. */
+    private fun noneSubscript(): Nothing = throw PyDocs.TypeError("'NoneType' object is not subscriptable")
+
+    /**
+     * C2165 `u32 position` (the Position screen's Apply, enabled only when quanxian[position].111 is the applicant's own
+     * position). Labeled policy: accumulated contribution ≥ quanxian 112 (52013) and a free seat — seats per position
+     * from juntuan_dengji 104–109 at the guild level (52012); the Leader seat (quanxian 109) only when the leader has been
+     * offline ≥ property 200004 (3) days (52034), the old leader then takes the applicant's former position.
+     */
+    fun applyPosition(document: JObj, role: Long, position: Long, inputs: DailyInputs, presence: JObj? = null, now: Long = 0): Long {
+        val (gid, guild) = Guild.guildOf(document, role)
+        if (guild == null) throw Acquisition.Rejected("Not in a Guild yet", Guild.ERR_NOT_IN_GUILD)
+        val member = Guild.memberOf(guild, role)
+        val row = inputs.guildPosition(position)
+        if (row == null || member.long("position") <= position) throw Acquisition.Rejected("You already hold a higher position", Guild.ERR_POSITION_HIGHER)
+        if (!Py.truthy(row["apply_from"]) || row["apply_from"] != member["position"]) throw Acquisition.Rejected("Cannot apply this position", Guild.ERR_POSITION_CANNOT)
+        if (PyDocs.compare(PyDocs.at(member, "contribution"), PyDocs.at(row, "apply_contribution")) < 0) {
+            throw Acquisition.Rejected("Not enough Accu. Contribution", Guild.ERR_CONTRIBUTION)
+        }
+        if (row.bool("leader_rule")) {
+            val leader = Guild.leaderOf(guild)
+            val seen = ((presence ?: JObj())[leader.long("role").toString()] ?: JObj()) as JObj
+            val away = inputs.prop(LEADER_AWAY_PROPERTY, 3) * 86_400
+            if (Py.truthy(seen["online"] ?: JBool(false)) || now - PyDocs.long(seen["last_seen"] ?: JInt(now)) < away) {
+                throw Acquisition.Rejected("The leader cannot be changed", Guild.ERR_LEADER_STAYS)
+            }
+            val former = PyDocs.at(member, "position")
+            leader["position"] = former
+            member["position"] = JInt(position)
+            return gid
+        }
+        val seats = inputs.guildLevel(Guild.levelOf(guild, inputs)).obj("seats")[position.toString()] ?: JInt(1)
+        val held = guild.arr("members").count { (it as JObj)["position"] == JInt(position) }
+        if (PyDocs.compare(JInt(held.toLong()), seats) >= 0) throw Acquisition.Rejected("Cannot apply this position", Guild.ERR_POSITION_CANNOT)
+        member["position"] = JInt(position)
+        return gid
+    }
+
+    /**
+     * C2185 → S2332 ×4 + S258 system mail "Sign Up Guild War" (text 17102, type 6). Registration is open in war state 1
+     * (52020 otherwise); one sign-up per guild per day (52021); only the leader signs up (52009).
+     */
+    private fun warSign(current: StateStore.Current, ctx: SocialContext, role: Long, now: Long): List<Frame> {
+        val inputs = ctx.inputs!!
+        if (Guild.warState(Guild.hour(now)) != 1) throw Acquisition.Rejected("The war application period ended", Guild.ERR_WAR_CLOSED)
+        ctx.update("guilds", "guild_war_sign") { document ->
+            val (gid, guild) = Guild.guildOf(document, role)
+            if (guild == null) throw Acquisition.Rejected("Not in a Guild yet", Guild.ERR_NOT_IN_GUILD)
+            if (Guild.memberOf(guild, role).long("position") != Guild.LEADER) throw Acquisition.Rejected("No access", Guild.ERR_NO_ACCESS)
+            if (guild.obj("war")["signed_day"] == io.github.okexodus.openknights.exact.JStr(Guild.day(now))) throw Acquisition.Rejected("Signed up already", Guild.ERR_WAR_SIGNED)
+            guild.obj("war")["signed_day"] = io.github.okexodus.openknights.exact.JStr(Guild.day(now))
+            gid to jobj("role" to role)
+        }
+        val mail = ctx.update("mail", "mail_guild_war") { d ->
+            val text = inputs.text(17102).toByteArray(Charsets.UTF_8)
+            val m = Mail.newMail(d, role, Mail.GUILD, 0, "System".toByteArray(), text, text, null, now)
+            m to jobj("role" to role, "mail" to m["id"])
+        }
+        val (_, guild) = myGuild(ctx, role)
+        return Guild.activityFrames(guild ?: noneSubscript(), now, ctx.inputs) + (Mail.S_ADD to Mail.brief(mail, ctx.clockOffset))
+    }
+
+    /**
+     * C2169 `cstr title, cstr body` (officers with the mail permission) → S2316 `00`; a type-6 mail to every other member
+     * (pushed as S258 to the online ones); without the permission S2316 `01`.
+     */
+    private fun guildMail(current: StateStore.Current, ctx: SocialContext, role: Long, title: ByteArray, body: ByteArray, now: Long): List<Frame> {
+        val (gid, guild) = guildRequired(ctx, role)
+        val member = Guild.memberOf(guild, role)
+        if (!Guild.can(member.long("position"), "mail", ctx.inputs!!)) return listOf(Guild.S_GUILD_SEND_RESULT to byteArrayOf(1))
+        val me = ctx.people(current)[role]
+        val sent: List<Pair<Long, JObj>> = ctx.update("mail", "mail_guild") { document ->
+            val mails = ArrayList<Pair<Long, JObj>>()
+            for (m in guild.arr("members")) {
+                val other = (m as JObj).long("role")
+                if (other != role) mails.add(other to Mail.newMail(document, other, Mail.GUILD, role, me?.nameRaw ?: ByteArray(0), title, body, null, now))
+            }
+            mails to jobj("role" to role, "guild" to gid, "sent" to mails.size)
+        }
+        for ((recipient, mail) in sent) ctx.push(recipient) { offset -> listOf(Mail.S_ADD to Mail.brief(mail, offset)) }
+        return listOf(Guild.S_GUILD_SEND_RESULT to byteArrayOf(0))
+    }
+
+    /** The guild actions that change the character (`guild_character`): `commit` runs the character transaction. */
     fun guildCharacter(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long,
-                       servedTime: Long, ownerKey: String): List<Frame> =
-        throw NotPorted("social_routes.guild_character (opcode $opcode)")
+                       servedTime: Long, ownerKey: String): List<Frame> {
+        val role = roleOf(current)
+        val inputs = ctx.inputs!!
+        when (opcode) {
+            Guild.C_CREATE -> {
+                val (name, notice) = Guild.decodeCstrings(payload, 2, opcode)
+                val doc = guildDoc(ctx)
+                if (Guild.guildOf(doc, role).second != null) throw Acquisition.Rejected("Already in a guild", Guild.ERR_OTHER_GUILD)
+                Guild.validateName(name, doc, inputs)
+                val plan = commit("guild_create") { owned, cur ->
+                    if (owned.roleBits(Guild.ROLE_LEVEL) <= BigInteger.valueOf(inputs.prop(200003, 50))) {
+                        throw Acquisition.Rejected("Player level must be above 50", Guild.ERR_INVALID)
+                    }
+                    if (role(cur, Guild.VIP.toInt()) < inputs.prop(200002, 5)) throw Acquisition.Rejected("VIP level too low", Guild.ERR_INVALID)
+                    val price = inputs.prop(200001, 1000)
+                    if (owned.roleBits(Guild.DIAMOND) < BigInteger.valueOf(price)) throw Acquisition.Rejected("Not enough Diamonds", Guild.ERR_DIAMONDS)
+                    owned.roleAdd(Guild.DIAMOND, -price)
+                    val frames = Shops.diamondAchievement(owned, price, servedTime) + roleFrame(owned, listOf(Guild.DIAMOND))
+                    Plan(jobj("price" to price, "evidence_class" to "native_use_policy"), frames)
+                }
+                val gid: Long = ctx.update("guilds", "guild_create") { d ->
+                    val g = Guild.create(d, role, name, notice, inputs, now)
+                    g to jobj("role" to role, "guild" to g)
+                }
+                val (_, guild) = myGuild(ctx, role)
+                return plan.packets.toList() + listOf(Guild.S_CREATE to io.github.okexodus.openknights.protocol.WireWriter().u8(0).u32(gid).bytes(),
+                    myGuildFrame(ctx, role, now, current), Guild.S_TECH_LIST to Guild.techListPayload(guild ?: noneSubscript()),
+                    personalFrame(current, ctx, role))
+            }
+            Guild.C_DONATE -> {
+                if (payload.size != 8) throw Acquisition.Rejected("C2157 is u32 gold, u32 diamonds")
+                val (gold, diamonds) = u32Pair(payload)
+                val (_, guildNow) = guildRequired(ctx, role)
+                var points = 0L
+                var reward = JObj()
+                val plan = commit("guild_donate") { owned, _ ->
+                    val guild = guildNow.deepCopy()
+                    val (p, r, spent) = Guild.donateGold(guild, role, gold, diamonds, owned, inputs, now)
+                    points = p
+                    reward = r
+                    val fields = listOf(Guild.GOLD to gold, Guild.DIAMOND to spent).filter { it.second != 0L }.map { it.first } + Guild.CONTRIBUTION
+                    val frames = (if (spent != 0L) Shops.diamondAchievement(owned, spent, servedTime) else emptyList()) + roleFrame(owned, fields)
+                    Plan(jobj("gold" to gold, "diamonds" to spent, "points" to p, "evidence_class" to "native_use_policy"), frames)
+                }
+                ctx.update("guilds", "guild_donate") { document ->
+                    val (gid, guild) = Guild.guildOf(document, role)
+                    val member = Guild.memberOf(guild ?: noneSubscript(), role)
+                    val today = Guild.day(now)
+                    val before = if (member["gold_day"] == io.github.okexodus.openknights.exact.JStr(today)) PyDocs.int(PyDocs.at(member, "gold")) else BigInteger.ZERO
+                    member["gold"] = JInt(before + BigInteger.valueOf(gold))
+                    member["gold_day"] = io.github.okexodus.openknights.exact.JStr(today)
+                    Guild.contribute(guild, role, points)
+                    guild["diamonds"] = JInt(PyDocs.int(guild["diamonds"] ?: JInt(0)) + BigInteger.valueOf(diamonds))
+                    gid to jobj("role" to role, "gold" to gold, "diamonds" to diamonds, "points" to points)
+                }
+                return plan.packets.toList() + listOf(Guild.S_DONATE to (byteArrayOf(0) + io.github.okexodus.openknights.protocol.BattleReport.encodeReward(reward)),
+                    myGuildFrame(ctx, role, now, current))
+            }
+            Guild.C_WAGE -> {
+                if (payload.isNotEmpty()) throw Acquisition.Rejected("C2201 has no payload")
+                val (_, guildNow) = guildRequired(ctx, role)
+                var reward = JObj()
+                val plan = commit("guild_wage") { owned, _ ->
+                    val (frames, r) = Guild.claimWage(guildNow.deepCopy(), role, owned, inputs, now)
+                    reward = r
+                    Plan(jobj("evidence_class" to "native_use_candidate"), frames)
+                }
+                ctx.update("guilds", "guild_wage") { document ->
+                    val (gid, guild) = Guild.guildOf(document, role)
+                    Guild.memberOf(guild ?: noneSubscript(), role)["wage_day"] = io.github.okexodus.openknights.exact.JStr(Guild.day(now))
+                    gid to jobj("role" to role)
+                }
+                return plan.packets.toList() + listOf(Guild.S_WAGE to io.github.okexodus.openknights.protocol.BattleReport.encodeReward(reward),
+                    myGuildFrame(ctx, role, now, current))
+            }
+            Guild.C_EMBLEM, Guild.C_RENAME -> return guildPaid(opcode, payload, current, ctx, commit, now, servedTime, role)
+            Guild.C_TASK_DONATE, Guild.C_TASK_REFRESH, Guild.C_TASK_ACCEPT, Guild.C_TASK_CLAIM ->
+                return guildTask(opcode, payload, current, ctx, commit, now, servedTime, ownerKey, role)
+        }
+        throw Acquisition.Rejected("Not a guild action")
+    }
+
+    /**
+     * C2163 emblem upgrade (junhui[current].103 Diamonds, +112 Metals = role 30) and C2205 rename (the rename price): the
+     * character pays in one transaction, then the guild record changes; every other member gets the new S2306.
+     */
+    private fun guildPaid(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long,
+                          servedTime: Long, role: Long): List<Frame> {
+        val inputs = ctx.inputs!!
+        val doc = guildDoc(ctx)
+        val price: Long
+        val metals: Long
+        val action: String
+        var name = ByteArray(0)
+        if (opcode == Guild.C_EMBLEM) {
+            if (payload.isNotEmpty()) throw Acquisition.Rejected("C2163 has no payload")
+            val (_, badge) = Guild.emblemStep(doc, role, inputs)
+            price = badge.long("cost")
+            metals = badge.long("metals")
+            action = "guild_emblem"
+        } else {
+            name = Guild.decodeCstrings(payload, 1, opcode)[0]
+            Guild.checkRename(doc, role, name, inputs)
+            price = Guild.renamePrice(inputs)
+            metals = 0
+            action = "guild_rename"
+        }
+        val plan = commit(action) { owned, _ ->
+            if (owned.roleBits(Guild.DIAMOND) < BigInteger.valueOf(price)) throw Acquisition.Rejected("Not enough Diamonds", Guild.ERR_DIAMONDS)
+            owned.roleAdd(Guild.DIAMOND, -price)
+            val fields = mutableListOf(Guild.DIAMOND)
+            if (metals != 0L) {
+                owned.roleAdd(Guild.CONTRIBUTION, metals)
+                fields.add(Guild.CONTRIBUTION)
+            }
+            val frames = Shops.diamondAchievement(owned, price, servedTime) + roleFrame(owned, fields)
+            Plan(jobj("price" to price, "metals" to metals, "evidence_class" to "native_use_policy"), frames)
+        }
+        if (opcode == Guild.C_EMBLEM) {
+            ctx.update("guilds", "guild_emblem") { d -> Guild.upgradeEmblem(d, role, inputs) to jobj("role" to role, "price" to price) }
+        } else {
+            ctx.update("guilds", "guild_rename") { d -> Guild.rename(d, role, name, inputs) to jobj("role" to role, "price" to price) }
+        }
+        val (_, guild) = myGuild(ctx, role)
+        for (member in (guild ?: noneSubscript()).arr("members")) {
+            val other = (member as JObj).long("role")
+            if (other != role) pushNow(ctx, other, listOf(myGuildFrame(ctx, other, now)))
+        }
+        return plan.packets.toList() + listOf(myGuildFrame(ctx, role, now, current))
+    }
+
+    /** The guild task board actions (C2435 donate, C2437 `02` star refresh, C2439 accept, C2443 claim). */
+    private fun guildTask(opcode: Int, payload: ByteArray, current: StateStore.Current, ctx: SocialContext, commit: Commit, now: Long,
+                          servedTime: Long, ownerKey: String, role: Long): List<Frame> {
+        val inputs = ctx.inputs!!
+        val (_, guildNow) = guildRequired(ctx, role)
+        if (opcode == Guild.C_TASK_REFRESH) {
+            if (payload.size != 1 || payload[0].toInt() !in listOf(1, 2)) throw Acquisition.Rejected("C2437 is u8 1 query / 2 refresh")
+            if (payload[0].toInt() == 1) return listOf(taskFrame(current, ctx, now, ownerKey))
+        }
+        val action = if (opcode == Guild.C_TASK_CLAIM) "guild_task_claim" else "guild_task"
+        val plan = commit(action) { owned, cur ->
+            val doc = Guild.taskDocument(PyDocs.get(cur, "guild_task_state"), inputs, now, ownerKey)
+            when (opcode) {
+                Guild.C_TASK_DONATE -> {
+                    val frames = Guild.donateToTask(doc, Guild.decodeTaskDonate(payload), owned, inputs)
+                    Plan(jobj("guild_task_state_after" to doc, "evidence_class" to "capture_observed"), frames)
+                }
+                Guild.C_TASK_REFRESH -> {
+                    val frames = Guild.refreshStar(doc, owned, inputs, servedTime, Guild.starRng(ownerKey, now))
+                    Plan(jobj("guild_task_state_after" to doc, "star" to doc["star"], "evidence_class" to "native_use_policy"),
+                        frames + (Guild.S_TASKS to Guild.tasksPayload(doc, now)))
+                }
+                Guild.C_TASK_ACCEPT -> {
+                    Guild.acceptTask(doc, Guild.decodeU32(payload, opcode), inputs)
+                    Plan(jobj("guild_task_state_after" to doc, "evidence_class" to "native_use_candidate"), listOf(Guild.S_TASKS to Guild.tasksPayload(doc, now)))
+                }
+                else -> {
+                    val taskId = Guild.decodeU32(payload, opcode)
+                    val (frames, got) = Guild.claimTask(doc, taskId, owned, inputs, guildNow.deepCopy(), role)
+                    val data = jobj("guild_task_state_after" to doc)
+                    for ((k, v) in got) data[k] = v
+                    data["evidence_class"] = io.github.okexodus.openknights.exact.JStr("capture_observed_calculation")
+                    Plan(data, frames + (Guild.S_TASKS to Guild.tasksPayload(doc, now)))
+                }
+            }
+        }
+        if (opcode == Guild.C_TASK_CLAIM && Py.truthy(plan["contribution"])) {
+            val points = plan["contribution"]!!
+            ctx.update("guilds", "guild_task_contribution") { document ->
+                val (gid, guild) = Guild.guildOf(document, role)
+                if (guild != null) Guild.contribute(guild, role, PyDocs.long(points))
+                gid to jobj("role" to role, "points" to points)
+            }
+        }
+        return plan.packets.toList()
+    }
 
     // --- friends, mail, chat (agent B: friends, mail, chat and their helpers) -------------------------------------------
 
