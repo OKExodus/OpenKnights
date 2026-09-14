@@ -99,6 +99,35 @@ object DailyRoutes {
         /** World characters + bots (`WorldContext.participants`). */
         fun participants(current: StateStore.Current? = null): List<Any> =
             participantsOf?.invoke(this, current) ?: throw NotPorted("world_participants (the participant list of the daily routes)")
+
+        /**
+         * The arena ladder in rank order (`arena_ranks`): the stored ranks plus every participant not yet ranked; a
+         * changed ladder is written back to the world (audited `arena_ladder_join`, optimistic on its revision).
+         */
+        fun arenaRanks(participants: List<WorldParticipants.Participant>, actor: String = "local-service"): List<Long> {
+            val (revision, ladder) = document("arena_ladder")
+            val (ranks, changed) = Arena.ladderRanks(ladder, participants)
+            if (changed && world != null) {
+                val after = PyDocs.shallow(ladder).also { it["ranks"] = JArr(ranks.mapTo(ArrayList()) { JInt(it) }) }
+                world.putDocument("arena_ladder", after, revision!!, actor, "arena_ladder_join", jobj("ranks" to ranks.size))
+            }
+            return ranks
+        }
+    }
+
+    /** The arena of one request (`arena_context`): the ladder ranks, the participants by id, the own rank, the opponent rows. */
+    class ArenaContext(val ranks: List<Long>, val byId: Map<Long, WorldParticipants.Participant>, val rank: Long,
+                       val rows: List<Pair<Long, WorldParticipants.Participant>>)
+
+    fun arenaContext(current: StateStore.Current, worldCtx: WorldContext, now: Long): ArenaContext {
+        val participants = worldCtx.participants(current).map { it as WorldParticipants.Participant }
+        val ranks = worldCtx.arenaRanks(participants)
+        val byId = LinkedHashMap<Long, WorldParticipants.Participant>()
+        for (p in participants) byId[p.participantId] = p
+        val own = (ownId(current) as? JInt)?.value?.takeIf { it.bitLength() < 64 }?.toLong()
+        val at = if (own == null) -1 else ranks.indexOf(own)
+        val rank = if (at >= 0) at + 1L else ranks.size + 1L
+        return ArenaContext(ranks, byId, rank, Arena.opponents(ranks, byId, own))
     }
 
     /** (payload, provenance) of the first seed frame of an opcode (of an S1760 type) that decodes; else (null, null). */
@@ -254,10 +283,19 @@ object DailyRoutes {
                 val (values, _) = Castle.alchemyView(current.state, PyDocs.obj(current, "castle_state"), inputs, now)
                 return listOf(Castle.alchemyFrame(values))
             }
-            Castle.C_CATCH_LIST -> throw NotPorted("castle.catch_list_payload (C753, the world participants)")
+            Castle.C_CATCH_LIST -> {
+                val own = ownId(current)
+                val participants = worldCtx.participants(current).map { it as WorldParticipants.Participant }
+                return listOf(Castle.S_CATCH_LIST to Castle.catchListPayload(participants, own, level(current.state)))
+            }
             Castle.C_RESCUE_LIST -> return listOf(Castle.S_RESCUE_LIST to Castle.rescueListPayload())
             Castle.C_SERVANT_CHECK -> return emptyList()
-            417, 421 -> throw NotPorted("arena queries (C417 / C421, the world participants and the arena ladder)")
+            Arena.C_ARENA_OPEN, Arena.C_ARENA_TOP -> {
+                val arena = arenaContext(current, worldCtx, now)
+                if (opcode == Arena.C_ARENA_TOP) return listOf(Arena.S_ARENA_TOP to Arena.topPayload(arena.ranks, arena.byId))
+                val document = Arena.arenaView(PyDocs.get(current, "arena_state"), arena.rank, now, Arena.joinedAtOf(current))
+                return listOf(Arena.S_ARENA_INFO to Arena.infoPayload(document, arena.rank, arena.rows))
+            }
         }
         throw Acquisition.Rejected("Not a daily query")
     }
