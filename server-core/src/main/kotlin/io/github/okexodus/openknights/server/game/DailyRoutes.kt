@@ -16,10 +16,9 @@ import io.github.okexodus.openknights.server.store.WorldDirectory
 import java.math.BigInteger
 
 /**
- * The daily routes' login parts (`daily_routes.py`): the documents with their seeds, the one audited refresh
- * revision before the S18 (`refresh_needed` dry run on a copy, `refresh_plan` inside the transaction), the unsolicited
- * login burst (S1760 Event Hall set, S1824, Hidden Training pushes, S3234) and the replies to the initialization
- * queries this module owns. The action planners (`planner_for`) belong to the daily actions port.
+ * The daily routes (`daily_routes.py`): the documents with their seeds, the one audited refresh revision before the
+ * S18 (`refresh_needed` dry run on a copy, `refresh_plan` inside the transaction), the unsolicited login burst (S1760
+ * Event Hall set, S1824, Hidden Training pushes, S3234), the query replies and the action planners (`planner_for`).
  */
 object DailyRoutes {
     /** Opcode → action of the committed daily requests (`ACTIONS`, reference order). */
