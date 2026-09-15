@@ -207,7 +207,10 @@ class ServiceLock(val path: Path) {
             throw DataRootError("The data root is in use by a running service; stop it first")
         }
         ch.truncate(0)
-        ch.write(java.nio.ByteBuffer.wrap(Json.dumps(jobj("pid" to ProcessHandle.current().pid(), "since_utc" to PyTime.nowIsoMillis())).toByteArray()), 0)
+        // The pid is diagnostic only (the OS byte-lock does the exclusion). ProcessHandle is a JVM API Android lacks;
+        // fall back to -1 there.
+        val pid = try { ProcessHandle.current().pid() } catch (e: Throwable) { -1L }
+        ch.write(java.nio.ByteBuffer.wrap(Json.dumps(jobj("pid" to pid, "since_utc" to PyTime.nowIsoMillis())).toByteArray()), 0)
         ch.force(true)
         channel = ch
         fileLock = lock

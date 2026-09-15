@@ -60,16 +60,27 @@ object AndroidServerHost {
             "auth_port" to started.boundAuthPort, "on_device" to true, "born" to (service.world != null))
     }
 
-    /** Copy every `assets/openknights/release-data` file into `target` (overwrite keeps it current across app updates). */
+    /** Copy the `assets/openknights/release-data` tree (including subdirectories) into `target`. */
     private fun unpackReleaseData(context: Context, target: Path) {
         Files.createDirectories(target)
-        val names = context.assets.list("$ASSET_ROOT/release-data") ?: emptyArray()
-        require(names.isNotEmpty()) { "No release-data assets in the APK (patcher did not add them)" }
-        for (name in names) {
-            context.assets.open("$ASSET_ROOT/release-data/$name").use { input ->
-                Files.copy(input, target.resolve(name), StandardCopyOption.REPLACE_EXISTING)
+        var copied = 0
+        fun walk(assetDir: String, into: Path) {
+            val names = context.assets.list(assetDir) ?: emptyArray()
+            for (name in names) {
+                val assetPath = "$assetDir/$name"
+                val children = context.assets.list(assetPath)
+                if (children != null && children.isNotEmpty()) {
+                    walk(assetPath, into.resolve(name).also { Files.createDirectories(it) })
+                } else {
+                    context.assets.open(assetPath).use { input ->
+                        Files.copy(input, into.resolve(name), StandardCopyOption.REPLACE_EXISTING)
+                        copied++
+                    }
+                }
             }
         }
+        walk("$ASSET_ROOT/release-data", target)
+        require(copied > 0) { "No release-data assets in the APK (patcher did not add them)" }
     }
 
     private fun readAsset(context: Context, path: String): ByteArray = context.assets.open(path).use { it.readBytes() }

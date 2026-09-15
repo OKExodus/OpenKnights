@@ -18,6 +18,10 @@ class ManifestPatch(
     val version: AppVersion,
     /** The launcher icon resource, or null to keep the game's own icon. */
     val iconResource: Int?,
+    /** The Application class to run (on-device server boot), or null to keep the framework default. */
+    val applicationClass: String? = null,
+    /** Mark the app debuggable (maintainer on-device diagnostics only; never for a release build). */
+    val debuggable: Boolean = false,
 ) {
     data class Result(val manifest: ByteArray, val removedComponents: List<String>, val removedAttributes: List<String>)
 
@@ -37,6 +41,13 @@ class ManifestPatch(
 
         val application = root.elements.singleOrNull { it.name == "application" } ?: mismatch("there is no single <application>")
         application.set(ANDROID, "label", LABEL, ResValue.string(label))
+        // The game ships with the default android.app.Application (no android:name), so pointing it at our own
+        // Application subclass is a clean hook to boot the in-process server, with no game-code edit.
+        applicationClass?.let {
+            if (application.androidAttribute("name") != null) mismatch("the application already has an android:name")
+            application.set(ANDROID, "name", NAME, ResValue.string(it))
+            if (debuggable) application.set(ANDROID, "debuggable", DEBUGGABLE, ResValue.boolean(true), raw = null)
+        }
         iconResource?.let { application.set(ANDROID, "icon", ICON, ResValue.reference(it), raw = null) }
         application.set(ANDROID, "allowBackup", ALLOW_BACKUP, ResValue.boolean(false), raw = null)
         application.set(ANDROID, "extractNativeLibs", EXTRACT_NATIVE_LIBS, ResValue.boolean(true), raw = null)
@@ -80,6 +91,8 @@ class ManifestPatch(
 
     companion object {
         private const val ANDROID = BinaryXml.ANDROID_NS
+        const val NAME = 0x01010003
+        const val DEBUGGABLE = 0x0101000f
         const val LABEL = 0x01010001
         const val ICON = 0x01010002
         const val VERSION_CODE = 0x0101021b

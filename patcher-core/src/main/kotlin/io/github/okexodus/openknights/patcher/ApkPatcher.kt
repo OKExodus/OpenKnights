@@ -19,6 +19,33 @@ import java.nio.file.Path
 enum class ServerMode {
     /** The server runs on a PC; the phone or emulator reaches it through `adb reverse` (ports 17777, 17778, 19121). */
     DEV_SERVER,
+
+    /** The server runs inside the app process (server-android); the app plays fully offline, no PC. */
+    ON_DEVICE,
+}
+
+/**
+ * The on-device server payload the patcher adds to the APK in [ServerMode.ON_DEVICE]: the server `classes.dex`, the
+ * release-data files and the sign-in page (added under `assets/openknights/`). Supplied by the build, not bundled in
+ * the public repository (release-data stays private until P6).
+ */
+class ServerBundle(
+    /** The server DEX files (the server plus its d8 core-library-desugaring output), added as extra classesN.dex. */
+    val dexes: List<ByteArray>,
+    /** file name -> bytes, added under `assets/openknights/release-data/`. */
+    val releaseData: Map<String, ByteArray>,
+    val signinPage: ByteArray,
+    /**
+     * Classpath resources the server reads at run time (d8 strips non-class files from the DEX), keyed by their
+     * classpath path, e.g. `io/github/okexodus/openknights/gamedata/supported-input.json`. Added to the APK at that
+     * path so the app classloader's `getResourceAsStream` finds them.
+     */
+    val resources: Map<String, ByteArray> = emptyMap(),
+) {
+    companion object {
+        const val APPLICATION_CLASS = "io.github.okexodus.openknights.OpenKnightsApplication"
+        const val ASSET_DIR = "assets/openknights"
+    }
 }
 
 class PatchOptions(
@@ -28,6 +55,8 @@ class PatchOptions(
     val label: String = LABEL,
     /** Use the OpenKnights icon (otherwise the game keeps its own). */
     val icon: Boolean = true,
+    /** Mark the app debuggable (maintainer on-device diagnostics only). */
+    val debuggable: Boolean = false,
 ) {
     companion object {
         const val PACKAGE = "io.github.okexodus.openknights"
@@ -46,8 +75,10 @@ class ApkPatcher(
     private val branding: Branding = Branding(),
 ) {
     /** Writes the unsigned APK to [output] and adds each step to [report]. */
-    fun build(input: IdentifiedInput, output: Path, report: Report, log: (String) -> Unit = {}) {
+    fun build(input: IdentifiedInput, output: Path, report: Report, serverBundle: ServerBundle? = null, log: (String) -> Unit = {}) {
         val base = input.base
+        val onDevice = options.mode == ServerMode.ON_DEVICE
+        require(!onDevice || serverBundle != null) { "ON_DEVICE mode needs a server bundle" }
 
         log("Patching the app manifest")
         val tableBytes = base.archive.read("resources.arsc")
@@ -59,7 +90,8 @@ class ApkPatcher(
             resources.merge(split.manifest.split ?: split.name, splitTable) to split
         }
         val icon = if (options.icon) branding.addIcon(resources) else null
-        val manifest = ManifestPatch(options.packageName, options.label, options.version, icon?.iconId)
+        val manifest = ManifestPatch(options.packageName, options.label, options.version, icon?.iconId,
+            applicationClass = if (onDevice) ServerBundle.APPLICATION_CLASS else null, debuggable = options.debuggable)
             .apply(base.archive.read("AndroidManifest.xml"))
         val newTable = resources.encode()
 
@@ -102,6 +134,21 @@ class ApkPatcher(
                 zip.addStored(nativePatches.file, library, alignment = LIBRARY_ALIGNMENT)
                 for ((path, source) in splitFiles) zip.copy(source.first.archive, source.second)
                 icon?.files?.forEach { (path, data) -> zip.addStored(path, data) }
+                if (onDevice) {
+                    var next = CodePatch.dexIndex(code.addedDex) + 1
+                    val serverDexNames = serverBundle!!.dexes.map { data ->
+                        val name = "classes$next.dex"; next++
+                        zip.addStored(name, data); name
+                    }
+                    zip.addStored("${ServerBundle.ASSET_DIR}/signin.html", serverBundle.signinPage)
+                    for ((name, data) in serverBundle.releaseData) zip.addStored("${ServerBundle.ASSET_DIR}/release-data/$name", data)
+                    for ((path, data) in serverBundle.resources) zip.addStored(path, data)
+                    report.step("on_device_server", mapOf(
+                        "server_dexes" to serverDexNames, "server_dex_sizes" to serverBundle.dexes.map { it.size },
+                        "release_data_files" to serverBundle.releaseData.keys.sorted(),
+                        "classpath_resources" to serverBundle.resources.keys.sorted(),
+                        "application_class" to ServerBundle.APPLICATION_CLASS))
+                }
             }
         }
 

@@ -26,7 +26,8 @@ class Cli(
     private val keys: KeyStorage = KeyStorage(),
     /** The folder holding original/ and patched/ when none is given. */
     private val home: Path = defaultHome(),
-    private val patcherFor: (PatchOptions, KeyStorage) -> Patcher = { options, keys -> Patcher(options, keys) },
+    private val patcherFor: (PatchOptions, KeyStorage, io.github.okexodus.openknights.patcher.ServerBundle?) -> Patcher =
+        { options, keys, bundle -> Patcher(options, keys, serverBundle = bundle) },
 ) {
     fun run(args: List<String>): Int = try {
         when (args.firstOrNull()) {
@@ -64,6 +65,12 @@ class Cli(
         var output: Path? = null
         var report: Path? = null
         var folder: Path? = null
+        var onDevice = false
+        var serverDex: Path? = null
+        var releaseData: Path? = null
+        var signin: Path? = null
+        var serverResources: Path? = null
+        var debuggable = false
         var i = 0
         fun value(): String = args.getOrNull(++i) ?: throw UsageError("${args[i - 1]} needs a value.")
         while (i < args.size) {
@@ -72,7 +79,15 @@ class Cli(
                 "--output" -> output = Path.of(value())
                 "--report" -> report = Path.of(value())
                 "--folder" -> folder = Path.of(value())
-                "--dev-server" -> Unit     // the only mode of this version; kept for the later standalone mode
+                "--dev-server" -> Unit     // the PC-server mode (default)
+                // On-device (P5): embed the server in the app. The DEX, release-data and sign-in page are given as local
+                // paths (release-data ships with the patcher in P6); this is the maintainer's on-device build for now.
+                "--on-device" -> onDevice = true
+                "--server-dex" -> serverDex = Path.of(value())
+                "--release-data" -> releaseData = Path.of(value())
+                "--signin" -> signin = Path.of(value())
+                "--server-resources" -> serverResources = Path.of(value())
+                "--debuggable" -> debuggable = true
                 else -> throw UsageError("Unknown option \"$arg\".")
             }
             i++
@@ -90,7 +105,23 @@ class Cli(
             out.println("split APKs), then run the patcher again.")
             return FailureCode.EMPTY_FOLDER.exitCode
         }
-        val patcher = patcherFor(PatchOptions(mode = ServerMode.DEV_SERVER), keys)
+        val mode = if (onDevice) ServerMode.ON_DEVICE else ServerMode.DEV_SERVER
+        val bundle = if (onDevice) {
+            val dexDir = serverDex ?: throw UsageError("--on-device needs --server-dex (a directory of .dex files)")
+            val rd = releaseData ?: throw UsageError("--on-device needs --release-data")
+            val page = signin ?: throw UsageError("--on-device needs --signin")
+            val dexes = Files.list(dexDir).use { s -> s.filter { it.fileName.toString().endsWith(".dex") }
+                .sorted().toList().map { Files.readAllBytes(it) } }
+            if (dexes.isEmpty()) throw UsageError("--server-dex has no .dex files")
+            val files = Files.walk(rd).use { s -> s.filter { Files.isRegularFile(it) }
+                .toList().associate { rd.relativize(it).toString().replace('\\', '/') to Files.readAllBytes(it) } }
+            val resources = serverResources?.let { dir ->
+                Files.walk(dir).use { s -> s.filter { Files.isRegularFile(it) }
+                    .toList().associate { dir.relativize(it).toString().replace('\\', '/') to Files.readAllBytes(it) } }
+            } ?: emptyMap()
+            io.github.okexodus.openknights.patcher.ServerBundle(dexes, files, Files.readAllBytes(page), resources)
+        } else null
+        val patcher = patcherFor(PatchOptions(mode = mode, debuggable = debuggable), keys, bundle)
         val result = patcher.run(original, patched, PatchLog { out.println(it) })
         report?.let { Files.copy(result.report, it, StandardCopyOption.REPLACE_EXISTING) }
         printResult(result)

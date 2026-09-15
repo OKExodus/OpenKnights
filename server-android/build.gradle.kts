@@ -7,7 +7,10 @@ plugins {
 kotlin {
     // Same toolchain as the other modules; d8 desugars the Java-21 bytecode for the on-device DEX (min-api 26).
     jvmToolchain(21)
+    compilerOptions { jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_11) }
 }
+tasks.withType<JavaCompile>().configureEach { options.release.set(11) }
+
 
 /** The platform android.jar to compile the on-device driver against (compileOnly: the real classes ship with the OS). */
 fun androidJar(): File {

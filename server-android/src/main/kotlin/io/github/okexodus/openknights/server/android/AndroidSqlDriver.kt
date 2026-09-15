@@ -26,7 +26,8 @@ class AndroidSqlDriver(private val busyTimeoutMillis: Int = 10_000) : SqlDriver 
             SqlDriver.Mode.CREATE -> SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY
         }
         val db = SQLiteDatabase.openDatabase(path.toAbsolutePath().toString(), null, flags)
-        if (mode != SqlDriver.Mode.READ_ONLY) db.execSQL("PRAGMA busy_timeout=$busyTimeoutMillis")
+        // A PRAGMA that returns a value must go through rawQuery on Android (execSQL rejects result-bearing statements).
+        if (mode != SqlDriver.Mode.READ_ONLY) db.rawQuery("PRAGMA busy_timeout=$busyTimeoutMillis", null).use { it.moveToFirst() }
         return AndroidConnection(db)
     }
 
