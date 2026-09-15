@@ -24,7 +24,7 @@ class CliTest {
     private val err = ByteArrayOutputStream()
     private val keys get() = KeyStorage(dir.resolve("profile"))
 
-    private fun cli() = Cli(PrintStream(out, true), PrintStream(err, true), keys, dir.resolve("patcher")) { options, keys ->
+    private fun cli() = Cli(PrintStream(out, true), PrintStream(err, true), keys, dir.resolve("patcher")) { options, keys, _ ->
         Patcher(options, keys, FixtureGame.supported, ApkPatcher(options, FixtureGame.nativePatches))
     }
 
