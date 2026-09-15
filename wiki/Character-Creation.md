@@ -19,9 +19,9 @@ The first successful creation on a fresh data root is what makes the world born.
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|S18]] | The character list and the create prompt |
-| [[Opcode Index\|C289]] | Submit the character name |
-| [[Opcode Index\|C291]] | Choose the starter and commit the creation |
+| `S18` | The character list and the create prompt |
+| `C289` | Submit the character name |
+| `C291` | Choose the starter and commit the creation |
 
 A name that is already taken, or a starter that is invalid, is refused with the same message the original returns, and the flow returns to the name step.
 

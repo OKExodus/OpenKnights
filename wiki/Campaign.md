@@ -12,10 +12,10 @@ The battle itself is deterministic. The campaign's job is to produce the seed an
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C129]] | Enter and fight a stage |
-| [[Opcode Index\|C131]] | Auto-resolve a stage |
-| [[Opcode Index\|C133]] | Claim the first-clear reward |
-| [[Opcode Index\|S4]] | The resulting [[Battle Report]] |
+| `C129` | Enter and fight a stage |
+| `C131` | Auto-resolve a stage |
+| `C133` | Claim the first-clear reward |
+| `S4` | The resulting [[Battle Report]] |
 
 The refusal and re-entry messages, and the star-box claim, are documented alongside these on their opcode pages.
 

@@ -34,11 +34,11 @@ OpenKnights reproduces the server that Pocket Knights talks to, then delivers th
 ```mermaid
 flowchart LR
     subgraph Device
-      Client["Pocket Knights client<br/>(patched, unchanged logic)"]
-      Server["OpenKnights server<br/>(embedded, in-process)"]
-      Client -- "login 17777<br/>game 19121<br/>sign-in 17778" --> Server
+      Client["Pocket Knights client<br>(patched, unchanged logic)"]
+      Server["OpenKnights server<br>(embedded, in-process)"]
+      Client -- "login 17777<br>game 19121<br>sign-in 17778" --> Server
     end
-    Server --- Data[("Data root<br/>SQLite saves")]
+    Server --- Data[("Data root<br>SQLite saves")]
 ```
 
 The behavior of that server is pinned to the original game to the byte. How that is achieved and proven is the subject of the method pages.

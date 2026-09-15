@@ -12,13 +12,13 @@ Reading marks a message read and returns its body and the reward it would pay; c
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C257]] / [[Opcode Index\|S256]] | List the mailbox |
-| [[Opcode Index\|C195]] / [[Opcode Index\|S260]], [[Opcode Index\|S264]] | Read a message |
-| [[Opcode Index\|C197]] / [[Opcode Index\|S266]] | Claim its reward |
-| [[Opcode Index\|C199]] / [[Opcode Index\|S262]] | Delete |
-| [[Opcode Index\|C201]] / [[Opcode Index\|S268]] | Write a personal message |
-| [[Opcode Index\|C203]] to [[Opcode Index\|C207]] / [[Opcode Index\|S270]] | Blacklist, block, unblock |
-| [[Opcode Index\|S258]] | A new message pushed to an online recipient |
+| `C257` / `S256` | List the mailbox |
+| `C195` / `S260`, `S264` | Read a message |
+| `C197` / `S266` | Claim its reward |
+| `C199` / `S262` | Delete |
+| `C201` / `S268` | Write a personal message |
+| `C203` to `C207` / `S270` | Blacklist, block, unblock |
+| `S258` | A new message pushed to an online recipient |
 
 ## Persistence
 

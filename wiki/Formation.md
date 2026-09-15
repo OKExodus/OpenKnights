@@ -12,10 +12,10 @@ Changes are individual and incremental. Adding a hero to the field, removing one
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|S38]] | Hero added to the bench |
-| [[Opcode Index\|S40]] | Hero removed from the bench |
-| [[Opcode Index\|S42]] | Lineup set |
-| [[Opcode Index\|S44]] | Captain set |
+| `S38` | Hero added to the bench |
+| `S40` | Hero removed from the bench |
+| `S42` | Lineup set |
+| `S44` | Captain set |
 
 The client requests that drive these, along with the alternate and secondary teams, are documented on their opcode pages and in [[Alternate Team]] and [[Secondary Team]].
 

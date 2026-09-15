@@ -17,7 +17,7 @@ The session token is also what authorizes the free top-up. See [[Cash Shop and F
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C3]] | The game authenticates its session with the token |
+| `C3` | The game authenticates its session with the token |
 
 Sign-in itself is served over the local sign-in service on port 17778 as small HTTP requests, not as game frames. The device-login request returns the token; the game then presents that token on the game service.
 

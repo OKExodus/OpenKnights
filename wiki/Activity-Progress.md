@@ -10,7 +10,7 @@ An active event activity carries a list of rows, each a formatted title string, 
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|S1188]] | One activity's full row list, pushed after a change |
+| `S1188` | One activity's full row list, pushed after a change |
 
 Claiming a ready row is the event-row claim opcode documented under [[Claims]].
 

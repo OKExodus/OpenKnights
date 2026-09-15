@@ -12,8 +12,8 @@ The report also carries the per-unit updates that keep the client's view of the 
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|S4]] | The battle report itself |
-| [[Opcode Index\|S12]] | Per-unit position and state updates within the report |
+| `S4` | The battle report itself |
+| `S12` | Per-unit position and state updates within the report |
 
 ## Data Files
 

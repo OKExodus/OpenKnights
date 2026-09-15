@@ -12,10 +12,10 @@ Settlement runs at 22:00 on the device's local clock. At the first request at or
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C417]] / [[Opcode Index\|S448]] | Open the panel |
-| [[Opcode Index\|C421]] / [[Opcode Index\|S450]] | Top list |
-| [[Opcode Index\|C423]] / [[Opcode Index\|S452]] | Claim the daily reward |
-| [[Opcode Index\|C419]] | Challenge, fought by the [[Battle Engine]] |
+| `C417` / `S448` | Open the panel |
+| `C421` / `S450` | Top list |
+| `C423` / `S452` | Claim the daily reward |
+| `C419` | Challenge, fought by the [[Battle Engine]] |
 
 ## Data Files
 
