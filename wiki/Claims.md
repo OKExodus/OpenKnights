@@ -10,14 +10,14 @@ Check-in tracks a calendar grid of signed days for the current month plus a four
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C1089]] / [[Opcode Index\|S1152]] / [[Opcode Index\|S1154]] | Check-in and timed gift query |
-| [[Opcode Index\|C1091]] | Sign in for the day |
-| [[Opcode Index\|C1093]] | Claim the next timed gift |
-| [[Opcode Index\|C481]] / [[Opcode Index\|S18]] | Claim the title salary; its flag rides the S18 |
-| [[Opcode Index\|C2369]] / [[Opcode Index\|S2720]] | Royal Door query |
-| [[Opcode Index\|C2371]] | Royal Door daily bonus |
-| [[Opcode Index\|C2373]] | Royal Door level-up bonus |
-| [[Opcode Index\|C2375]] | Royal Door donation |
+| `C1089` / `S1152` / `S1154` | Check-in and timed gift query |
+| `C1091` | Sign in for the day |
+| `C1093` | Claim the next timed gift |
+| `C481` / `S18` | Claim the title salary; its flag rides the S18 |
+| `C2369` / `S2720` | Royal Door query |
+| `C2371` | Royal Door daily bonus |
+| `C2373` | Royal Door level-up bonus |
+| `C2375` | Royal Door donation |
 
 ## Data Files
 

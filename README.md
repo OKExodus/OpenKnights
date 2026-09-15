@@ -52,11 +52,10 @@ The player's own game client is patched so that, instead of reaching for the pub
 
 ```mermaid
 flowchart LR
-    subgraph Phone["Your phone, offline"]
-      direction LR
-      Client["Pocket Knights client<br/>(your copy, patched)"]
-      Server["OpenKnights server<br/>(embedded, in-process)"]
-      Data[("Your saves<br/>plain files you control")]
+    subgraph "Your phone, offline"
+      Client["Pocket Knights client<br>(your copy, patched)"]
+      Server["OpenKnights server<br>(embedded, in-process)"]
+      Data[("Your saves<br>plain files you control")]
       Client <--> Server
       Server --- Data
     end

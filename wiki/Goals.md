@@ -10,10 +10,10 @@ A per-character document is seeded once from the character's own seed frame and 
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C2657]] | Claim a ready goal |
-| [[Opcode Index\|S3108]] | The full goal row list (query, and after a claim) |
-| [[Opcode Index\|S3106]] | One updated goal row |
-| [[Opcode Index\|S3104]] | The claim's Reward |
+| `C2657` | Claim a ready goal |
+| `S3108` | The full goal row list (query, and after a claim) |
+| `S3106` | One updated goal row |
+| `S3104` | The claim's Reward |
 
 ## Data Files
 

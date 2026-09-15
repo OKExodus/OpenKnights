@@ -12,15 +12,15 @@ Joining goes through an application queued on the guild record and an officer's 
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C2145]] / [[Opcode Index\|S2306]] | My guild |
-| [[Opcode Index\|C2153]] / [[Opcode Index\|S2310]] | Create |
-| [[Opcode Index\|C2155]] / [[Opcode Index\|S2312]] | Apply |
-| [[Opcode Index\|C2159]] / [[Opcode Index\|S2322]] | Approve or reject an applicant |
-| [[Opcode Index\|C2157]] / [[Opcode Index\|S2314]] | Donate |
-| [[Opcode Index\|C2177]] / [[Opcode Index\|S2330]] | Guild technology upgrade |
-| [[Opcode Index\|C2193]] / [[Opcode Index\|S2338]] | Guild boss |
-| [[Opcode Index\|C2435]] to [[Opcode Index\|C2443]] / [[Opcode Index\|S2344]] | Task board donate, refresh, accept, claim |
-| [[Opcode Index\|C2201]] / [[Opcode Index\|S2340]] | Position wage |
+| `C2145` / `S2306` | My guild |
+| `C2153` / `S2310` | Create |
+| `C2155` / `S2312` | Apply |
+| `C2159` / `S2322` | Approve or reject an applicant |
+| `C2157` / `S2314` | Donate |
+| `C2177` / `S2330` | Guild technology upgrade |
+| `C2193` / `S2338` | Guild boss |
+| `C2435` to `C2443` / `S2344` | Task board donate, refresh, accept, claim |
+| `C2201` / `S2340` | Position wage |
 
 Additional queries and world actions (members, guild list, positions, kick, transfer, notice, rename, emblem, war sign, guild mail) are listed in `Guild.kt`.
 

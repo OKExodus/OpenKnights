@@ -12,13 +12,13 @@ Praise is the pair-cooldown action: praising a friend pays Pal Points to the tru
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C353]] / [[Opcode Index\|S384]] | Pending requests |
-| [[Opcode Index\|C355]] / [[Opcode Index\|S386]] | Recommendations or campaign helpers |
-| [[Opcode Index\|C359]], [[Opcode Index\|C361]] / [[Opcode Index\|S388]] | Add by id or by name |
-| [[Opcode Index\|C363]] / [[Opcode Index\|S390]] | Reply to a request |
-| [[Opcode Index\|C365]] / [[Opcode Index\|S396]] | Remove |
-| [[Opcode Index\|C385]] / [[Opcode Index\|S416]] | Player card |
-| [[Opcode Index\|C387]] / [[Opcode Index\|S418]] | Praise |
+| `C353` / `S384` | Pending requests |
+| `C355` / `S386` | Recommendations or campaign helpers |
+| `C359`, `C361` / `S388` | Add by id or by name |
+| `C363` / `S390` | Reply to a request |
+| `C365` / `S396` | Remove |
+| `C385` / `S416` | Player card |
+| `C387` / `S418` | Praise |
 
 ## Persistence
 

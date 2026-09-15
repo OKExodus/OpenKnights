@@ -35,8 +35,8 @@ Wiki pages carry code snippets, and the boundary decides which code:
 
 ## How Pages Respect the Boundary
 
-- A [[Data File Index|data-file]] page lists a table's columns by name and meaning and its relations to other tables. It does not list the rows.
-- A [[Method CSV Decryption|decryption]] page documents the file format and how it was deciphered. It does not include a decrypted payload.
-- An [[Opcode Index|opcode]] page documents the wire layout of a message. It does not embed captured traffic that carries private values.
+- A [[data-file|Data File Index]] page lists a table's columns by name and meaning and its relations to other tables. It does not list the rows.
+- A [[decryption|Method CSV Decryption]] page documents the file format and how it was deciphered. It does not include a decrypted payload.
+- An [[opcode|Opcode Index]] page documents the wire layout of a message. It does not embed captured traffic that carries private values.
 
 If you are writing or reviewing a page and you are unsure whether something crosses the boundary, treat it as private and ask. The cost of leaving a detail out is small. The cost of publishing the wrong thing is not.

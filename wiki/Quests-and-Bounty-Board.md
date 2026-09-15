@@ -12,14 +12,14 @@ The Bounty Board holds the same fixed set of bounty quest ids every day, redrawn
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C261]] | Claim a ready story quest |
-| [[Opcode Index\|C259]] | Accept a bounty |
-| [[Opcode Index\|C263]] | Quit a bounty |
-| [[Opcode Index\|C265]] | Refresh the board |
-| [[Opcode Index\|C269]] | Expedite an auto-completing bounty |
-| [[Opcode Index\|C271]] | Reroll a bounty's stars |
-| [[Opcode Index\|C273]] | Start auto-completion |
-| [[Opcode Index\|C275]] | Report an auto-completion's timer end |
+| `C261` | Claim a ready story quest |
+| `C259` | Accept a bounty |
+| `C263` | Quit a bounty |
+| `C265` | Refresh the board |
+| `C269` | Expedite an auto-completing bounty |
+| `C271` | Reroll a bounty's stars |
+| `C273` | Start auto-completion |
+| `C275` | Report an auto-completion's timer end |
 
 ## Data Files
 

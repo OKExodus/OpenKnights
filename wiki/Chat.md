@@ -12,7 +12,7 @@ A line that starts with "/" is never stored and never reaches a channel: it is r
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C449]] / [[Opcode Index\|S480]] | Send a chat line, replayed to each recipient |
+| `C449` / `S480` | Send a chat line, replayed to each recipient |
 
 ## Persistence
 

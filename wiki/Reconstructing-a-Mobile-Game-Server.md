@@ -29,7 +29,7 @@ The order matters. Observation feeds everything. A reference implementation is t
 
 Decide the boundary before writing a line. A preservation project documents behavior and reimplements the server in original code; it does not redistribute the game. Work from a copy the user already owns, never ship the publisher's code, data, or art, and never build something that lets a person play without owning the game. Understand that reverse engineering for interoperability and preservation sits on different footing than copying, and that the footing varies by jurisdiction. Write the boundary down and enforce it mechanically so it cannot be crossed by accident.
 
-In OpenKnights: [[What Is Not In This Repository]] is the boundary, and the [[Tools and Toolchain|repository guard]] enforces it.
+In OpenKnights: [[What Is Not In This Repository]] is the boundary, and the [[repository guard|Tools and Toolchain]] enforces it.
 
 ## Phase 1: Map the architecture
 
@@ -77,7 +77,7 @@ In OpenKnights: [[Method Differential Harness]].
 
 A reference tuned for correctness is often not what you want to ship. If the delivery target is the device, port the server to a language that runs there while preserving exactness to the bit: model the 32-bit float and the random generator identically, match the reference's number and text formatting exactly, and mind the target platform's constraints. Keep the reference as the authority and prove the port against it with the same harness.
 
-In OpenKnights: the port is Kotlin, running on a PC and inside the app. The exactness primitives are in [[Tools and Toolchain|the exact module]].
+In OpenKnights: the port is Kotlin, running on a PC and inside the app. The exactness primitives are in [[the exact module|Tools and Toolchain]].
 
 ## Phase 9: Deliver it offline
 
@@ -89,7 +89,7 @@ In OpenKnights: [[The Patcher]], [[Accounts and Sign-in]], and [[Save and Data R
 
 Two disciplines keep the project trustworthy over time. First, a mechanical guard that refuses to let the publisher's content or private material enter the repository, so the boundary holds even under pressure. Second, documentation written as you go, system by system, so the knowledge is not trapped in one person's head. The wiki you are reading is that documentation.
 
-In OpenKnights: the [[Tools and Toolchain|guard]] and this wiki.
+In OpenKnights: the [[guard|Tools and Toolchain]] and this wiki.
 
 ## If you are applying this to another game
 

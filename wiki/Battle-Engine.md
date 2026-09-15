@@ -16,8 +16,8 @@ The engine is internal. It is invoked by the systems that run battles, and its o
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|S4]] | The battle report the engine produces, encoded for the client. See [[Battle Report]]. |
-| [[Opcode Index\|S12]] | Per-unit position and state updates within the report. |
+| `S4` | The battle report the engine produces, encoded for the client. See [[Battle Report]]. |
+| `S12` | Per-unit position and state updates within the report. |
 
 The triggers that start a battle belong to the calling system, for example `C129` in [[Campaign]].
 

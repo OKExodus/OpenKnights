@@ -12,7 +12,7 @@ Deletion does not destroy a save outright. The character's save is moved to the 
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|S18]] | The character list and the create prompt |
+| `S18` | The character list and the create prompt |
 
 The selection and deletion requests, and their replies, are documented on their opcode pages.
 

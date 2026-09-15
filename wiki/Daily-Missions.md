@@ -10,8 +10,8 @@ A per-character document (`daily_mission_state_v1`, keyed to the local day) hold
 
 | Opcode | Role |
 | --- | --- |
-| [[Opcode Index\|C2539]] / [[Opcode Index\|S2912]] | Query the day's counters and claimed gifts |
-| [[Opcode Index\|C2541]] / [[Opcode Index\|S2914]] | Claim a threshold gift |
+| `C2539` / `S2912` | Query the day's counters and claimed gifts |
+| `C2541` / `S2914` | Claim a threshold gift |
 
 ## Data Files
 
