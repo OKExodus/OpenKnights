@@ -8,6 +8,12 @@ The campaign is a sequence of stages grouped into maps. A stage names the enemy 
 
 The battle itself is deterministic. The campaign's job is to produce the seed and the teams, hand them to the engine, and turn the report into rewards and saved progress.
 
+### Auto Fuse
+
+When **Auto Fuse 3 star and below** is checked, Auto Play converts newly awarded equipment of one to three stars into the materials from its normal gear-refine recipe. This applies to normal multi-run Auto Play and elite/epic Auto Play. The result screen includes the materials; higher-star equipment and ordinary item rewards are retained. Equipment already in the inventory is unaffected. With the checkbox off, all rewards are delivered normally.
+
+This conversion is an explicit implementation policy using the existing gear-refine rules. Converted equipment is not added to the equipment collection because the reward is granted directly as materials. The original server's packet order with Auto Fuse enabled has not been captured.
+
 ## Opcodes
 
 | Opcode | Role |
