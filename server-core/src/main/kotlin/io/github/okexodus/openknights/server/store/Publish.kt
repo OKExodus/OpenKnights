@@ -58,7 +58,7 @@ object Publish {
     fun clearStaleClaims(directory: Path, quarantine: Path): List<String> {
         val moved = ArrayList<String>()
         if (!Files.isDirectory(directory)) return moved
-        val names = Files.list(directory).use { s -> s.map { it.fileName.toString() }.toList() }
+        val names = Files.list(directory).use { s -> s.map { it.fileName.toString() }.collect(java.util.stream.Collectors.toList()) }
         val stale = names.filter { it.endsWith(CLAIM_SUFFIX) }.sorted() + names.filter { it.startsWith(".") && it.contains(".init-") }.sorted()
         for (name in stale) {
             Files.createDirectories(quarantine)

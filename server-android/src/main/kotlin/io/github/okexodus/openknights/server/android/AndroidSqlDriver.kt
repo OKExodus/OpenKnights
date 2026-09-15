@@ -26,9 +26,17 @@ class AndroidSqlDriver(private val busyTimeoutMillis: Int = 10_000) : SqlDriver 
             SqlDriver.Mode.CREATE -> SQLiteDatabase.OPEN_READWRITE or SQLiteDatabase.CREATE_IF_NECESSARY
         }
         val db = SQLiteDatabase.openDatabase(path.toAbsolutePath().toString(), null, flags)
-        // A PRAGMA that returns a value must go through rawQuery on Android (execSQL rejects result-bearing statements).
-        if (mode != SqlDriver.Mode.READ_ONLY) db.rawQuery("PRAGMA busy_timeout=$busyTimeoutMillis", null).use { it.moveToFirst() }
-        return AndroidConnection(db)
+        if (mode != SqlDriver.Mode.READ_ONLY) {
+            // The store publishes each database as one self-contained file (Publish.publishNew renames a single
+            // <name>.sqlite3 into place). Android opens databases in WAL mode by default, which spreads committed
+            // pages across a separate <name>.sqlite3-wal that the publish rename leaves behind; the moved main file is
+            // then a WAL-mode database with no companion, and the next writer fails with SQLITE_READONLY. Force the
+            // rollback journal (as the PC's JDBC driver uses) so a published file is always complete on its own.
+            db.rawQuery("PRAGMA journal_mode=DELETE", null).use { it.moveToFirst() }
+            // A PRAGMA that returns a value must go through rawQuery on Android (execSQL rejects result-bearing statements).
+            db.rawQuery("PRAGMA busy_timeout=$busyTimeoutMillis", null).use { it.moveToFirst() }
+        }
+        return AndroidConnection(db, readOnly = mode == SqlDriver.Mode.READ_ONLY)
     }
 
     override fun backup(source: Path, target: Path) {
@@ -42,14 +50,18 @@ class AndroidSqlDriver(private val busyTimeoutMillis: Int = 10_000) : SqlDriver 
     }
 }
 
-private class AndroidConnection(private val db: SQLiteDatabase) : SqlConnection {
+private class AndroidConnection(private val db: SQLiteDatabase, private val readOnly: Boolean = false) : SqlConnection {
 
     override fun execute(sql: String, vararg args: Any?): Int {
         val head = sql.trimStart().takeWhile { !it.isWhitespace() }.uppercase()
         when (head) {
-            "BEGIN" -> { db.beginTransactionNonExclusive(); return 0 }
-            "COMMIT", "END" -> { db.setTransactionSuccessful(); db.endTransaction(); return 0 }
-            "ROLLBACK" -> { db.endTransaction(); return 0 }   // no setTransactionSuccessful => rolled back
+            // A read-only connection cannot take Android's transaction (beginTransactionNonExclusive issues
+            // BEGIN IMMEDIATE, which needs a write lock and fails with SQLITE_READONLY). The store's read snapshot
+            // (a plain BEGIN ... COMMIT) only needs a consistent view, which a read-only connection over the committed
+            // rollback-journal file already gives, so transaction control is a no-op here.
+            "BEGIN" -> { if (!readOnly) db.beginTransactionNonExclusive(); return 0 }
+            "COMMIT", "END" -> { if (!readOnly) { db.setTransactionSuccessful(); db.endTransaction() }; return 0 }
+            "ROLLBACK" -> { if (!readOnly) db.endTransaction(); return 0 }   // no setTransactionSuccessful => rolled back
         }
         if (args.isEmpty() && head == "BACKUP") {              // the JDBC driver's "backup to <path>"; never on-device
             db.execSQL(sql)
@@ -82,9 +94,9 @@ private class AndroidConnection(private val db: SQLiteDatabase) : SqlConnection 
         for (statement in splitStatements(sql)) {
             val head = statement.trimStart().takeWhile { !it.isWhitespace() }.uppercase()
             when (head) {
-                "BEGIN" -> db.beginTransactionNonExclusive()
-                "COMMIT", "END" -> { db.setTransactionSuccessful(); db.endTransaction() }
-                "ROLLBACK" -> db.endTransaction()
+                "BEGIN" -> { if (!readOnly) db.beginTransactionNonExclusive() }
+                "COMMIT", "END" -> { if (!readOnly) { db.setTransactionSuccessful(); db.endTransaction() } }
+                "ROLLBACK" -> { if (!readOnly) db.endTransaction() }
                 else -> db.execSQL(statement)
             }
         }

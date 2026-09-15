@@ -71,7 +71,7 @@ object SaveManagement {
 
     private fun generationFiles(generation: Path, driver: SqlDriver): Map<String, ByteArray> {
         val out = sortedMapOf<String, ByteArray>()
-        val files = Files.walk(generation).use { s -> s.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".sqlite3") }.toList() }
+        val files = Files.walk(generation).use { s -> s.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".sqlite3") }.collect(java.util.stream.Collectors.toList()) }
         val tmp = tempDirectory()
         try {
             for (path in files.sortedBy { generation.relativize(it).joinToString("/") }) {
@@ -283,7 +283,7 @@ object SaveManagement {
     }
 
     private fun dirs(folder: Path): List<Path> =
-        Files.list(folder).use { s -> s.filter { Files.isDirectory(it) }.sorted(compareBy { it.fileName.toString() }).toList() }
+        Files.list(folder).use { s -> s.filter { Files.isDirectory(it) }.sorted(compareBy { it.fileName.toString() }).collect(java.util.stream.Collectors.toList()) }
 
     /** Replace the whole data root's world by a full backup (atomic switch; the old world goes to trash/). */
     fun restoreFull(root: DataRoot, backupPath: Path, driver: SqlDriver, clock: DeviceClock?, actor: String = "local-admin"): JObj {
@@ -480,13 +480,13 @@ object SaveManagement {
     }
 
     fun listTrash(root: DataRoot): List<String> =
-        if (Files.exists(root.trash)) Files.list(root.trash).use { s -> s.map { it.fileName.toString() }.toList() }.sorted() else emptyList()
+        if (Files.exists(root.trash)) Files.list(root.trash).use { s -> s.map { it.fileName.toString() }.collect(java.util.stream.Collectors.toList()) }.sorted() else emptyList()
 
     /** Permanently remove everything in trash/ (explicit confirmation word required). */
     fun emptyTrash(root: DataRoot, confirm: String?): List<String> {
         if (confirm != EMPTY_TRASH_WORD) throw BackupError("Emptying the trash deletes it for good; confirm with the word $EMPTY_TRASH_WORD")
         val removed = ArrayList<String>()
-        for (path in Files.list(root.trash).use { s -> s.toList() }.sortedBy { it.fileName.toString() }) {
+        for (path in Files.list(root.trash).use { s -> s.collect(java.util.stream.Collectors.toList()) }.sortedBy { it.fileName.toString() }) {
             if (Files.isDirectory(path)) deleteTree(path) else Files.delete(path)
             removed.add(path.fileName.toString())
         }
@@ -532,7 +532,7 @@ object SaveManagement {
                 made.add(target.fileName.toString())
             }
             root.writeManifest(active, "daily safety copy", mapOf("daily_backup_day" to JStr(today)))
-            val dailies = Files.list(root.autoBackups).use { s -> s.filter { it.fileName.toString().startsWith("daily-") && it.fileName.toString().endsWith(SUFFIX) }.toList() }
+            val dailies = Files.list(root.autoBackups).use { s -> s.filter { it.fileName.toString().startsWith("daily-") && it.fileName.toString().endsWith(SUFFIX) }.collect(java.util.stream.Collectors.toList()) }
                 .sortedBy { it.fileName.toString() }
             for (old in dailies.dropLast(DAILY_KEEP)) made.add("trash:" + root.moveToTrash(old, "old-daily").fileName)
         }
