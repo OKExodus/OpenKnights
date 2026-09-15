@@ -2,6 +2,8 @@ package io.github.okexodus.openknights.server.game
 
 import io.github.okexodus.openknights.exact.toHexString
 import io.github.okexodus.openknights.protocol.WireWriter
+import io.github.okexodus.openknights.gamedata.GameTables
+import io.github.okexodus.openknights.gamedata.TableSource
 import org.junit.jupiter.api.Assertions.assertEquals
 import org.junit.jupiter.api.Assertions.assertThrows
 import org.junit.jupiter.api.Test
@@ -13,6 +15,36 @@ import java.math.BigInteger
  * come from the reference on the same inputs.
  */
 class G9CampaignMadeUpTest {
+    private fun fuseInputs(recipes: String = "1,1,0,90001,2\n2,2,0,90001,5\n3,3,0,90001,9\n4,3,1,90001,99\n"): AcquisitionInputs {
+        val files = mapOf(
+            "equip.csv" to "101,106\n81001,1\n81002,2\n81003,3\n81004,4\n",
+            "equiprh.csv" to "101,102,103,104,105\n$recipes"
+        )
+        return AcquisitionInputs(GameTables(object : TableSource {
+            override fun names() = files.keys.sorted()
+            override fun raw(name: String) = files.getValue(if (name.endsWith(".csv")) name else "$name.csv").toByteArray()
+        }))
+    }
+
+    @Test
+    fun `auto fuse uses ordinary gear recipes and preserves other drops`() {
+        val drops = listOf(Triple("equipment", 81001L, 2L), Triple("equipment", 81002L, 1L),
+            Triple("equipment", 81003L, 3L), Triple("equipment", 81004L, 1L), Triple("item", 81003L, 7L))
+        assertEquals(listOf(Triple("item", 90001L, 4L), Triple("item", 90001L, 5L), Triple("item", 90001L, 27L),
+            drops[3], drops[4]), Campaign.autoFuseDrops(fuseInputs(), drops))
+        assertEquals("equipment", drops[0].first)
+    }
+
+    @Test
+    fun `auto fuse refuses missing or invalid material recipes`() {
+        for (recipes in listOf("", "1,1,0,90001,0\n", "1,1,0,0,2\n")) {
+            val error = assertThrows(Acquisition.Rejected::class.java) {
+                Campaign.autoFuseDrops(fuseInputs(recipes), listOf(Triple("equipment", 81001L, 1L)))
+            }
+            assertEquals(Acquisition.ERROR_WRONG_TYPE, error.code)
+        }
+    }
+
     private fun ubits(d: Double): Long = java.lang.Double.doubleToRawLongBits(d)
 
     @Test

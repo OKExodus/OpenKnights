@@ -255,7 +255,7 @@ object Campaign {
 
     /** `POLICY` (docs/CAMPAIGN_CONTRACT.md §6) — the transaction detail's `policy` block; a fresh copy per call. */
     fun policy(): JObj = jobj("exp_multiplier" to 1.0, "record_stars" to "max", "normal_auto" to "no_battle",
-        "auto_fuse" to "ignored", "drops" to "stage_groups_v1", "regen_anchor" to "drop_below_max",
+        "auto_fuse" to "equipment_3star_and_below_v1", "drops" to "stage_groups_v1", "regen_anchor" to "drop_below_max",
         "first_kill" to "first_local_winner", "map_chest" to "refused")
 
     /** A lost battle: the S4 is sent and nothing is committed (no AP, no attempt, no record change). */
@@ -662,7 +662,23 @@ object Campaign {
         return Plan(jobj("box" to box, "reward" to reward, "campaign_state_after" to newDoc, "evidence_class" to "capture_observed_csv"), frames)
     }
 
-    /** `plan_auto` (C131): Auto-play of a won stage — normal ×N (S608) or elite / epic (S610). */
+    /** Convert only newly awarded low-star equipment, using the ordinary gear refine recipe. */
+    fun autoFuseDrops(inputs: AcquisitionInputs, drops: List<Triple<String, Long, Long>>): List<Triple<String, Long, Long>> =
+        drops.map { drop ->
+            val (kind, template, count) = drop
+            val star = if (kind == "equipment") inputs.equipStar(template) else null
+            if (star == null || star !in 1L..3L) drop else {
+                // Campaign equipment is granted with its default super flag of zero.
+                val row = inputs.composeRow("equiprh", star, 0)
+                val item = (row?.get("104") as? JInt)?.value?.toLong()
+                val amount = (row?.get("105") as? JInt)?.value?.toLong()
+                if (item == null || item <= 0 || amount == null || amount <= 0)
+                    throw Acquisition.Rejected("No refine row for this gear", Acquisition.ERROR_WRONG_TYPE)
+                Triple("item", item, amount * count)
+            }
+        }
+
+    /** `plan_auto` (C131): Auto-play of a won stage, normal xN (S608) or elite / epic (S610). */
     fun planAuto(request: JObj, owned: Owned, current: StateStore.Current, inputs: DailyInputs, document: JObj,
                  now: Long, rng: SplitMix64, forced: JObj? = null): Plan {
         val stage = request.long("stage")
@@ -678,7 +694,8 @@ object Campaign {
             if (role(owned, Acquisition.STAMINA) < BigInteger.valueOf(count * (row["126"] ?: 0L))) throw Acquisition.Rejected("Not enough Action Points", ERR_RESOURCES)
             val rolled = ArrayList<Triple<String, Long, Long>>()
             repeat(count.toInt()) { rolled.addAll(rollDrops(row, rng, firstClear = false)) }
-            val drops = if (forcedDrops != null) dropsFromJson(forcedDrops) else rolled
+            val awarded = if (forcedDrops != null) dropsFromJson(forcedDrops) else rolled
+            val drops = if (Py.truthy(request["auto_fuse"])) autoFuseDrops(inputs, awarded) else awarded
             val (settle, rew, det) = settleWin(owned, current, inputs, stage, row, mode, PyDocs.long(record[0]), now = now, document = document, drops = drops, count = count, auto = true)
             reward = rew; detail = det
             frames.addAll(settle)
@@ -689,7 +706,8 @@ object Campaign {
             val token = prop(inputs, P_TOKEN_ITEM, 30112)
             val tokens = prop(inputs, P_TOKEN_COUNT, 5)
             frames.addAll(owned.consumeTemplate(token, tokens))
-            val drops = if (forcedDrops != null) dropsFromJson(forcedDrops) else rollDrops(row, rng, firstClear = false)
+            val awarded = if (forcedDrops != null) dropsFromJson(forcedDrops) else rollDrops(row, rng, firstClear = false)
+            val drops = if (Py.truthy(request["auto_fuse"])) autoFuseDrops(inputs, awarded) else awarded
             val (settle, rew, det) = settleWin(owned, current, inputs, stage, row, mode, PyDocs.long(record[0]), now = now, document = document, drops = drops, count = 1)
             reward = rew; detail = det
             frames.addAll(settle)

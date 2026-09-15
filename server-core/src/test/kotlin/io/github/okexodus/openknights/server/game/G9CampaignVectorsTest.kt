@@ -248,9 +248,9 @@ class G9CampaignVectorsTest {
             val stage = vec.long("stage")
             val cur = currentOf(save(vec.str("save")))
             val owned = Owned(cur, inputs)
-            val request = jobj("stage" to stage, "helper" to 0, "slot" to 6, "auto_fuse" to 0, "count" to vec.long("count"))
+            val request = jobj("stage" to stage, "helper" to 0, "slot" to 6, "auto_fuse" to (vec["auto_fuse"] ?: JInt(0)), "count" to vec.long("count"))
             replayPlan("auto $i stage $stage", vec["result"], owned) {
-                Campaign.planAuto(request, owned, cur, inputs, freshDoc(), NOW, Campaign.SplitMix64(0x1234L xor 0x5CA1AB1EL))
+                Campaign.planAuto(request, owned, cur, inputs, freshDoc(), NOW, Campaign.SplitMix64(0x1234L xor 0x5CA1AB1EL), vec["forced"] as? JObj)
             }
         }
         report("auto")
