@@ -459,7 +459,7 @@ object Quests {
         var gold = PyDocs.int(PyDocs.at(quest, "gold"))
         var honor = PyDocs.int(PyDocs.at(quest, "honor"))
         var points = PyDocs.int(PyDocs.at(quest, "points"))
-        if (mode == BigInteger.TWO) {
+        if (mode == BigInteger.valueOf(2)) {
             val scale = prop(inputs, LEVEL_SCALE, 4000)
             val bonus = if (Py.truthy(stars)) inputs.bountyStar(PyDocs.long(stars)) else null
             fun mul(value: BigInteger, extra: String): BigInteger {

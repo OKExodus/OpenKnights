@@ -30,7 +30,9 @@ object ActivityProgress {
     val CLAIM: String = "Claim Reward".toByteArray(Charsets.UTF_8).toHexString()
 
     /** The reference's `re` rules: `\d` is any Unicode decimal digit, `$` also matches before a final "\n". */
-    private fun re(pattern: String): Pattern = Pattern.compile(pattern, Pattern.UNICODE_CHARACTER_CLASS or Pattern.UNIX_LINES)
+    // Android rejects UNICODE_CHARACTER_CLASS. These expressions only need Unicode decimal digits, so spell the
+    // class explicitly instead of enabling a JVM-only flag. UNIX_LINES preserves the reference's final-newline rule.
+    private fun re(pattern: String): Pattern = Pattern.compile(pattern.replace("\\d", "\\p{Nd}"), Pattern.UNIX_LINES)
 
     val LADDERS: Map<String, Pair<Pattern, (BigInteger, BigInteger) -> String>> = mapOf(
         "diamond_spend" to (re("^Used (\\d+)/(\\d+) Diamonds$") to { x, t -> "Used $x/$t Diamonds" }),

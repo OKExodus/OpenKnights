@@ -2,6 +2,7 @@ package io.github.okexodus.openknights.server.store
 
 import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JBool
+import io.github.okexodus.openknights.exact.JFloat
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JNull
 import io.github.okexodus.openknights.exact.JObj
@@ -511,9 +512,34 @@ class StateStore(path: Path, private val driver: SqlDriver) {
 
     /** `history_values(action, json_path)`: one JSON value of every history row of `action`, in revision order (nulls skipped). */
     fun historyValues(action: String, jsonPath: String): List<Any> = connect(readOnly = true).use { db ->
-        db.query("SELECT json_extract(detail_json, ?) AS v FROM state_history WHERE action=? ORDER BY revision", jsonPath, action).mapNotNull { it["v"] }
+        // Android's SQLite build does not necessarily include the JSON1 extension. Read the already stored JSON
+        // through the project's exact codec instead of relying on json_extract being compiled into SQLite.
+        db.query("SELECT detail_json FROM state_history WHERE action=? ORDER BY revision", action).mapNotNull { row ->
+            jsonPathValue(Json.loads(row.string("detail_json")), jsonPath)?.let(::sqliteJsonValue)
+        }
     }
 
     /** Values of the state tree used by several systems (role property `id`). */
     fun role(state: JObj, id: Int): JObj = PlayerState.role(state, id)
+}
+
+/** Resolve the simple dotted JSON paths currently used by historyValues without SQLite JSON1. */
+private fun jsonPathValue(root: JValue, path: String): JValue? {
+    require(Regex("\\$(\\.[A-Za-z_][A-Za-z0-9_]*)+").matches(path)) {
+        "Only simple dotted JSON paths are supported"
+    }
+    var current: JValue = root
+    return path.substring(1).split('.').drop(1).fold(current) { value, key ->
+        (value as? JObj)?.get(key) ?: return null
+    }
+}
+
+/** Match SQLite JSON1 scalar types for the supported history paths. */
+private fun sqliteJsonValue(value: JValue): Any? = when (value) {
+    JNull -> null
+    is JBool -> if (value.value) 1L else 0L
+    is JInt -> try { value.value.longValueExact() } catch (_: ArithmeticException) { value.value.toDouble() }
+    is JFloat -> value.value
+    is JStr -> value.value
+    is JObj, is JArr -> Json.dumps(value)
 }

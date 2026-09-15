@@ -60,7 +60,15 @@ class AndroidListeners(
         Thread({
             while (running) {
                 val socket = try { server.accept() } catch (e: IOException) { break }
-                Thread({ socket.use { handler(it) } }, "conn-$port").apply { isDaemon = true }.start()
+                // Catch Throwable (not just Exception) at the connection boundary: an Error such as a NoSuchMethodError
+                // from an unbackported platform API must fail this one connection, never take down the whole app.
+                Thread({
+                    try { socket.use { handler(it) } }
+                    catch (t: Throwable) {
+                        android.util.Log.e("OpenKnights", "connection failed on port $port", t)
+                        try { log.log("connection_error", "port" to port, "error" to (t.message ?: t.javaClass.simpleName)) } catch (_: Throwable) {}
+                    }
+                }, "conn-$port").apply { isDaemon = true }.start()
             }
         }, "listen-$port").apply { isDaemon = true }.start()
         return server
@@ -131,7 +139,8 @@ class AndroidListeners(
             matched = if (b.toByte() == end[matched]) matched + 1 else if (b.toByte() == end[0]) 1 else 0
             if (out.size() > 8192) throw IllegalArgumentException("Header too large")
         }
-        return out.toString(Charsets.US_ASCII)
+        // String(bytes, charset) (API 1), not ByteArrayOutputStream.toString(Charset) which Android adds only at API 33.
+        return String(out.toByteArray(), Charsets.US_ASCII)
     }
 
     private fun http(socket: Socket) {
@@ -162,8 +171,15 @@ class AndroidListeners(
                 require(headers["content-type"] == "application/json") { "JSON required" }
                 val size = (headers["content-length"] ?: "-1").toInt()
                 require(size in 1..8192) { "Body size invalid" }
-                val data = input.readNBytes(size)
-                require(data.size == size) { "Body truncated" }
+                // Read exactly content-length bytes without InputStream.readNBytes (Java 11; Android adds it at API 33).
+                val data = ByteArray(size)
+                var read = 0
+                while (read < size) {
+                    val n = input.read(data, read, size - read)
+                    if (n < 0) break
+                    read += n
+                }
+                require(read == size) { "Body truncated" }
                 val body = Json.loads(data)
                 val response = onDispatcher { AuthGateway.respond(service, path, body) }
                 status = response.status

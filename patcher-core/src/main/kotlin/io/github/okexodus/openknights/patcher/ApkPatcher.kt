@@ -1,6 +1,7 @@
 package io.github.okexodus.openknights.patcher
 
 import io.github.okexodus.openknights.patcher.input.ApkSource
+import io.github.okexodus.openknights.patcher.dex.ServerRuntime
 import io.github.okexodus.openknights.patcher.input.IdentifiedInput
 import io.github.okexodus.openknights.patcher.patch.Branding
 import io.github.okexodus.openknights.patcher.patch.CodePatch
@@ -136,7 +137,8 @@ class ApkPatcher(
                 icon?.files?.forEach { (path, data) -> zip.addStored(path, data) }
                 if (onDevice) {
                     var next = CodePatch.dexIndex(code.addedDex) + 1
-                    val serverDexNames = serverBundle!!.dexes.map { data ->
+                    val isolatedDexes = serverBundle!!.dexes.map(ServerRuntime::isolate)
+                    val serverDexNames = isolatedDexes.map { data ->
                         val name = "classes$next.dex"; next++
                         zip.addStored(name, data); name
                     }
@@ -144,7 +146,7 @@ class ApkPatcher(
                     for ((name, data) in serverBundle.releaseData) zip.addStored("${ServerBundle.ASSET_DIR}/release-data/$name", data)
                     for ((path, data) in serverBundle.resources) zip.addStored(path, data)
                     report.step("on_device_server", mapOf(
-                        "server_dexes" to serverDexNames, "server_dex_sizes" to serverBundle.dexes.map { it.size },
+                        "server_dexes" to serverDexNames, "server_dex_sizes" to isolatedDexes.map { it.size },
                         "release_data_files" to serverBundle.releaseData.keys.sorted(),
                         "classpath_resources" to serverBundle.resources.keys.sorted(),
                         "application_class" to ServerBundle.APPLICATION_CLASS))
