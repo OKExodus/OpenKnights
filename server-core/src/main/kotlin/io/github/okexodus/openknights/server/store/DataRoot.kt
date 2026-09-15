@@ -141,7 +141,7 @@ class DataRoot(path: Path, private val driver: SqlDriver) {
     }
 
     private fun sortedDirs(folder: Path): List<Path> =
-        Files.list(folder).use { s -> s.filter { Files.isDirectory(it) }.sorted(compareBy { it.fileName.toString() }).toList() }
+        Files.list(folder).use { s -> s.filter { Files.isDirectory(it) }.sorted(compareBy { it.fileName.toString() }).collect(java.util.stream.Collectors.toList()) }
 
     fun recover(): List<String> {
         val active = (readManifest()?.get("active") as? JStr)?.value
@@ -152,7 +152,7 @@ class DataRoot(path: Path, private val driver: SqlDriver) {
             if (active == null && keptStaging == null && isUnbornStaging(folder)) { keptStaging = folder; continue }
             moved.add(root.relativize(moveToTrash(folder, "orphan")).joinToString("/"))
         }
-        Files.list(root).use { s -> s.filter { it.fileName.toString().startsWith(".staging-") }.sorted().toList() }.forEach {
+        Files.list(root).use { s -> s.filter { it.fileName.toString().startsWith(".staging-") }.sorted().collect(java.util.stream.Collectors.toList()) }.forEach {
             moved.add(root.relativize(moveToTrash(it, "interrupted")).joinToString("/"))
         }
         if (active != null) {

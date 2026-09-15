@@ -34,7 +34,7 @@ object Fingerprint {
         val generation = if (active != null) root.worlds.resolve(active) else unborn(root)
         val databases = JObj()
         if (generation != null) {
-            val files = Files.walk(generation).use { s -> s.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".sqlite3") }.toList() }
+            val files = Files.walk(generation).use { s -> s.filter { Files.isRegularFile(it) && it.fileName.toString().endsWith(".sqlite3") }.collect(java.util.stream.Collectors.toList()) }
             val relative = files.map { generation.relativize(it).joinToString("/") }.filter { !it.startsWith(".") && !it.contains("/.") }.sorted()
             for (name in relative) databases[name] = database(generation.resolve(name), driver)
         }
@@ -46,7 +46,7 @@ object Fingerprint {
 
     private fun unborn(root: DataRoot): Path? {
         if (!Files.isDirectory(root.worlds)) return null
-        return Files.list(root.worlds).use { s -> s.filter { Files.isDirectory(it) && Files.isRegularFile(it.resolve(DataRoot.REGISTRY)) }.sorted().toList() }.firstOrNull()
+        return Files.list(root.worlds).use { s -> s.filter { Files.isDirectory(it) && Files.isRegularFile(it.resolve(DataRoot.REGISTRY)) }.sorted().collect(java.util.stream.Collectors.toList()) }.firstOrNull()
     }
 
     fun database(path: Path, driver: SqlDriver): JObj = driver.open(path, SqlDriver.Mode.READ_ONLY).use { db ->
