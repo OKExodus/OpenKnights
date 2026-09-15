@@ -44,6 +44,7 @@ class ServerBundle(
 ) {
     companion object {
         const val APPLICATION_CLASS = "io.github.okexodus.openknights.OpenKnightsApplication"
+        const val RESTORE_ACTIVITY = "io.github.okexodus.openknights.server.android.RestoreActivity"
         const val ASSET_DIR = "assets/openknights"
     }
 }
@@ -89,7 +90,8 @@ class ApkPatcher(
         }
         val icon = if (options.icon) branding.addIcon(resources) else null
         val manifest = ManifestPatch(options.packageName, options.label, options.version, icon?.iconId,
-            applicationClass = if (onDevice) ServerBundle.APPLICATION_CLASS else null)
+            applicationClass = if (onDevice) ServerBundle.APPLICATION_CLASS else null,
+            restoreActivity = if (onDevice) ServerBundle.RESTORE_ACTIVITY else null)
             .apply(base.archive.read("AndroidManifest.xml"))
         val newTable = resources.encode()
 

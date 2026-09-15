@@ -72,6 +72,7 @@ object AndroidServerHost {
         val logFile = File(files, "logs/service-${PyTime.nowStamp()}.jsonl").toPath()
         Files.createDirectories(logFile.parent)
         val log = ServiceLog(logFile)
+        applyPendingRestore(File(files, RestoreActivity.PENDING).toPath(), dataRoot, log)
         val service = Service.release(AndroidSqlDriver(), dataRoot, apk, releaseData, log)
         // Auto-export a rolling backup of the born world to Download/OpenKnights (no permission, no root), before the
         // server accepts clients, so it is a consistent snapshot. A fresh (unborn) root has nothing to back up.
@@ -89,6 +90,26 @@ object AndroidServerHost {
         service.settle("start")
         log.log("ready", "mode" to "release", "login_port" to started.boundLoginPort, "game_port" to started.boundGamePort,
             "auth_port" to started.boundAuthPort, "on_device" to true, "born" to (service.world != null))
+    }
+
+    /**
+     * If [RestoreActivity] staged a backup, apply it to the data root before the server opens it. `restoreFull` writes
+     * a new generation and only swaps it in on success (a bad backup is moved to trash and the active world is left
+     * untouched), so a failed restore is safe. The staged file is always removed so a restore runs at most once.
+     */
+    private fun applyPendingRestore(pending: Path, dataRoot: Path, log: ServiceLog) {
+        if (!Files.exists(pending)) return
+        try {
+            val driver = AndroidSqlDriver()
+            val root = io.github.okexodus.openknights.server.store.DataRoot(dataRoot, driver).open()
+            val result = io.github.okexodus.openknights.server.store.SaveManagement.restoreFull(root, pending, driver, null)
+            log.log("restore_applied", "characters" to result["characters"], "generation" to result["generation"])
+        } catch (e: Throwable) {
+            log.log("restore_failed", "error" to (e.message ?: e.javaClass.simpleName))
+            android.util.Log.e("OpenKnights", "restore failed", e)
+        } finally {
+            try { Files.deleteIfExists(pending) } catch (_: Exception) {}
+        }
     }
 
     /** Copy the `assets/openknights/release-data` tree (including subdirectories) into `target`. */
