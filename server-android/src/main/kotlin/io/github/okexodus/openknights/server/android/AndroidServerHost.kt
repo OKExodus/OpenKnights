@@ -52,6 +52,16 @@ object AndroidServerHost {
         Files.createDirectories(logFile.parent)
         val log = ServiceLog(logFile)
         val service = Service.release(AndroidSqlDriver(), dataRoot, apk, releaseData, log)
+        // Auto-export a rolling backup of the born world to Download/OpenKnights (no permission, no root), before the
+        // server accepts clients, so it is a consistent snapshot. A fresh (unborn) root has nothing to back up.
+        val root = service.dataRoot
+        if (root != null && service.world != null) {
+            val name = Backups.exportRolling(context, root, service.driver, service.clock) { message, e ->
+                log.log("auto_backup_error", "message" to message)
+                android.util.Log.w("OpenKnights", message, e)
+            }
+            if (name != null) log.log("auto_backup", "file" to name)
+        }
         val page = readAsset(context, "$ASSET_ROOT/signin.html")
         val started = AndroidListeners(service, page, InetAddress.getByName("127.0.0.1")).start()
         listeners = started
