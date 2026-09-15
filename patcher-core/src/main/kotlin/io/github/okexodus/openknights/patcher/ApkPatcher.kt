@@ -1,6 +1,10 @@
 package io.github.okexodus.openknights.patcher
 
 import io.github.okexodus.openknights.patcher.input.ApkSource
+import io.github.okexodus.openknights.gamedata.AssetCipher
+import io.github.okexodus.openknights.gamedata.SummonPoolPolicy
+import io.github.okexodus.openknights.gamedata.SupportedInput
+import io.github.okexodus.openknights.gamedata.TableSource
 import io.github.okexodus.openknights.patcher.dex.ServerRuntime
 import io.github.okexodus.openknights.patcher.input.IdentifiedInput
 import io.github.okexodus.openknights.patcher.patch.Branding
@@ -15,6 +19,9 @@ import io.github.okexodus.openknights.patcher.zip.ZipEntry
 import io.github.okexodus.openknights.patcher.zip.ZipWriter
 import java.nio.file.Files
 import java.nio.file.Path
+import kotlinx.serialization.json.Json
+import kotlinx.serialization.json.jsonObject
+import kotlinx.serialization.json.jsonPrimitive
 
 /** How the patched app reaches its server. */
 enum class ServerMode {
@@ -80,6 +87,22 @@ class ApkPatcher(
         val onDevice = options.mode == ServerMode.ON_DEVICE
         require(!onDevice || serverBundle != null) { "ON_DEVICE mode needs a server bundle" }
 
+        val supremeTables: Map<String, ByteArray> = if (onDevice && "supreme-summon-pool.json" in serverBundle!!.releaseData) {
+            val source = ArchiveTables(base)
+            val poolRaw = serverBundle.releaseData.getValue("supreme-summon-pool.json")
+            val manifestRaw = serverBundle.releaseData["MANIFEST.json"]
+                ?: throw IllegalArgumentException("Supreme pool needs a release-data manifest")
+            val releaseManifest = Json.parseToJsonElement(manifestRaw.toString(Charsets.UTF_8)).jsonObject
+            val expected = releaseManifest["files"]?.jsonObject?.get("supreme-summon-pool.json")
+                ?.jsonObject?.get("sha256")?.jsonPrimitive?.content
+            require(expected == Hashing.sha256(poolRaw)) { "Supreme pool is not bound to its release-data manifest" }
+            val policy = SummonPoolPolicy.parse(poolRaw)
+            val transformed = policy.transform(source)
+            listOf("xinniudan.csv", "niudanhero.csv").associateWith { name ->
+                AssetCipher(SupportedInput.bundled.tableKey).encrypt(transformed.raw(name))
+            }
+        } else emptyMap()
+
         log("Patching the app manifest")
         val tableBytes = base.archive.read("resources.arsc")
         val table = ResourceTable.read(tableBytes)
@@ -121,7 +144,8 @@ class ApkPatcher(
         }
 
         log("Writing the patched app")
-        val replaced = mapOf("AndroidManifest.xml" to manifest.manifest, "resources.arsc" to newTable) + code.dexFiles
+        val replaced = mapOf("AndroidManifest.xml" to manifest.manifest, "resources.arsc" to newTable) + code.dexFiles +
+            supremeTables.mapKeys { (name, _) -> SupportedInput.bundled.tablePrefix + name }
         var copied = 0
         Files.newOutputStream(output).use { stream ->
             ZipWriter(stream).use { zip ->
@@ -133,6 +157,11 @@ class ApkPatcher(
                 }
                 code.dexFiles[code.addedDex]?.let { zip.addStored(code.addedDex, it) }
                 zip.addStored(nativePatches.file, library, alignment = LIBRARY_ALIGNMENT)
+                for ((name, _) in supremeTables) {
+                    val original = base.archive[SupportedInput.bundled.tablePrefix + name]
+                        ?: throw PatchFailure(FailureCode.PATCH_SITE_MISMATCH, "Missing original $name table")
+                    zip.addStored("${ServerBundle.ASSET_DIR}/original-tables/$name", base.archive.read(original))
+                }
                 for ((path, source) in splitFiles) zip.copy(source.first.archive, source.second)
                 icon?.files?.forEach { (path, data) -> zip.addStored(path, data) }
                 if (onDevice) {
@@ -194,5 +223,18 @@ class ApkPatcher(
             name == "stamp-cert-sha256" || name == "META-INF/MANIFEST.MF" ||
                 (name.startsWith("META-INF/") && name.count { it == '/' } == 1 &&
                     (name.endsWith(".SF") || name.endsWith(".RSA") || name.endsWith(".DSA") || name.endsWith(".EC")))
+    }
+
+    private class ArchiveTables(private val apk: ApkSource) : TableSource {
+        override fun names(): List<String> = listOf("xinniudan.csv", "niudanhero.csv")
+        override fun raw(name: String): ByteArray {
+            val file = if (name.endsWith(".csv")) name else "$name.csv"
+            val entry = apk.archive[SupportedInput.bundled.tablePrefix + file]
+                ?: throw NoSuchElementException("Missing table: $file")
+            val plain = AssetCipher(SupportedInput.bundled.tableKey).decrypt(apk.archive.read(entry))
+            val expected = SupportedInput.bundled.tables[file]
+            require(expected != null && Hashing.sha256(plain) == expected) { "Original $file table does not match the supported APK" }
+            return plain
+        }
     }
 }
