@@ -55,8 +55,6 @@ class PatchOptions(
     val label: String = LABEL,
     /** Use the OpenKnights icon (otherwise the game keeps its own). */
     val icon: Boolean = true,
-    /** Mark the app debuggable (maintainer on-device diagnostics only). */
-    val debuggable: Boolean = false,
 ) {
     companion object {
         const val PACKAGE = "io.github.okexodus.openknights"
@@ -91,7 +89,7 @@ class ApkPatcher(
         }
         val icon = if (options.icon) branding.addIcon(resources) else null
         val manifest = ManifestPatch(options.packageName, options.label, options.version, icon?.iconId,
-            applicationClass = if (onDevice) ServerBundle.APPLICATION_CLASS else null, debuggable = options.debuggable)
+            applicationClass = if (onDevice) ServerBundle.APPLICATION_CLASS else null)
             .apply(base.archive.read("AndroidManifest.xml"))
         val newTable = resources.encode()
 

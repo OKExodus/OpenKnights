@@ -70,7 +70,6 @@ class Cli(
         var releaseData: Path? = null
         var signin: Path? = null
         var serverResources: Path? = null
-        var debuggable = false
         var i = 0
         fun value(): String = args.getOrNull(++i) ?: throw UsageError("${args[i - 1]} needs a value.")
         while (i < args.size) {
@@ -87,7 +86,6 @@ class Cli(
                 "--release-data" -> releaseData = Path.of(value())
                 "--signin" -> signin = Path.of(value())
                 "--server-resources" -> serverResources = Path.of(value())
-                "--debuggable" -> debuggable = true
                 else -> throw UsageError("Unknown option \"$arg\".")
             }
             i++
@@ -121,7 +119,7 @@ class Cli(
             } ?: emptyMap()
             io.github.okexodus.openknights.patcher.ServerBundle(dexes, files, Files.readAllBytes(page), resources)
         } else null
-        val patcher = patcherFor(PatchOptions(mode = mode, debuggable = debuggable), keys, bundle)
+        val patcher = patcherFor(PatchOptions(mode = mode), keys, bundle)
         val result = patcher.run(original, patched, PatchLog { out.println(it) })
         report?.let { Files.copy(result.report, it, StandardCopyOption.REPLACE_EXISTING) }
         printResult(result)
