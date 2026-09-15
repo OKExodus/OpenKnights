@@ -18,6 +18,10 @@ class ManifestPatch(
     val version: AppVersion,
     /** The launcher icon resource, or null to keep the game's own icon. */
     val iconResource: Int?,
+    /** The Application class to run (on-device server boot), or null to keep the framework default. */
+    val applicationClass: String? = null,
+    /** The activity that imports a `.okbackup` opened from a file manager (on-device restore), or null to add none. */
+    val restoreActivity: String? = null,
 ) {
     data class Result(val manifest: ByteArray, val removedComponents: List<String>, val removedAttributes: List<String>)
 
@@ -37,6 +41,12 @@ class ManifestPatch(
 
         val application = root.elements.singleOrNull { it.name == "application" } ?: mismatch("there is no single <application>")
         application.set(ANDROID, "label", LABEL, ResValue.string(label))
+        // The game ships with the default android.app.Application (no android:name), so pointing it at our own
+        // Application subclass is a clean hook to boot the in-process server, with no game-code edit.
+        applicationClass?.let {
+            if (application.androidAttribute("name") != null) mismatch("the application already has an android:name")
+            application.set(ANDROID, "name", NAME, ResValue.string(it))
+        }
         iconResource?.let { application.set(ANDROID, "icon", ICON, ResValue.reference(it), raw = null) }
         application.set(ANDROID, "allowBackup", ALLOW_BACKUP, ResValue.boolean(false), raw = null)
         application.set(ANDROID, "extractNativeLibs", EXTRACT_NATIVE_LIBS, ResValue.boolean(true), raw = null)
@@ -72,14 +82,39 @@ class ManifestPatch(
         for (kept in KEPT_META_DATA) {
             if (application.elements.none { it.name == "meta-data" && it.androidAttribute("name")?.value?.string == kept }) mismatch("the meta-data $kept is missing")
         }
+        restoreActivity?.let { addRestoreActivity(application, it) }
         return Result(xml.encode(), removed, removedAttributes)
     }
+
+    /**
+     * Add the file-open restore entry point (added after the removals above, so it survives them): an exported activity
+     * with a VIEW / DEFAULT intent-filter for `application/zip`, so a `.okbackup` opened from a file manager reaches it.
+     */
+    private fun addRestoreActivity(application: XmlElement, className: String) {
+        val activity = XmlElement(namespace = null, name = "activity")
+        activity.set(ANDROID, "name", NAME, ResValue.string(className))
+        activity.set(ANDROID, "exported", EXPORTED, ResValue.boolean(true), raw = null)
+        val filter = XmlElement(namespace = null, name = "intent-filter")
+        filter.children += androidNamed("action", "android.intent.action.VIEW")
+        filter.children += androidNamed("category", "android.intent.category.DEFAULT")
+        val data = XmlElement(namespace = null, name = "data")
+        data.set(ANDROID, "mimeType", MIME_TYPE, ResValue.string("application/zip"))
+        filter.children += data
+        activity.children += filter
+        application.children += activity
+    }
+
+    private fun androidNamed(element: String, name: String): XmlElement =
+        XmlElement(namespace = null, name = element).also { it.set(ANDROID, "name", NAME, ResValue.string(name)) }
 
     private fun mismatch(what: String): Nothing =
         throw PatchFailure(FailureCode.PATCH_SITE_MISMATCH, "The app manifest is not as expected: $what. Nothing was patched.")
 
     companion object {
         private const val ANDROID = BinaryXml.ANDROID_NS
+        const val NAME = 0x01010003
+        const val EXPORTED = 0x01010010
+        const val MIME_TYPE = 0x01010026
         const val LABEL = 0x01010001
         const val ICON = 0x01010002
         const val VERSION_CODE = 0x0101021b

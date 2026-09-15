@@ -55,6 +55,8 @@ class Patcher(
     private val keys: KeyStorage = KeyStorage(),
     private val supported: SupportedInput = SupportedInput.bundled,
     private val apkPatcher: ApkPatcher = ApkPatcher(options),
+    /** The on-device server payload for [ServerMode.ON_DEVICE]; null for the dev-server mode. */
+    private val serverBundle: ServerBundle? = null,
     /** Free space the patch needs beyond the output, so the disk is never filled to the last byte. */
     private val spareBytes: Long = 64L shl 20,
 ) {
@@ -85,7 +87,7 @@ class Patcher(
                     "files" to game.files.map { mapOf("name" to it.name, "size" to it.size, "sha256" to it.sha256) },
                     "used" to game.apks.map { it.name }, "checks" to game.checks, "notes" to game.notes,
                 )
-                apkPatcher.build(game, unsignedTemp, report) { log.info(it) }
+                apkPatcher.build(game, unsignedTemp, report, serverBundle) { log.info(it) }
                 log.info("Signing")
                 ApkSigning.sign(unsignedTemp, signedTemp, key, "OpenKnights Patcher ${BuildInfo.version}")
                 Files.delete(unsignedTemp)

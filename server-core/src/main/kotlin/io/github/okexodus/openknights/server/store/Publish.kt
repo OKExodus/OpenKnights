@@ -41,7 +41,9 @@ object Publish {
             throw FileAlreadyExistsException(claim.fileName.toString(), null, "Another publisher holds it (or a crashed one left it)")
         }
         try {
-            Files.writeString(claim, Json.dumps(jobj("pid" to ProcessHandle.current().pid(), "time" to io.github.okexodus.openknights.exact.Now.seconds())))
+            val pid = try { ProcessHandle.current().pid() } catch (e: Throwable) { -1L }   // diagnostic only; Android lacks ProcessHandle
+            // Files.write (API 26+) rather than Files.writeString (a Java-11 method some Android builds lack).
+            Files.write(claim, Json.dumps(jobj("pid" to pid, "time" to io.github.okexodus.openknights.exact.Now.seconds())).toByteArray())
             afterClaim?.invoke()
             if (Files.exists(target)) throw FileAlreadyExistsException(target.fileName.toString(), null, "already exists; publishing never overwrites")
             Files.move(temporary, target, StandardCopyOption.ATOMIC_MOVE)
@@ -114,9 +116,30 @@ object DataPaths {
     fun isAbsoluteText(value: String): Boolean =
         value.startsWith("/") || value.startsWith("\\") || (value.length > 1 && value[1] == ':')
 
+    /**
+     * The path with symbolic links resolved (`os.path.realpath`), tolerant of a tail that does not exist yet: the
+     * longest existing prefix is real-resolved and the remaining names re-appended. On a filesystem with no symlink
+     * divergence this equals `toAbsolutePath().normalize()` (so the reference's stored-path text is unchanged); on
+     * Android it collapses the `/data/user/0/<pkg>` and `/data/data/<pkg>` views of the app's own files to one
+     * canonical form, so a save path (real-resolved when registered) and the data root compare in the same view.
+     */
+    fun realpath(path: Path): Path {
+        val absolute = path.toAbsolutePath().normalize()
+        val tail = ArrayList<Path>()
+        var existing: Path? = absolute
+        while (existing != null && !Files.exists(existing)) {
+            existing.fileName?.let { tail.add(it) }
+            existing = existing.parent
+        }
+        if (existing == null) return absolute
+        var real = try { existing.toRealPath() } catch (e: Exception) { return absolute }
+        for (i in tail.indices.reversed()) real = real.resolve(tail[i])
+        return real.normalize()
+    }
+
     fun toStored(path: Path, base: Path, strict: Boolean = false): String {
-        val resolved = path.toAbsolutePath().normalize()
-        val root = base.toAbsolutePath().normalize()
+        val resolved = realpath(path)
+        val root = realpath(base)
         if (!resolved.startsWith(root)) {
             if (strict) throw OutsideDataRoot("Path is outside the data root")
             return resolved.toString()
