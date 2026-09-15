@@ -7,6 +7,7 @@ import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.exact.jvalue
 import io.github.okexodus.openknights.gamedata.ApkTables
 import io.github.okexodus.openknights.gamedata.GameTables
+import io.github.okexodus.openknights.gamedata.SummonPoolPolicy
 import io.github.okexodus.openknights.server.DeviceClock
 import io.github.okexodus.openknights.server.ReleaseData
 import io.github.okexodus.openknights.server.store.AccountRegistry
@@ -181,7 +182,16 @@ class Service(
          */
         fun release(driver: SqlDriver, dataRoot: Path, apk: Path, releaseData: Path, log: ServiceLog, loaded: GameTables? = null): Service {
             val data = ReleaseData(releaseData)
-            val tables = loaded ?: GameTables(ApkTables(apk))
+            val poolFile = "supreme-summon-pool.json"
+            val pool = if (poolFile in data.manifest.obj("files")) {
+                SummonPoolPolicy.parse(Json.compact(data.document(poolFile)).toByteArray(Charsets.UTF_8))
+            } else null
+            val tables = loaded ?: ApkTables(apk, preferPreservedTables = true).let { original ->
+                GameTables(pool?.transform(original) ?: original)
+            }
+            require(pool == null || loaded == null) { "Supreme pool policy needs the original APK table source" }
+            if (pool != null) log.log("supreme_summon_pool_bound", "profile" to "supreme_summon_pool_v1",
+                "sha256" to data.sha256(poolFile))
             data.tables = tables
             log.log("release_apk_bound", "label" to "Pocket Knights 4.4.9", "tables" to tables.names().size,
                 "note" to "game tables from the player's APK only; no download overlay (D1)")

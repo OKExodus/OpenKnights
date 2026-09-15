@@ -26,7 +26,8 @@ class UnsupportedGameFile(message: String) : IllegalArgumentException(message)
  * RC4-decrypted in memory (fresh cipher state per file) and must hash to the supported definition. Nothing is written
  * to disk. A missing or different table refuses the APK before anything else starts.
  */
-class ApkTables(apk: Path, private val supported: SupportedInput = SupportedInput.bundled) : TableSource {
+class ApkTables(apk: Path, private val supported: SupportedInput = SupportedInput.bundled,
+                private val preferPreservedTables: Boolean = false) : TableSource {
     private val bytes: Map<String, ByteArray>
 
     init {
@@ -36,7 +37,12 @@ class ApkTables(apk: Path, private val supported: SupportedInput = SupportedInpu
         }
         bytes = zip.use {
             val wanted = supported.tables
-            val missing = wanted.keys.sorted().filter { name -> zip.getEntry(supported.tablePrefix + name) == null }
+            fun entryName(name: String): String {
+                val preserved = "assets/openknights/original-tables/$name"
+                return if (preferPreservedTables && name in setOf("xinniudan.csv", "niudanhero.csv") && zip.getEntry(preserved) != null)
+                    preserved else supported.tablePrefix + name
+            }
+            val missing = wanted.keys.sorted().filter { name -> zip.getEntry(entryName(name)) == null }
             if (missing.isNotEmpty()) {
                 throw UnsupportedGameFile("This APK is not ${supported.label}: ${missing.size} game tables are missing (e.g. ${missing[0]})")
             }
@@ -44,7 +50,7 @@ class ApkTables(apk: Path, private val supported: SupportedInput = SupportedInpu
             val out = LinkedHashMap<String, ByteArray>()
             val mismatched = ArrayList<String>()
             for ((name, expected) in wanted.toSortedMap()) {
-                val plain = cipher.decrypt(zip.getInputStream(zip.getEntry(supported.tablePrefix + name)).use { s -> s.readBytes() })
+                val plain = cipher.decrypt(zip.getInputStream(zip.getEntry(entryName(name))).use { s -> s.readBytes() })
                 if (sha256(plain) != expected) mismatched.add(name) else out[name] = plain
             }
             if (mismatched.isNotEmpty()) {
