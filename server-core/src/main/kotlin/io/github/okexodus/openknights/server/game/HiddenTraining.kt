@@ -208,7 +208,7 @@ object HiddenTraining {
             val atk = v(6) + PyDocs.int(row["atk"])
             val defense = v(8)
             val unique = v(10) + PyDocs.int(row["unique"])
-            total += BigInteger.TWO * hp.and(mask) + BigInteger.valueOf(21) * defense.and(mask) +
+            total += BigInteger.valueOf(2) * hp.and(mask) + BigInteger.valueOf(21) * defense.and(mask) +
                 BigInteger.valueOf(15) * (atk.and(mask) + unique.and(mask)) + BigInteger.valueOf(20) * v(22).and(mask) +
                 BigInteger.valueOf(25) * v(23).and(mask)
         }

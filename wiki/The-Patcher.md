@@ -31,6 +31,8 @@ The redirect is expressed as exact edits recorded in `patches/smali/`. The game'
 
 `LocalLogin` is one of our own added classes. It asks the embedded server for a device session token in-process and hands it to the game's own login callback, with no browser view. The full set of edits and added classes is listed in `patches/smali/game-edits.json`.
 
+The embedded server's Kotlin libraries use a separate package namespace, applied by `patcher-core/.../dex/ServerRuntime.kt`. The original client already contains an older Kotlin runtime. Giving the server its own class names prevents Android from resolving newer server calls against that older runtime. The rewrite covers the server DEX files and their type references; the client's own runtime stays intact.
+
 ## The Manifest Injection
 
 The manifest is compiled binary XML, so the patcher edits it structurally rather than as text. It can set and remove attributes and inject whole elements. The on-device build injects the restore entry point as a new activity with an intent filter, so a backup opened from a file manager reaches the app:

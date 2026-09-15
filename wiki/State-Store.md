@@ -12,6 +12,8 @@ The save is authoritative for personal progress. The shared parts of a character
 
 The save is `characters/<id>/save.sqlite3` within the active generation, with a creation checkpoint beside it. Reads and writes go through a single store interface so the same code runs on a PC and on the device. See [[Save and Data Root]].
 
+History lookups read the stored JSON through the shared codec instead of SQLite's optional JSON extension. This keeps quest and hero-history repair available on Android databases that do not provide `json_extract`, while preserving revision order and the scalar values returned on the PC.
+
 ## Revisions and Checkpoints
 
 - **Revision.** A monotonic counter. Each committed transaction increments it. It is the key the world, the registry, and the harness all use to name a known state.

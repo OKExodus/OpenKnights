@@ -2,6 +2,7 @@ package io.github.okexodus.openknights.server.store
 
 import io.github.okexodus.openknights.exact.JArr
 import io.github.okexodus.openknights.exact.JObj
+import io.github.okexodus.openknights.exact.Json
 import io.github.okexodus.openknights.exact.jobj
 import io.github.okexodus.openknights.protocol.PlayerState
 import io.github.okexodus.openknights.exact.sha256Hex
@@ -178,6 +179,38 @@ class StoreTest {
             })
         }
         assertThrows(IllegalArgumentException::class.java) { store.read() }
+    }
+
+    @Test
+    fun `history values extract JSON without SQLite JSON1`() {
+        val path = tmp.resolve("history-values.sqlite3")
+        SaveWriter.initialize(path, PlayerState.encode(minimalState()), driver)
+        val store = StateStore(path, driver)
+        store.connect().use { db ->
+            db.immediate {
+                db.execute("INSERT INTO state_history VALUES(2,?,?,?,?)", "2026-01-01T00:00:00Z", "quest_claim",
+                    Json.dumps(jobj("request" to jobj("quest" to 17, "label" to "daily", "enabled" to true))), "checksum-2")
+                db.execute("INSERT INTO state_history VALUES(3,?,?,?,?)", "2026-01-01T00:00:01Z", "quest_claim",
+                    Json.dumps(jobj("request" to jobj("quest" to null))), "checksum-3")
+                db.execute("INSERT INTO state_history VALUES(4,?,?,?,?)", "2026-01-01T00:00:02Z", "quest_claim",
+                    Json.dumps(jobj("request" to jobj("quest" to 23))), "checksum-4")
+                db.execute("INSERT INTO state_history VALUES(5,?,?,?,?)", "2026-01-01T00:00:03Z", "other_action",
+                    Json.dumps(jobj("request" to jobj("quest" to 99))), "checksum-5")
+            }
+        }
+
+        val paths = listOf("$.request.quest", "$.request.label", "$.request.enabled", "$.request.missing")
+        store.connect(readOnly = true).use { db ->
+            for (path in paths) {
+                val sqlite = db.query("SELECT json_extract(detail_json, ?) AS v FROM state_history WHERE action=? ORDER BY revision",
+                    path, "quest_claim").mapNotNull { it["v"] }
+                assertEquals(sqlite, store.historyValues("quest_claim", path), path)
+            }
+        }
+        assertEquals(listOf(17L, 23L), store.historyValues("quest_claim", "$.request.quest"))
+        assertEquals(listOf("daily"), store.historyValues("quest_claim", "$.request.label"))
+        assertEquals(listOf(1L), store.historyValues("quest_claim", "$.request.enabled"))
+        assertEquals(emptyList<Any>(), store.historyValues("quest_claim", "$.request.missing"))
     }
 
     @Test
