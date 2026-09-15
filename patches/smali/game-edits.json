@@ -35,8 +35,6 @@
   ],
   "add_classes": [
     "LocalLogin.smali",
-    "LocalLoginBridge.smali",
-    "LocalLoginClient.smali",
     "LocalLoginComplete.smali",
     "LocalRecharge.smali",
     "LocalToast.smali"

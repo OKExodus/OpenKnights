@@ -27,6 +27,27 @@ object AndroidServerHost {
     @Volatile var listeners: AndroidListeners? = null
         private set
 
+    /**
+     * The in-process sign-in that replaced the WebView (`EnjoySDK.onLogin` -> `LocalLogin`): issue a device session
+     * token straight from the embedded server, on a background thread. Waits briefly for boot; returns null if the
+     * server never comes up (the game shows its own connect error). Called from the client DEX by [JvmStatic] name.
+     */
+    @JvmStatic
+    fun deviceLoginToken(): String? {
+        val deadline = System.currentTimeMillis() + 20_000
+        var ready = listeners
+        while (ready == null && System.currentTimeMillis() < deadline) {
+            try { Thread.sleep(100) } catch (e: InterruptedException) { Thread.currentThread().interrupt(); return null }
+            ready = listeners
+        }
+        return try {
+            ready?.issueDeviceToken()
+        } catch (e: Throwable) {
+            android.util.Log.e("OpenKnights", "in-process sign-in failed", e)
+            null
+        }
+    }
+
     /** Idempotent: safe to call again; the server boots only once per process. Never throws to the caller. */
     @Synchronized
     fun boot(context: Context) {

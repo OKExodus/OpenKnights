@@ -66,6 +66,12 @@ class AndroidListeners(
         return server
     }
 
+    /**
+     * Issue a device session token on the dispatcher (the same serialized path the HTTP `/api/device` used), for the
+     * in-process sign-in that replaced the WebView. Runs in arrival order with the game, as the saves require.
+     */
+    fun issueDeviceToken(): String = onDispatcher { service.auth.deviceLogin().token }
+
     private fun <T> onDispatcher(block: () -> T): T = try {
         dispatcher.submit(Callable { Now.pinned(System.currentTimeMillis() / 1000.0) { block() } }).get()
     } catch (e: java.util.concurrent.ExecutionException) {
