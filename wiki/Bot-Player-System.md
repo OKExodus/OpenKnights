@@ -32,8 +32,11 @@ The link to that repository will be added here once it is public.
 
 The bot system follows the same rules as the rest of the project. Any knowledge derived from the game's tables is generated from the player's own copy, never shipped, and nothing in the bot framework carries the publisher's content. See [[What Is Not In This Repository]].
 
+Admin commands are outside the bot's input and knowledge boundary. Slash command lines are consumed privately before chat delivery, and command replies, command history, and the hidden admin-use marker are not exposed to bots. A bot may observe the ordinary gameplay result of a changed character, but it receives no admin provenance and must not detect or respond to command text in game chat.
+
 ## See Also
 
 - [[World and Generations]] and [[Save and Data Root]], the storage the bots live in.
 - [[World Participants]], the roster they join.
 - [[Reconstructing a Mobile Game Server]], the method the framework is built with.
+- [[Admin Commands]], the private offline command route bots do not receive.

@@ -24,4 +24,5 @@ Nothing has been released yet. The first release will be **0.1.0.0**.
 
 ### Added
 
+- Private in-game admin commands with save-local use tracking, including character creation with gender and starter selection.
 - Optional release-only Supreme summon pool policy with isolated groups and preserved baseline summon behavior.

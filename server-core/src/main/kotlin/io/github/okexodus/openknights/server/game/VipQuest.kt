@@ -46,7 +46,9 @@ object VipQuest {
         val kind2 = row.long("mission2_kind")
         val ok1 = when (kind1) {
             // `bool((recharge_ledger or {}).get("transactions"))`: the ledger keeps a count
-            1L -> Py.truthy((view.rechargeLedger.takeIf { Py.truthy(it) } as? JObj)?.get("transactions"))
+            1L -> (view.rechargeLedger as? JObj)?.let {
+                Py.truthy(it["transactions"]) || it["admin_vip_qualification"] == JBool(true)
+            } ?: false
             2L -> vip >= row.long("mission1_value")
             else -> kind1 == 0L
         }

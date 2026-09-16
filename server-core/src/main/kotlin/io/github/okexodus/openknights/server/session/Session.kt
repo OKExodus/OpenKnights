@@ -7,6 +7,10 @@ import io.github.okexodus.openknights.protocol.ProtocolException
 import io.github.okexodus.openknights.protocol.WireReader
 import io.github.okexodus.openknights.protocol.WireWriter
 import io.github.okexodus.openknights.server.game.Acquisition
+import io.github.okexodus.openknights.server.game.AdminCommands
+import io.github.okexodus.openknights.server.game.AdminGameplay
+import io.github.okexodus.openknights.server.game.Chat
+import io.github.okexodus.openknights.server.store.adminGuild
 import io.github.okexodus.openknights.server.game.Frame
 import io.github.okexodus.openknights.server.game.FreshProfile
 import io.github.okexodus.openknights.server.game.Friends
@@ -132,6 +136,7 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
     private val seenQueries = LinkedHashSet<Int>()
     val statFrames = LinkedHashMap<Int, ByteArray>()
     private var freshCharacter: Boolean? = null
+    private var pendingGuildDisband: Pair<Long, Long>? = null
 
     private fun log(event: String, vararg fields: Pair<String, Any?>) = service.log.log(event, *fields)
 
@@ -501,7 +506,9 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
             val store = stateStore!!
             val pairs = store.historyValues("evolve_leader_hero", "$.old_template").map { (it as? Number)?.toLong() }
                 .zip(store.historyValues("evolve_leader_hero", "$.new_template").map { (it as? Number)?.toLong() })
-            val reached = LeaderRepair.superReachedTemplates(pairs)
+            val adminPairs = store.historyValues("admin_command", "$.admin_leader_old_template").map { (it as? Number)?.toLong() }
+                .zip(store.historyValues("admin_command", "$.admin_leader_new_template").map { (it as? Number)?.toLong() })
+            val reached = LeaderRepair.superReachedTemplates(pairs + adminPairs)
             if (LeaderRepair.repairTarget(Owned(current, inputs), loader, reached) == null) return current
             val (result, plan) = store.acquisitionTransaction("leader_digit_repair", characterId!!, policy, inputs, "local-service",
                 "Leader super-class digit to its evolve row before the login S18",
@@ -1709,6 +1716,19 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
      * added friend feed the daily counters.
      */
     private fun socialRoute(opcode: Int, payload: ByteArray): List<Frame> {
+        if (opcode == Chat.C_CHAT) {
+            val request = try { Chat.decodeChat(payload) } catch (_: IllegalArgumentException) {
+                return AdminCommands.replies(Chat.WORLD, listOf("Invalid chat request."))
+            }
+            if (AdminCommands.isCommand(request.text)) return adminCommand(request)
+            val current = stateStore?.read()
+            if (current != null) {
+                val minimum = service.inputs.prop(298, 1)
+                if (PlayerState.role(current.state, 3).long("bits") < minimum) {
+                    return AdminCommands.replies(request.channel, listOf("Reach level $minimum to send ordinary chat."))
+                }
+            }
+        }
         var now: Long? = null
         var packets: List<Frame>
         val ctx: SocialRoutes.SocialContext
@@ -1753,6 +1773,101 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         log("social_served", "character_id" to characterId, "opcode" to opcode, "reply_opcodes" to packets.map { it.first },
             "now_epoch" to now, "served_time" to served, "online" to service.onlineRoles(), "clock_offset" to ctx.clockOffset)
         return packets
+    }
+
+    /** Human sessions are the only entry point. Commands never enter SocialRoutes or a shared chat document. */
+    private fun adminCommand(request: Chat.Request): List<Frame> {
+        fun reply(vararg lines: String) = AdminCommands.replies(request.channel, lines.toList())
+        try {
+            require(loggedIn && queriesSent && kind == "game" && creating == null) { "Finish logging in first." }
+            val store = stateStore ?: throw Acquisition.Rejected("Select a character first.")
+            val owner = accountId ?: throw Acquisition.Rejected("Sign in first.")
+            val cid = characterId ?: throw Acquisition.Rejected("Select a character first.")
+            // A bot cannot gain access by posting slash text or claiming a human name.
+            require(service.auth.registry.resolveStateStore(cid, owner).path == store.path) { "Character ownership is required." }
+            val current = store.read()
+            require(SocialRoutes.roleOf(current) !in WorldDirectory.BOT_ID_FIRST..WorldDirectory.BOT_ID_LAST) {
+                "Commands are available only to local player characters."
+            }
+            val command = AdminCommands.parse(request.text)
+            val args = command.args
+            val now = service.clock.now()
+            when (command.name) {
+                "help" -> {
+                    val lines = AdminCommands.help(args)
+                    store.markAdminCommand(command.name)
+                    return AdminCommands.replies(request.channel, lines)
+                }
+                "newcharacter" -> {
+                    require(args.size == 3) { AdminCommands.usage.getValue(command.name) }
+                    val gender = when (args[1].lowercase(java.util.Locale.ROOT)) {
+                        "male" -> 0
+                        "female" -> 1
+                        else -> throw Acquisition.Rejected("Gender must be male or female.")
+                    }
+                    val starter = when (args[2].lowercase(java.util.Locale.ROOT)) {
+                        "jansen" -> 40001001L
+                        "rhee" -> 40004001L
+                        "talia" -> 40007001L
+                        else -> throw Acquisition.Rejected("Starter must be Jansen, Rhee, or Talia.")
+                    }
+                    require(service.creationEnabled && starter in service.select.offers) { "Character creation is unavailable." }
+                    val factory = service.characterFactory ?: throw Acquisition.Rejected("Character creation is unavailable.")
+                    val name = CharacterSelect.validateNewName(service.world, args[0].toByteArray(Charsets.UTF_8), gender.toLong())
+                    // Creation publishes several files. Record accepted use before any new character can become visible.
+                    store.markAdminCommand(command.name)
+                    val created = factory(owner, name, gender, starter, "in-game-admin")
+                    return reply("Created ${created.str("name")}. Select the character after logging out.")
+                }
+                "createguild", "leaveguild", "disbandguild" -> {
+                    val world = service.world ?: throw Acquisition.Rejected("No shared world is loaded.")
+                    var expectedGuild: Long? = null
+                    when (command.name) {
+                        "createguild" -> require(args.size == 1) { AdminCommands.usage.getValue(command.name) }
+                        "leaveguild" -> require(args.isEmpty()) { AdminCommands.usage.getValue(command.name) }
+                        "disbandguild" -> {
+                            require(args.isEmpty() || args == listOf("confirm")) { AdminCommands.usage.getValue(command.name) }
+                            val (gid, guild) = Guild.guildOf(world.document("guilds")!!.second, SocialRoutes.roleOf(current))
+                            require(guild != null && Guild.memberOf(guild, SocialRoutes.roleOf(current)).long("position") == Guild.LEADER) {
+                                "Only a guild leader can disband a guild."
+                            }
+                            if (args.isEmpty()) {
+                                store.markAdminCommand(command.name)
+                                pendingGuildDisband = gid to now
+                                return reply("Removes the guild for every member.", "Type /disbandguild confirm within 60 seconds.")
+                            }
+                            val pending = pendingGuildDisband
+                            require(pending != null && pending.first == gid && now - pending.second in 0..60) {
+                                "Enter /disbandguild first to review the confirmation."
+                            }
+                            expectedGuild = gid
+                        }
+                    }
+                    store.adminGuild(world, command.name, args, service.inputs, now, expectedGuild)
+                    pendingGuildDisband = null
+                    val frame = SocialRoutes.myGuildFrame(socialContext(), SocialRoutes.roleOf(current), now, store.read())
+                    return listOf(frame) + reply(when (command.name) {
+                        "createguild" -> "Created guild ${args.single()}."
+                        "leaveguild" -> "Left the guild."
+                        else -> "Guild disbanded."
+                    })
+                }
+                else -> {
+                    val policy = deploymentPolicy() ?: throw Acquisition.Rejected("This save does not support commands.")
+                    val (_, plan) = store.acquisitionTransaction("admin_command", cid, policy, service.inputs,
+                        "in-game-admin", "In-game admin command", detailExtra = jobj("command" to command.name)) { owned, fresh ->
+                        AdminGameplay.plan(command.name, args, owned, fresh, service.inputs, now)
+                    }
+                    val summary = plan.data.strOrNull("admin_reply") ?: "${command.name}: done."
+                    return plan.packets + AdminCommands.replies(request.channel, summary.lines())
+                }
+            }
+        } catch (e: IllegalArgumentException) {
+            return reply(e.message ?: "Invalid command.")
+        } catch (e: Exception) {
+            log("admin_internal_error", "character_id" to characterId, "error" to described(e))
+            return reply("Command could not finish. Check the local server log.")
+        }
     }
 
     // --- alternate team, hero evolution, hero cards -------------------------------------------------------------------

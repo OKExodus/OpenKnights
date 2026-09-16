@@ -21,7 +21,7 @@ class RealPatchTest {
         ZipArchive.open(FileSource.open(out.signed)).use { zip ->
             assertTrue(zip.contains("META-INF/OPENKNIG.SF"))
             assertTrue(zip.contains("classes3.dex"))
-            assertEquals("36d47a419ea2dc0ab16c0dc8d74c3704088207eaf1f83a639e93a28c3618303f",
+            assertEquals("a26869e38b88bed9bedaf62df6e5283536ac8aedd8999a4b5d49a9b399508350",
                 Hashing.sha256(zip.openStream(zip["lib/arm64-v8a/libhelloworld.so"]!!)))
             assertTrue(zip.entries.none { it.name.startsWith("META-INF/BNDLTOOL") || it.name == "stamp-cert-sha256" })
         }

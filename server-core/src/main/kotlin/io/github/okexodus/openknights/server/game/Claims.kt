@@ -205,17 +205,20 @@ object Claims {
         var apBought = 0L
         var enBought = 0L
         if (block != null && today != null && PyDocs.get(doc, "buy_day") == JStr(today)) {
-            apBought = maxOf(PyDocs.long(block[2]) - PyDocs.long(block[1]), 0L)
-            enBought = maxOf(PyDocs.long(block[4]) - PyDocs.long(block[3]), 0L)
+            apBought = maxOf(PyDocs.long(block[2]) - PyDocs.long(block[1]), doc.longOrNull("admin_ap_bought") ?: 0L, 0L)
+            enBought = maxOf(PyDocs.long(block[4]) - PyDocs.long(block[3]), doc.longOrNull("admin_energy_bought") ?: 0L, 0L)
         }
         return listOf(claimed, maxOf(apMax - apBought, 0L), apMax, maxOf(enMax - enBought, 0L), enMax)
     }
 
     /** VIP level-up: the new level's maxima, keeping today's buys (edits the S18 block in place). */
-    fun raiseMaxima(block: JArr, vipLevel: Long, inputs: AcquisitionInputs) {
+    fun raiseMaxima(block: JArr, vipLevel: Long, inputs: AcquisitionInputs, document: JValue? = null, today: String? = null) {
         val row = inputs.vipRow(vipLevel)
         for ((at, maximum) in listOf(1 to row.long("ap_buys_107"), 3 to row.long("energy_buys_108"))) {
-            val bought = maxOf(PyDocs.long(block[at + 1]) - PyDocs.long(block[at]), 0L)
+            val doc = document as? JObj
+            val floor = if (today != null && doc?.get("buy_day") == JStr(today))
+                doc.longOrNull(if (at == 1) "admin_ap_bought" else "admin_energy_bought") ?: 0L else 0L
+            val bought = maxOf(PyDocs.long(block[at + 1]) - PyDocs.long(block[at]), floor, 0L)
             block[at] = JInt(maxOf(maximum - bought, 0L))
             block[at + 1] = JInt(maximum)
         }
