@@ -4,11 +4,11 @@
 
 ## What It Changes, and What It Does Not
 
-The patcher makes the smallest set of edits that redirect the client and add the server. The game's own logic is left intact; only its calls to the publisher's online services are diverted.
+The patcher redirects the client to the local server and makes focused compatibility fixes, including refreshing cached leaderboards when their screen opens.
 
 - **Manifest.** The app's package, name, and icon; native code extracted on install; no system backup of saves; plain loopback traffic allowed; and none of the publisher's sign-in, payment, analytics, or advertising components. On-device it also points the Application class at the server boot hook and adds the restore entry point. See [[Save and Data Root]].
 - **Code.** A few methods of the platform bridge are redirected to the local server, and our own client classes are added in a new DEX. Everything else is untouched.
-- **Native library.** A small set of byte patches, verified against the expected source, and nothing else.
+- **Native library.** A small set of byte patches, verified against the expected source, including sign-in redirects, credential log redaction, and leaderboard cache refresh.
 - **Resources.** The OpenKnights icon and the merged split resources.
 - **Signature.** The finished app is signed with the player's own key. See [[Accounts and Sign-in]] for why the key is per-player.
 
@@ -32,6 +32,14 @@ The redirect is expressed as exact edits recorded in `patches/smali/`. The game'
 `LocalLogin` is one of our own added classes. It asks the embedded server for a device session token in-process and hands it to the game's own login callback, with no browser view. The full set of edits and added classes is listed in `patches/smali/game-edits.json`.
 
 The embedded server's Kotlin libraries use a separate package namespace, applied by `patcher-core/.../dex/ServerRuntime.kt`. The original client already contains an older Kotlin runtime. Giving the server its own class names prevents Android from resolving newer server calls against that older runtime. The rewrite covers the server DEX files and their type references; the client's own runtime stays intact.
+
+## Leaderboard Refresh
+
+Entering the leaderboard screen clears its cached rows before registering the screen's response callbacks. Categories request current results as they are viewed; pages remain cached while the screen stays open. Leaving and reopening the screen refreshes them again. There is no background polling or save modification.
+
+The arm64 entry helper is documented in `patches/native/leaderboard-refresh.S` and encoded in `patches/native/libhelloworld.json`. It calls the client's existing rank-cache reset, then resumes the original screen setup. Its instructions occupy the aligned tail of an already-redacted log string in the executable segment, after the replacement text's terminator. The library layout is unchanged. The patcher verifies the complete source hash, both affected sites, and the complete patched hash.
+
+The optional developer check `python tools/check_leaderboard_refresh.py <your-arm64-library>` requires `unicorn==2.1.4`. It executes the helper and original reset against synthetic empty and populated caches, verifies all 13 categories, checks that only cache and stack memory change, and confirms that received pages can become ready normally. Device QA should confirm that a changed ranking value appears after leaving and reopening the leaderboard screen.
 
 ## The Manifest Injection
 

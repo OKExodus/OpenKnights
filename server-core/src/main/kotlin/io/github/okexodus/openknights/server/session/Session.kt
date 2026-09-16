@@ -51,6 +51,7 @@ import io.github.okexodus.openknights.server.game.VipQuest
 import io.github.okexodus.openknights.server.game.WorldParticipants
 import io.github.okexodus.openknights.server.game.Campaign
 import io.github.okexodus.openknights.server.game.BattleStats
+import io.github.okexodus.openknights.server.game.Leaderboards
 import io.github.okexodus.openknights.server.game.deepCopy
 import io.github.okexodus.openknights.exact.JInt
 import io.github.okexodus.openknights.exact.JStr
@@ -1340,10 +1341,28 @@ class Session(val service: Service, val kind: String, private val gamePort: Int)
         try {
             if (!queriesSent) throw PyValues.ValueError("Complete initialization queries before opening the rank list")
             val (type, page) = WorldDirectory.decodeRankRequest(payload)
-            val own = WorldDirectory.characterRankRoleId(stateStore!!.read())
+            val ownCurrent = stateStore!!.read()
+            val own = WorldDirectory.characterRankRoleId(ownCurrent)
             // Every world participant (characters + the documented bot extension), docs/WORLD_PARTICIPANTS.md.
-            rows = worldContext().participants().map { WorldDirectory.participantRankRow(it as WorldParticipants.Participant) }
-            reply = WorldDirectory.buildRankReply(type, page, rows, own)
+            val context = worldContext()
+            val people = context.participants().map { it as WorldParticipants.Participant }
+            var requester = own
+            if (type == 12L || type == 13L) {
+                val guilds = context.document("guilds").second
+                rows = Leaderboards.guildRows(type, guilds, people, service.inputs)
+                requester = Guild.guildOf(guilds, own).first
+            } else if (type in Leaderboards.EXTENDED_TYPES) {
+                val stores = people.mapNotNull { p ->
+                    val store = if (p.participantId == own) stateStore else p.characterId?.let { context.registry?.resolveStateStore(it) }
+                    store?.let { p.participantId to it }
+                }.toMap()
+                val states = stores.mapValues { (id, store) -> if (id == own) ownCurrent else store.read() }
+                val weekly = if (type in Leaderboards.WEEKLY_TYPES) Leaderboards.readWeeklyCounts(context.world, stores, service.clock.now()) else emptyMap()
+                rows = Leaderboards.playerRows(type, people, states, weekly) { current ->
+                    Leaderboards.captainPower(current, service.inputs, service.freshSystems, service.evolutionInputs)
+                }
+            } else rows = people.map { WorldDirectory.participantRankRow(it) }
+            reply = WorldDirectory.buildRankReply(type, page, rows, requester)
         } catch (e: IllegalArgumentException) {
             log("rejected_rank_list", "character_id" to characterId, "reason" to e.message, "error_code" to 102)
             return listOf(6 to TransactionPackets.errorPayload(102))

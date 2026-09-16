@@ -44,7 +44,8 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
 
         /** Rank inputs of a world participant, characters and bots alike (`participant_rank_row`). */
         class RankRow(val roleId: Long, val nameRaw: ByteArray, val level: Long, val reputation: Long, val created: String,
-                      val power: java.math.BigInteger?)
+                      val power: java.math.BigInteger?, val metric: java.math.BigInteger? = null, val valueB: Long? = null,
+                      val valueA: java.math.BigInteger? = null)
 
         fun participantRankRow(p: io.github.okexodus.openknights.server.game.WorldParticipants.Participant): RankRow =
             RankRow(p.participantId, p.nameRaw, p.level, p.reputation, p.created, p.power)
@@ -74,7 +75,8 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
         /**
          * One S736 page from the world's participants (`build_rank_reply`, policy for order / tie-breaks): Level (type 1)
          * level, Power, creation; Power (type 6, only when every row has a Power) Power, level, creation; prestige
-         * (type 4) Reputation, level, creation; other types an empty page. value_a = Power, value_b = Reputation.
+         * (type 4) Reputation, level, creation. Additional categories use the metric and display value prepared by
+         * Leaderboards; Tower and Winning Streak remain empty. Legacy rows use Power and Reputation for the values.
          */
         fun buildRankReply(type: Long, requestPage: Long, rows: List<RankRow>, requesterRoleId: Long): RankReply {
             val page = maxOf(1L, requestPage)
@@ -85,13 +87,16 @@ class WorldDirectory(path: Path, private val driver: SqlDriver, val strictPaths:
                 type == RANK_POWER && rows.isNotEmpty() && rows.all { it.power != null } ->
                     rows.sortedWith(compareByDescending<RankRow> { power(it) }.thenByDescending { it.level }.then(byCreated))
                 type == RANK_PRESTIGE -> rows.sortedWith(compareByDescending<RankRow> { it.reputation }.thenByDescending { it.level }.then(byCreated))
+                type in setOf(2L, 5L, 7L, 8L, 9L, 10L, 12L, 13L) -> rows.filter { it.metric != null }.sortedWith(
+                    compareByDescending<RankRow> { it.metric }.thenByDescending { if (type == 13L) power(it) else java.math.BigInteger.valueOf(it.level) }
+                        .then(byCreated).thenBy { it.roleId })
                 else -> emptyList()
             }
             listed = listed.take(RANK_MAX_LISTED)
             val totalPages = maxOf(1L, Math.floorDiv(listed.size.toLong() + RANK_PAGE_SIZE - 1, RANK_PAGE_SIZE.toLong()))
             val start = (page - 1) * RANK_PAGE_SIZE
             val chunk = if (start >= listed.size) emptyList() else listed.subList(start.toInt(), minOf(listed.size.toLong(), page * RANK_PAGE_SIZE).toInt())
-            val entries = chunk.mapIndexed { i, r -> RankEntry(start + i + 1, r.roleId, r.nameRaw, r.level, power(r), r.reputation) }
+            val entries = chunk.mapIndexed { i, r -> RankEntry(start + i + 1, r.roleId, r.nameRaw, r.level, r.valueA ?: power(r), r.valueB ?: r.reputation) }
             val mine = listed.indexOfFirst { it.roleId == requesterRoleId }
             return RankReply(type, totalPages, page, entries, if (mine >= 0) mine + 1L else 0L)
         }
