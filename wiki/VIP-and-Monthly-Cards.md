@@ -8,6 +8,8 @@ The character's VIP level gates a daily gift pack: one claim per local day, its 
 
 The two recharge monthly cards (activated by the free top-up, never bought outright) each track 30 days of ownership; each owned day the character can claim that day's reward row once, advancing the card's day counter, until the 30th day retires the card.
 
+The offline `/setvip` command sets accumulated VIP points to the exact threshold for the requested level and refreshes related VIP state. Existing claims and daily purchases remain counted, including through a downgrade. This is explicit command policy, tested separately from ordinary progression; see [[Admin Commands]].
+
 ## Data Files
 
 | Table | Role |

@@ -148,7 +148,7 @@ object Recharge {
             // A new VIP level: the VIP Rewards ladder counter and the AP / Energy buy counts follow it.
             activityFrames += ActivityProgress.setVipLevel(owned.state, levelAfter, serverTime)
             val block = owned.state.obj("subsystems").obj("vip").arr("wire_values")
-            Claims.raiseMaxima(block, levelAfter.toLong(), inputs)                 // today's buys stay counted
+            Claims.raiseMaxima(block, levelAfter.toLong(), inputs, owned.current.document("vip_state"), Shops.dayOf(now))
             levelFrames += Claims.buyCountFrames(block, inputs)
             // reaching VIP 4 by purchases ends the temporary VIP4 at once
             levelFrames += SweepFeatures.tmpVipEndFrames(owned.current, levelBefore.toLong(), levelAfter.toLong())

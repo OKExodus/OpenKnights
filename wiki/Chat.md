@@ -6,7 +6,9 @@
 
 A chat line names a channel (system, world, private, or guild), an optional target, and text. World and guild lines are appended to a per-channel history in the world document `chat`, each list kept to its last 20 entries; private lines are appended to a per-recipient history. Sending resolves the delivery list for the request: a world line goes to everyone online, a guild line to the sender's guild members, a private line to the named recipient plus an echo back to the sender showing their own outgoing copy. A recipient who has blocked the sender's name, through the same blacklist [[Mail]] checks, never receives the push. At login, the world history, the character's guild history if any, and the character's own private lines replay in order, again skipping any sender the viewer has blocked; a viewer's own lines always replay regardless.
 
-A line that starts with "/" is never stored and never reaches a channel: it is read as a command, and today the reply is a placeholder telling the sender that admin commands are not available yet. This is the reserved hook for the project's planned in-game admin slash-commands (granting items, currency, gear, or heroes), which is not implemented here.
+A line that starts with "/" is never stored and never reaches a channel. It is consumed by the private admin-command route and its reply is returned only to the issuing session. The command line is not replayed on login, delivered to other players, or passed to future bot players. See [[Admin Commands]] for the deliberate offline command set and its hidden save marker.
+
+The authenticated server route checks `property.csv` row 298 for ordinary chat's minimum character level. The client-side gate is bypassed by [[The Patcher]] so commands work from level one. This preserves the native ordinary-chat restriction while allowing the server to distinguish commands.
 
 ## Opcodes
 
@@ -16,7 +18,7 @@ A line that starts with "/" is never stored and never reaches a channel: it is r
 
 ## Persistence
 
-Chat lines are shared state in the [[World Directory]] document `chat`: `world` for the world channel, `guild` keyed by guild id, `private` keyed by recipient. Sending a line changes only this shared document; chat carries no personal state, so it does not touch a character's [[State Store]]. See [[Transactions and Publishing]].
+Chat lines are shared state in the [[World Directory]] document `chat`: `world` for the world channel, `guild` keyed by guild id, `private` keyed by recipient. Sending a normal line changes only this shared document. Admin command lines are not stored there; successful commands instead update the character's hidden admin marker and private command history as part of the command transaction. See [[Admin Commands]] and [[Transactions and Publishing]].
 
 ## Code
 

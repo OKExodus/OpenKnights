@@ -80,6 +80,7 @@ Status legend: **Written** means the page is complete. **Planned** means the pag
 | [[Guild]] | Guild membership, tasks, and donations | Written |
 | [[Friends]] | Friends, praise, and the feed | Written |
 | [[Chat]] | Chat channels and messages | Written |
+| [[Admin Commands]] | Private slash commands and save-local command-use tracking | Written |
 | [[Mail]] | Mail and attachments | Written |
 | [[Arena]] | The arena ladder and rewards | Written |
 | [[World Participants]] | The world roster and universal Power | Written |

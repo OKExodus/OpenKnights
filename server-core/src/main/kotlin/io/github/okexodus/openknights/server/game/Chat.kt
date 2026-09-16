@@ -72,7 +72,7 @@ object Chat {
         while (lines.size > HISTORY) lines.removeAt(0)
     }
 
-    fun isCommand(textRaw: ByteArray): Boolean = textRaw.isNotEmpty() && textRaw[0] == '/'.code.toByte()
+    fun isCommand(textRaw: ByteArray): Boolean = AdminCommands.isCommand(textRaw)
 
     /** The `/command` hook (not implemented yet): the reply the sender sees. */
     fun commandReply(textRaw: ByteArray): ByteArray {

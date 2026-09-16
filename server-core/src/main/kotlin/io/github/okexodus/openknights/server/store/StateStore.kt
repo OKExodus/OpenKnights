@@ -78,7 +78,7 @@ class StateStore(path: Path, private val driver: SqlDriver) {
             "leader_class_change", "album_activate", "rename_character", "gift_code", "roulette_rank_claim",
             "alt_team_unlock", "alt_team_set", "leader_digit_repair",
             "campaign_battle", "campaign_auto", "campaign_reentry", "campaign_star_box", "campaign_refresh",
-            "goal_refresh", "goal_claim")
+            "goal_refresh", "goal_claim", "admin_command")
 
         private class HeroScan(val revision: Long, val anchorTime: String, val anchorPayload: String, val injected: Set<Long>, val acquired: Set<Long>)
         private val heroScanCache = java.util.concurrent.ConcurrentHashMap<String, HeroScan>()
@@ -117,6 +117,8 @@ class StateStore(path: Path, private val driver: SqlDriver) {
         /** Heroes of labeled test-fixture injections and of acquisitions, from the history (sorted). */
         val fixtureInjectedHeroUids: List<Long> = emptyList(),
         val acquiredHeroUids: List<Long> = emptyList(),
+        /** Save-local administrative provenance. This is intentionally absent from public wire state. */
+        val adminCommandsUsed: Boolean = false,
     ) {
         /** The unequipped-jewelry entries a planner reads (`current["jewel_entries_view"]`), set by the transaction. */
         var jewelEntriesView: JArr? = null
@@ -159,9 +161,11 @@ class StateStore(path: Path, private val driver: SqlDriver) {
         documents[SUMMON_STATE] = plainDocument(db, SUMMON_STATE)
         for (table in DOCUMENT_TABLES) documents[table] = plainDocument(db, table)
         val (injected, acquiredHeroes) = historyHeroSets(db)
+        val adminUsed = (if (db.tableExists(AdminProvenance.TABLE)) AdminProvenance.used(db) else false) ||
+            AdminProvenance.hasAdminHistory(db)
         return Current(row.long("revision"), row.string("source_sha256"), row.string("payload_sha256"), state, payload,
             inventory.schemaVersion, inventory.sha256, inventory.items, inventory.payloads, acquired.items, acquired.payloads,
-            acquired.sha256, secondary, god, profile, jewels, documents, injected.sorted(), acquiredHeroes.sorted())
+            acquired.sha256, secondary, god, profile, jewels, documents, injected.sorted(), acquiredHeroes.sorted(), adminUsed)
     }
 
     /**
@@ -407,6 +411,17 @@ class StateStore(path: Path, private val driver: SqlDriver) {
         }
     }
 
+    /** Records an informational or cross-system admin command as an audited save revision. */
+    fun markAdminCommand(command: String): JObj {
+        require(command.isNotBlank()) { "Admin command must be nonempty text" }
+        connect().use { db ->
+            return db.immediate {
+                val current = read(db)
+                commitState(db, current, "admin_command", jobj("command" to JStr(command)))
+            }
+        }
+    }
+
     /**
      * A restored character's identity in its new world (`restore_reidentify`): role 0 (wire id) and the profile's wire
      * id when the old one is taken there, role 2 (name) after a rename. One audited revision.
@@ -447,11 +462,21 @@ class StateStore(path: Path, private val driver: SqlDriver) {
         val revision = current.revision + 1
         val timestamp = PyTime.nowIsoMillis()
         val checksum = sha256Hex(payload)
+        val priorAdminUse = (if (db.tableExists(AdminProvenance.TABLE)) AdminProvenance.used(db) else false) ||
+            AdminProvenance.hasAdminHistory(db) || current.adminCommandsUsed
+        val adminUse = priorAdminUse || action == "admin_command"
+        if (adminUse) AdminProvenance.ensure(db)
         var full = detail
+        if (adminUse) {
+            full = JObj(LinkedHashMap(detail.map)).also {
+                it["admin_provenance"] = AdminProvenance.historyCrumb(true, revision)
+            }
+            AdminProvenance.mark(db, revision)
+        }
         if (current.inventorySchemaVersion != 0 || db.tableExists("inventory_meta")) {
             val inventoryChecksum = inventory(db, verify = false).sha256!!
             db.execute("UPDATE inventory_meta SET inventory_sha256=? WHERE id=1", inventoryChecksum)
-            full = JObj(LinkedHashMap(detail.map)).also { it["inventory_sha256"] = JStr(inventoryChecksum) }
+            full = JObj(LinkedHashMap(full.map)).also { it["inventory_sha256"] = JStr(inventoryChecksum) }
         }
         db.execute("UPDATE player_state SET revision=?,payload_sha256=?,updated_at_utc=?,state_json=? WHERE id=1", revision, checksum, timestamp, stateJson(parsed))
         db.execute("INSERT INTO state_history VALUES(?,?,?,?,?)", revision, timestamp, action, stateJson(full), checksum)

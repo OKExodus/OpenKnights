@@ -24,6 +24,7 @@ Pick your entry point:
 | Understand how the game was reverse engineered | [[Method Capture]], [[Method Opcode Decoding]], [[Method CSV Decryption]] |
 | Understand how correctness is proven | [[Method Differential Harness]] |
 | Learn the transferable method, to apply it to another game | [[Reconstructing a Mobile Game Server]] |
+| Understand the deliberate offline admin command policy | [[Admin Commands]] |
 
 Every system, opcode, and data-file page follows the same fixed layout, so once you have read one, you can read all of them. Contributors adding a page copy the [[Page Template]].
 

@@ -2,7 +2,7 @@
   "about": "Byte patches to the game's arm64 program library. Each site is checked before it is changed; if the library or any site differs, nothing is patched. Text sites include the text's end byte, and a shorter replacement is padded with zero bytes so every string keeps its place.",
   "file": "lib/arm64-v8a/libhelloworld.so",
   "source_sha256": "54c85cffe3819a29c046d00bd94f8a6dfb561d729385734c3a8d8aa424602699",
-  "result_sha256": "ed296af51da683a6b1d1f03d56118a7e6753744c5a62bf602cf20e304d6e1703",
+  "result_sha256": "a26869e38b88bed9bedaf62df6e5283536ac8aedd8999a4b5d49a9b399508350",
   "patches": [
     {
       "id": "login-server-login",
@@ -76,6 +76,14 @@
       "address": "0x20d62dc",
       "before": { "hex": "b9547294" },
       "after": { "hex": "acda9817" }
+    },
+    {
+      "id": "admin-chat-level-gate",
+      "why": "Send chat to the local server at every level so slash commands work on new characters. Session.socialRoute retains property 298 for ordinary messages. See admin-chat.S.",
+      "offset": "0x15a14a4",
+      "address": "0x16a14a4",
+      "before": { "hex": "4a020054" },
+      "after": { "hex": "12000014" }
     }
   ]
 }

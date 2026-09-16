@@ -19,6 +19,7 @@ object Schemas {
         put("state_history", """CREATE TABLE state_history (
                         revision INTEGER PRIMARY KEY, timestamp_utc TEXT NOT NULL,
                         action TEXT NOT NULL, detail_json TEXT NOT NULL, payload_sha256 TEXT NOT NULL)""")
+        put(AdminProvenance.TABLE, AdminProvenance.DDL)
         put("inventory_meta", """CREATE TABLE IF NOT EXISTS inventory_meta (
                 id INTEGER PRIMARY KEY CHECK(id=1), schema_version INTEGER NOT NULL,
                 inventory_sha256 TEXT NOT NULL)""")

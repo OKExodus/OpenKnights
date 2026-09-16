@@ -74,6 +74,7 @@
 - [[Guild]]
 - [[Friends]]
 - [[Chat]]
+- [[Admin Commands]]
 - [[Mail]]
 - [[Arena]]
 - [[World Participants]]

@@ -53,7 +53,7 @@ object SaveWriter {
      */
     fun initializeFresh(path: Path, payload: ByteArray, profile: io.github.okexodus.openknights.exact.JObj,
                         godSkills: io.github.okexodus.openknights.exact.JObj, detail: io.github.okexodus.openknights.exact.JObj,
-                        driver: SqlDriver): StateStore {
+                        driver: SqlDriver, adminCommand: String? = null): StateStore {
         val state = PlayerState.parse(payload)
         val mode = (state["login_mode"] as JInt).value.toLong()
         require(mode != 1L && mode != 2L && state["complete"] == JBool(true) && PlayerState.encode(state).contentEquals(payload)) {
@@ -74,12 +74,18 @@ object SaveWriter {
                 val checksum = sha256Hex(payload)
                 db.immediate {
                     ensureInventorySchema(db)
+                    val adminCreation = adminCommand != null || detail.strOrNull("actor") == "in-game-admin"
+                    if (adminCreation) AdminProvenance.ensure(db, used = true, revision = 1L)
                     db.execute("INSERT INTO player_state VALUES(1,1,1,?,?,?,?)", checksum, checksum, timestamp, StateStore.stateJson(state))
                     val profileSha = io.github.okexodus.openknights.server.game.FreshProfile.writeCharacterProfile(db, profile)
                     val godSha = io.github.okexodus.openknights.server.game.GodSkills.writeGodSkills(db, godSkills, create = true)
                     val full = io.github.okexodus.openknights.exact.JObj(LinkedHashMap(detail.map))
                     full["character_profile_sha256"] = io.github.okexodus.openknights.exact.JStr(profileSha)
                     full["god_skills_sha256"] = io.github.okexodus.openknights.exact.JStr(godSha)
+                    if (adminCreation) {
+                        full["admin_command"] = io.github.okexodus.openknights.exact.JStr(adminCommand ?: detail.strOrNull("command") ?: "newcharacter")
+                        full["admin_provenance"] = AdminProvenance.historyCrumb(true, 1L)
+                    }
                     db.execute("INSERT INTO state_history VALUES(1,?,?,?,?)", timestamp, "initialize_fresh_character", StateStore.stateJson(full), checksum)
                     StateStore(temporary, driver).read(db)          // the published file must read back completely
                 }

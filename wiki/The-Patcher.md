@@ -61,6 +61,8 @@ Each patched app is signed with a key generated for the player and kept on their
 
 ## Code
 
+The chat Send handler's minimum-level branch is also bypassed so level-one characters can submit [[Admin Commands]]. `Session.socialRoute` applies the original `property.csv` row 298 limit to ordinary messages. The four-byte branch replacement is recorded in `patches/native/libhelloworld.json` and explained in `patches/native/admin-chat.S`.
+
 Reproduced in `patcher-core` and driven by `patcher-cli`. The manifest edits are in `patcher-core/.../patch/ManifestPatch.kt`, the code edits in `patch/CodePatch.kt` applying the smali in `patches/smali/`, the native patches in `patch/NativePatchSet.kt`, and signing in `patcher-core/.../signing/`.
 
 ## How It Is Used
