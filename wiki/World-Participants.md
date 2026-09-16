@@ -18,7 +18,7 @@ World Participants reads rather than writes: characters come from the [[World Di
 
 ## Code
 
-Reproduced in `server-core/src/main/kotlin/io/github/okexodus/openknights/server/game/WorldParticipants.kt`, read by `Session.rankRoute` for the Arena ladder and by `SocialRoutes.SocialContext.people` for guild, friends, mail, and chat.
+Reproduced in `server-core/src/main/kotlin/io/github/okexodus/openknights/server/game/WorldParticipants.kt`, read by `Session.rankRoute` for leaderboards and by `SocialRoutes.SocialContext.people` for guild, friends, mail, and chat.
 
 ## How It Was Deciphered
 

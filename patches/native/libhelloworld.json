@@ -2,7 +2,7 @@
   "about": "Byte patches to the game's arm64 program library. Each site is checked before it is changed; if the library or any site differs, nothing is patched. Text sites include the text's end byte, and a shorter replacement is padded with zero bytes so every string keeps its place.",
   "file": "lib/arm64-v8a/libhelloworld.so",
   "source_sha256": "54c85cffe3819a29c046d00bd94f8a6dfb561d729385734c3a8d8aa424602699",
-  "result_sha256": "36d47a419ea2dc0ab16c0dc8d74c3704088207eaf1f83a639e93a28c3618303f",
+  "result_sha256": "ed296af51da683a6b1d1f03d56118a7e6753744c5a62bf602cf20e304d6e1703",
   "patches": [
     {
       "id": "login-server-login",
@@ -64,9 +64,18 @@
     },
     {
       "id": "log-redaction-logout",
+      "why": "Redact the logout credential. The aligned tail after the new text terminator holds the 24-byte leaderboard-entry helper; it was already cleared by this redaction. See leaderboard-refresh.S.",
       "offset": "0x60cd6f",
       "before": { "text": "Native logout. Do logout online player. Now uid:[%s]" },
-      "after": { "text": "Native logout local credential hidden" }
+      "after": { "hex": "4c6f63616c206c6f676f7574205b707269766174655d000000000000004cae97940010409100602f9176da9994097ad99450256714" }
+    },
+    {
+      "id": "leaderboard-refresh-on-enter",
+      "why": "Before registering leaderboard callbacks, clear RankSystem cached pages once, then execute the original notifier getter and resume OnEnter. See leaderboard-refresh.S.",
+      "offset": "0x1fd62dc",
+      "address": "0x20d62dc",
+      "before": { "hex": "b9547294" },
+      "after": { "hex": "acda9817" }
     }
   ]
 }
